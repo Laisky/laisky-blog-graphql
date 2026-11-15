@@ -34,7 +34,10 @@
 - Password creation and verification are byte-compatible with OneAPI bcrypt.
 - Disabled and deleted OneAPI users cannot establish or continue an SSO
   session, including through a previously issued JWT or passkey.
-- Email challenges are hashed, expiring, and single-use under concurrency.
+- Email challenges are hashed, expiring, and single-use under concurrency. Each
+  is compared at most `EmailVerificationCodeMaxAttempts` (5) times across all
+  clients and replicas, an attempt being spent before the comparison; issuing
+  a new code never resets the per-account failure count.
 - Passkey login ceremonies are single use; a replayed session or a
   non-advancing non-zero signature counter is rejected.
 - Only credential rejections count toward the Turnstile failure threshold;
@@ -43,15 +46,21 @@
 - The adaptive-authentication client key comes from the single client identity
   policy (`library/clientip`). Forwarding headers are honored only from
   configured trusted proxies, so a caller cannot choose its own risk key.
-- Credential failures also count per account across all clients. Two keys
-  count them: the folded spelling, which is case-, accent- and
-  width-insensitive, and the store identity the credential check revealed. In
-  both cases in-flight attempts count at admission.
-- An account over its threshold is challenged from any address, but only where
-  a challenge can be presented: an entry point that accepts a token, on a host
-  whose Turnstile pair has a widget key. Elsewhere only the client signal
-  applies. The account signal never locks out. Account keys are keyed hashes in
-  a bounded table that never evicts an account at its threshold.
+- Credential failures also count per account across all clients, including
+  wrong registration codes against the email being registered. Two keys count
+  them: the folded spelling, which is case-, accent- and width-insensitive, and
+  the store identity the credential check revealed. In both cases in-flight
+  attempts count at admission.
+- The store identity is authoritative. The fold may group distinct store
+  accounts under one spelling; a success then clears only the authenticated
+  identity and evidence provably its own (same identity, or identity-less
+  failures sent under the same exact spelling), never the evidence of another
+  account sharing the spelling.
+- An account over its threshold is challenged from any address on every login
+  and registration entry point; Turnstile pairs must be complete, so a
+  challenge can always be presented. The account signal never locks out.
+  Account keys are keyed hashes in a bounded, per-process table that never
+  evicts an account at its threshold.
 - The request host may select which configured Turnstile pair applies but never
   disable Turnstile once any secret is configured. `X-Forwarded-Host` and
   `X-Forwarded-Proto` count only from trusted proxies.

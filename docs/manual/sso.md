@@ -434,6 +434,8 @@ Users can register from the SSO login page with:
 
 Registration starts by requesting a code with `UserRequestEmailCode` and purpose `register`. The server stores only a hashed code, sends the code through SMTP, and expires it after 30 minutes. `UserRegister` must include the code; successful registration consumes it.
 
+Only the newest live code of an account and purpose is accepted; a code that a racing request superseded is never compared. Each issued code is compared at most 5 times (`EmailVerificationCodeMaxAttempts`), counting wrong codes, the right code and concurrent submissions from every client and replica. The count is stored with the code. Once it runs out, `UserRegister` returns `invalid email verification code` even for the right code, and the user requests a new one. A new code starts its own count but does not reset the email's failure count in the [risk policy](#cloudflare-turnstile), so repeated guessing still escalates to a challenge. Codes stored before the count existed start at zero.
+
 New email registrations are active immediately and can sign in after registration succeeds.
 
 ### Email Code Login
@@ -442,8 +444,8 @@ Users can sign in with a one-time email verification code instead of a password.
 
 Server flow:
 
-1. `UserRequestEmailCode` with purpose `login` validates Turnstile when the client is high risk, creates a six-digit code for active existing users, and sends it through SMTP.
-2. The code is valid for 30 minutes.
+1. `UserRequestEmailCode` with purpose `login` validates Turnstile when the client or the account is high risk, creates a six-digit code for active existing users, and sends it through SMTP.
+2. The code is valid for 30 minutes and is compared at most 5 times, as for registration codes.
 3. `UserLoginWithEmailCode` validates Turnstile when required, consumes the code, and returns `sso_token`.
 
 The login code request returns a generic success message even when the account cannot use this flow, so clients should not use the response to infer account existence.
@@ -727,9 +729,14 @@ Global fallback:
 settings:
   web:
     turnstile:
-      site_key: YOUR_CLOUDFLARE_TURNSTILE_SITE_KEY # optional; without it no widget can render for this pair
+      # Set both keys or neither: startup rejects a pair with only one of them.
+      site_key: YOUR_CLOUDFLARE_TURNSTILE_SITE_KEY
       secret_key: YOUR_CLOUDFLARE_TURNSTILE_SECRET_KEY
 ```
+
+Every pair, global or per site, must be complete: the widget key renders the
+challenge and the secret verifies it, so one without the other could only
+refuse logins. Startup validation fails on a pair that sets only one key.
 
 Pair selection. The widget key and the secret always come from the same
 place, so a token from the widget the page renders verifies against the secret
@@ -755,8 +762,8 @@ authorizes all its subdomains; an unlisted host shows Turnstile error `110200`.
 
 Turnstile is enforced on:
 
-- Email registration code request through `UserRequestEmailCode` with purpose `register` when the client is high risk.
-- Email registration completion through `UserRegister` when the client is high risk.
+- Email registration code request through `UserRequestEmailCode` with purpose `register` when the client or the email is high risk.
+- Email registration completion through `UserRegister` when the client or the email is high risk.
 - Password login through `UserLogin` when the client or the account is high risk.
 - Email-code request and login through `UserRequestEmailCode` with purpose `login` and `UserLoginWithEmailCode` when the client or the account is high risk.
 - GitHub OAuth start through `UserGithubOAuthStart`.
@@ -776,16 +783,19 @@ Risk policy:
   from trusted proxies, and IPv6 clients are grouped by /64.
 - An account is high risk after `account_failure_threshold` credential failures
   within `failure_window_seconds`, counted across every client. The threshold
-  defaults to `failure_threshold`. Failures count from every flow that names an
-  account:
+  defaults to `failure_threshold`. Failures count from every flow that checks a
+  guessable credential for an account:
   - `UserLogin`, including the TOTP step;
   - `UserLoginWithEmailCode`;
-  - `UserRequestEmailCode` with purpose `login` names the account but has no
-    credential check.
+  - `UserRegister`, where a wrong, expired or exhausted registration code counts
+    against the email being registered. Password-policy and storage errors do
+    not count.
 
-  Rotating client addresses therefore cannot keep an attacked account below the
-  threshold. Registration, GitHub OAuth start and passkey start name no account
-  and are keyed by client only.
+  `UserRequestEmailCode` (both purposes) names the account and is challenged
+  while it is high risk, but has no credential check, so requesting a new code
+  never resets the count. Rotating client addresses therefore cannot keep an
+  attacked account or email below the threshold. GitHub OAuth start and passkey
+  start name no account and are keyed by client only.
 - Requests that are admitted but whose credential check has not finished count
   toward the account threshold. Concurrent guesses therefore cannot all slip in
   before the first failure is recorded. A flood of concurrent legitimate logins
@@ -801,10 +811,28 @@ Risk policy:
     resolves to (wrong password, wrong TOTP, inactive account), the failure also
     counts against that account's identity: the OneAPI user ID or MongoDB
     document ID. A username and an email of one OneAPI user then share a budget.
-  
+    A failure that reveals no identity (a wrong email code is rejected before
+    the account is loaded) counts against every identity the spelling links.
+
   The identity comes from the credential check that already runs, so there is
   no extra lookup. Clients always see the same `invalid credentials` error, so
   existence is not revealed beyond what the challenge behavior itself implies.
+
+  The fold may group spellings that a store keeps as distinct accounts. MongoDB
+  compares lower-cased accounts exactly, so `alice@example.test` and
+  `alicé@example.test` can be two users that share one spelling key. The store
+  identity is therefore authoritative. A spelling links every identity it
+  resolved to (up to four), and admission checks all of them. A sign-in clears
+  only that identity and the spellings whose evidence is provably its own. A
+  spelling keeps its failures until they expire when any of these holds:
+  - it links another identity;
+  - it holds identity-less failures (wrong email or registration codes) sent
+    under a different exact spelling, compared trimmed and lower-cased;
+  - it overflowed its bounds.
+
+  Signing in to one account thus never lowers enforcement on a colliding one.
+  The cost is that the owner of the colliding account may see a challenge
+  while the other is under attack.
 - Every enabled credential login applies the account signal. Turnstile site keys
   and secrets must be configured as complete pairs; startup rejects partial
   pairs, including nondefault sites. Pairless alias hosts may use a configured
@@ -812,8 +840,10 @@ Risk policy:
   not with a challenge the frontend cannot render.
 - The policy only ever asks for a Turnstile challenge. It never locks an account
   out. Once the challenge is solved, the request proceeds.
-- A fully successful sign-in resets the failure counts of that client, that
-  account identity and every known spelling of that identity. Concurrent in-flight reservations remain intact; a later failure counts again.
+- A fully successful sign-in or registration resets the failure counts of that
+  client, that account identity and every spelling that links only that
+  identity. Concurrent in-flight reservations remain intact; a later failure
+  counts again.
 - Only rejections caused by the submitted credentials count as failures. A
   database or signing outage returns `login_unavailable` and never counts,
   against either the client or the account. Its in-flight reservation is still
@@ -833,7 +863,12 @@ Risk policy:
 - A supplied token that Cloudflare does not accept returns `turnstile_failed`.
   The client must show a fresh challenge. It is never reported as invalid
   credentials.
-- The tracker is in memory and bounded:
+- The tracker is in memory, per process. With several replicas each keeps its
+  own budgets, so an attacker spread across replicas gets each replica's
+  threshold. Run one replica for the auth endpoints, or route them to one
+  instance, until a shared store is introduced. The per-code email attempt cap
+  is stored with the code and applies across replicas regardless.
+- The tracker is bounded:
   - at most `max_tracked_clients` (default 10000) clients and
     `max_tracked_accounts` (default 10000) account records (spellings and
     identities);

@@ -180,9 +180,8 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 	if err != nil {
 		return errors.Wrap(err, "load client identity policy")
 	}
-	if identityPolicy.TrustsEveryPeer() {
-		log.Logger.Warn("client identity policy trusts every peer, so any caller can choose its client address",
-			identityPolicy.LogFields()...)
+	if warning := identityPolicy.StartupWarning(); warning != "" {
+		log.Logger.Warn(warning, identityPolicy.LogFields()...)
 	} else {
 		log.Logger.Info("configured client identity policy", identityPolicy.LogFields()...)
 	}

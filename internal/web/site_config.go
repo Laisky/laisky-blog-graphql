@@ -1,7 +1,6 @@
 package web
 
 import (
-	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -130,9 +129,9 @@ func buildPathIndex(sites []SiteConfig) []sitePathMatch {
 // loadSiteConfig loads a single site configuration from settings.
 func loadSiteConfig(logger logSDK.Logger, key string, prefix urlPrefixConfig) SiteConfig {
 	baseKey := "settings.web.sites." + key
-	hosts := normalizeHostList(gconfig.Shared.GetStringSlice(baseKey + ".hosts"))
+	hosts := clientip.NormalizeHosts(gconfig.Shared.GetStringSlice(baseKey + ".hosts"))
 	if len(hosts) == 0 {
-		host := normalizeHost(gconfig.Shared.GetString(baseKey + ".host"))
+		host := clientip.NormalizeHost(gconfig.Shared.GetString(baseKey + ".host"))
 		if host != "" {
 			hosts = []string{host}
 		}
@@ -299,7 +298,7 @@ func withTurnstileSiteKey(site SiteConfig, r *http.Request) SiteConfig {
 // X-Forwarded-Host counts only when a trusted proxy reported it (see
 // clientip.RequestHost); otherwise the Host header is used.
 func requestHost(r *http.Request) string {
-	return normalizeHost(clientip.RequestHost(r))
+	return clientip.RequestHostname(r)
 }
 
 // requestPathFromReferer extracts the path from the Referer header when available.
@@ -319,39 +318,4 @@ func requestPathFromReferer(r *http.Request) string {
 	}
 
 	return parsed.Path
-}
-
-// normalizeHostList normalizes hostnames and drops empty values.
-func normalizeHostList(hosts []string) []string {
-	result := make([]string, 0, len(hosts))
-	for _, host := range hosts {
-		normalized := normalizeHost(host)
-		if normalized == "" {
-			continue
-		}
-		result = append(result, normalized)
-	}
-	return result
-}
-
-// normalizeHost lowercases a hostname and removes port or trailing dot suffixes.
-func normalizeHost(value string) string {
-	trimmed := strings.TrimSpace(strings.ToLower(value))
-	trimmed = strings.TrimSuffix(trimmed, ".")
-	if trimmed == "" {
-		return ""
-	}
-
-	host, _, err := net.SplitHostPort(trimmed)
-	if err == nil {
-		return strings.TrimSuffix(strings.ToLower(host), ".")
-	}
-
-	if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "]") {
-		withoutBrackets := strings.TrimPrefix(trimmed, "[")
-		withoutBrackets = strings.TrimSuffix(withoutBrackets, "]")
-		return strings.TrimSuffix(withoutBrackets, ".")
-	}
-
-	return trimmed
 }

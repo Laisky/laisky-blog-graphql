@@ -314,22 +314,18 @@ func (s *Blog) UserRegister(ctx context.Context,
 		return nil, errors.Wrap(err, "sanitize display name")
 	}
 	if s.oneapi != nil {
-		emailCode, err = sanitizeEmailVerificationCode(emailCode)
-		if err != nil {
-			return nil, errors.Wrap(err, "sanitize registration email code")
+		challenge, matchErr := s.matchEmailVerificationCode(ctx, account, model.EmailVerificationPurposeRegister, emailCode)
+		if matchErr != nil {
+			return nil, errors.Wrap(matchErr, "verify email code")
 		}
-		challenge, findErr := s.oneapi.FindValidEmailCode(ctx, account,
-			model.EmailVerificationPurposeRegister, gutils.Clock.GetUTCNow())
-		if findErr != nil {
-			return nil, errors.New("invalid email verification code")
-		}
-		expectedHash := hashEmailVerificationCode(account, model.EmailVerificationPurposeRegister, emailCode)
-		if !secureCompareString(challenge.CodeHash, expectedHash) {
-			return nil, errors.New("invalid email verification code")
-		}
-		user, createErr := s.oneapi.RegisterUserWithEmailCode(ctx, challenge.ID, expectedHash,
+		user, createErr := s.oneapi.RegisterUserWithEmailCode(ctx, challenge.oneAPIID, challenge.codeHash,
 			account, password, displayName)
 		if createErr != nil {
+			// The challenge was consumed by a concurrent submission of the
+			// same code between the match and this transaction.
+			if errors.Is(createErr, model.ErrInvalidCredentials) {
+				return nil, errors.Wrap(errInvalidEmailVerificationCode, "registration email code already used")
+			}
 			return nil, errors.Wrap(createErr, "create oneapi sso user")
 		}
 		s.logger.Info("insert new oneapi sso user", zap.String(fieldAccount, account))

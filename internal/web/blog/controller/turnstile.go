@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -99,7 +98,7 @@ func resolveTurnstileRequestHost(ctx context.Context) string {
 		return ""
 	}
 
-	return normalizeTurnstileHost(clientip.RequestHost(gctx.Request))
+	return clientip.RequestHostname(gctx.Request)
 }
 
 // resolveTurnstileClientIP returns the client IP sent to siteverify as remoteip.
@@ -113,9 +112,9 @@ func resolveTurnstileClientIP(ctx context.Context) string {
 // Parameters: siteBaseKey is the site config key prefix, requestHost is the normalized request host.
 // Returns: True when the host matches either `hosts` or `host` fields.
 func isTurnstileHostMatched(siteBaseKey string, requestHost string) bool {
-	hosts := normalizeTurnstileHostList(gconfig.Shared.GetStringSlice(siteBaseKey + ".hosts"))
+	hosts := clientip.NormalizeHosts(gconfig.Shared.GetStringSlice(siteBaseKey + ".hosts"))
 	if len(hosts) == 0 {
-		host := normalizeTurnstileHost(gconfig.Shared.GetString(siteBaseKey + ".host"))
+		host := clientip.NormalizeHost(gconfig.Shared.GetString(siteBaseKey + ".host"))
 		if host != "" {
 			hosts = []string{host}
 		}
@@ -128,48 +127,4 @@ func isTurnstileHostMatched(siteBaseKey string, requestHost string) bool {
 	}
 
 	return false
-}
-
-// normalizeTurnstileHostList normalizes hostnames and removes empty items.
-// Parameters: hosts is the configured host list.
-// Returns: A normalized host slice that can be used for comparisons.
-func normalizeTurnstileHostList(hosts []string) []string {
-	result := make([]string, 0, len(hosts))
-	for _, host := range hosts {
-		normalized := normalizeTurnstileHost(host)
-		if normalized == "" {
-			continue
-		}
-		result = append(result, normalized)
-	}
-
-	return result
-}
-
-// normalizeTurnstileHost normalizes hostname by trimming spaces, lowercasing, and dropping ports.
-// Parameters: rawHost is the input host value that may include port or trailing dot.
-// Returns: The normalized host string, or empty string when input is blank.
-func normalizeTurnstileHost(rawHost string) string {
-	trimmed := strings.TrimSpace(strings.ToLower(rawHost))
-	if trimmed == "" {
-		return ""
-	}
-
-	trimmed = strings.TrimSuffix(trimmed, ".")
-	if trimmed == "" {
-		return ""
-	}
-
-	host, _, err := net.SplitHostPort(trimmed)
-	if err != nil {
-		if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "]") {
-			withoutBrackets := strings.TrimPrefix(trimmed, "[")
-			withoutBrackets = strings.TrimSuffix(withoutBrackets, "]")
-			return strings.TrimSuffix(strings.ToLower(withoutBrackets), ".")
-		}
-
-		return trimmed
-	}
-
-	return strings.TrimSuffix(strings.ToLower(host), ".")
 }

@@ -27,6 +27,12 @@ func withAuthChallengeTracker(t *testing.T, tracker *authChallengeTracker) {
 	})
 }
 
+// recordFailureFor records a credential failure the store attributed to
+// identity (empty when it revealed none), with no admission-time links.
+func (t *authChallengeTracker) recordFailureFor(subject authRiskSubject, identity string) {
+	t.recordFailureLinked(subject, identity, nil)
+}
+
 // recordFailure records a credential failure that revealed no store identity.
 func (t *authChallengeTracker) recordFailure(subject authRiskSubject) {
 	t.recordFailureFor(subject, "")
@@ -48,7 +54,7 @@ func (t *authChallengeTracker) admitWithoutChallenge(subject authRiskSubject) bo
 // recordChallengePassed admits a request carrying a verified token and
 // immediately releases it, granting the allowance.
 func (t *authChallengeTracker) recordChallengePassed(subject authRiskSubject) {
-	t.release(t.admitVerified(subject, ""))
+	t.release(t.admitVerified(subject, nil))
 }
 
 // clientSubject returns a risk subject for a flow that names no account.

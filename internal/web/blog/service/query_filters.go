@@ -1,6 +1,10 @@
 package service
 
-import "go.mongodb.org/mongo-driver/bson/primitive"
+import (
+	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
 
 // Fixed BSON shapes keep caller data in scalar values, never query keys or
 // operators. Do not add omitempty: an empty identity must not become {}.
@@ -23,4 +27,25 @@ type userUIDFilter struct {
 type verificationIdentityFilter struct {
 	Account string `bson:"account"`
 	Purpose string `bson:"purpose"`
+}
+
+// liveEmailCodeFilter matches the unexpired email codes of an account and
+// purpose.
+type liveEmailCodeFilter struct {
+	Account   string          `bson:"account"`
+	Purpose   string          `bson:"purpose"`
+	ExpiresAt timeAfterFilter `bson:"expires_at"`
+}
+
+type timeAfterFilter struct {
+	After time.Time `bson:"$gt"`
+}
+
+// emailCodeAttemptUpdate spends one verification attempt.
+type emailCodeAttemptUpdate struct {
+	Inc emailCodeAttemptIncrement `bson:"$inc"`
+}
+
+type emailCodeAttemptIncrement struct {
+	Attempts int `bson:"attempts"`
 }

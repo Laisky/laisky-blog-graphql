@@ -138,7 +138,10 @@
       "TestPolicyTrustsEveryPeer",
       "TestGinTrustAgreesWithPolicy",
       "TestForwardedHostOnlyFromTrustedProxy",
-      "TestPolicyTrustsPeerMatchesGin"
+      "TestPolicyTrustsPeerMatchesGin",
+      "TestNormalizeHost",
+      "TestRequestHostnameIgnoresUntrustedForwardedHost",
+      "TestPolicyStartupWarning"
     ]
   },
   {
@@ -163,7 +166,20 @@
       "TestPasskeyFinishRevalidatesRedirect",
       "TestPrivateTargetsRequireDevelopmentIssuer",
       "TestBackslashOnlyAfterQueryOrFragment",
-      "TestGitHubStartChecksTheCompletingIssuer"
+      "TestGitHubStartChecksTheCompletingIssuer",
+      "TestAuthSuccessKeepsCollidingIdentityEnforced",
+      "TestAuthSuccessAfterAliasFlipKeepsCollidingIdentityEnforced",
+      "TestAuthSuccessOfOneCollidingIdentityKeepsTheOtherEnforced",
+      "TestAuthCollisionDoesNotGrantConcurrentFreeGuesses",
+      "TestAuthSuccessStillResetsAnUncontestedSpelling",
+      "TestSpellingIdentityLinksAreBounded",
+      "TestUnrevealedFailureCountsAgainstEveryLinkedIdentity",
+      "TestAuthSuccessIgnoresStaleIdentityIndex",
+      "TestRegistrationGateCountsCodeFailuresPerEmail",
+      "TestAccountFoldNeverSplitsAStoreAccount",
+      "TestAuthSuccessKeepsUnattributedFailuresOfCollidingSpelling",
+      "TestAuthSuccessClearsOwnUnattributedTypos",
+      "TestAuthLinkOverflowKeepsSpellingEvidence"
     ]
   },
   {
@@ -172,6 +188,20 @@
       "TestSharedRedirectVectors",
       "TestSharedRegistrationVectors",
       "TestSharedRegistryVectors"
+    ]
+  },
+  {
+    "package": "./internal/web/blog/service",
+    "tests": [
+      "TestOneAPIEmailCodeAttemptsAreCapped",
+      "TestOneAPIRegistrationCodeErrorsAreClassified"
+    ]
+  },
+  {
+    "package": "./internal/web/blog/oneapi",
+    "tests": [
+      "TestRepoEmailCodeAttemptReservationIsBounded",
+      "TestRepoPrepareKeepsExistingEmailCodesUsable"
     ]
   }
 ]
