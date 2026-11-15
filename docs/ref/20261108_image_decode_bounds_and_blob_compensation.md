@@ -131,3 +131,82 @@ and `docs/proposals/get_user_request_image_support.md` §3.9.
   unknown elements, so a read-modify-write can silently change other
   applications' rules; the configuration is now read raw and compared as an
   order-insensitive XML tree before any write.
+
+## Second review follow-ups (2026-11-15)
+
+### Abandoned PUTs and late writes
+
+- S3 never stores a partial object, but documents nothing about a request the
+  client abandoned and gives no bound on when such a write becomes visible.
+  Concurrent writes to one key are "latest timestamp wins", and the order in
+  which S3 receives them "cannot be predicted"; a DELETE sent while an earlier
+  PUT is unacknowledged is therefore concurrent with it —
+  https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html#ConsistencyModel,
+  https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html.
+- MinIO claims strict read-after-write consistency (on xfs/zfs/btrfs) and
+  documents nothing about abandoned PUTs either —
+  https://github.com/minio/minio/blob/master/docs/distributed/README.md.
+- minio-go v7 retries up to `MaxRetry = 10` attempts (200 ms–1 s jittered
+  backoff) for seekable bodies, on 408/429/499/5xx, S3 `RequestTimeout`,
+  `InternalError`, `SlowDown`, and transport errors while the caller's context
+  is alive (`retry.go`, `api.go`). Every abandoned attempt may still commit.
+- Consequence for this repository: compensation cannot treat a key as settled
+  after its DELETE succeeds. Every key whose PUT started gets an orphan claim
+  due after a 5-minute late-write window; later writes are the documented
+  residual window, backed by the lifecycle rule. Conditional writes
+  (`If-None-Match`) do not help: content-addressed keys must be overwritable.
+
+### Lifecycle rule IDs
+
+- A rule ID is at most 255 characters and identifies the rule; a
+  configuration holds at most 1,000 rules —
+  https://docs.aws.amazon.com/AmazonS3/latest/API/API_LifecycleRule.html.
+- MinIO (`internal/bucket/lifecycle`) rejects IDs over 255 bytes and duplicate
+  IDs ("Rule ID must be unique"), both as 400 `InvalidArgument`.
+- The earlier ID `mcp-images-<sanitized prefix>-<days>d` collided for prefixes
+  that sanitize alike (`mcp/images/`, `mcp:images/`) and exceeded 255 bytes for
+  long prefixes. IDs now embed a digest of the full prefix and are bounded;
+  ownership also requires the rule's filter prefix to equal the prefix.
+
+### Industry decode limits (re-checked)
+
+- Pillow: `MAX_IMAGE_PIXELS` = 89,478,485; above 2x it raises
+  `DecompressionBombError`, checked against the header in `Image.open()` —
+  https://pillow.readthedocs.io/en/stable/handbook/security.html.
+- sharp: `limitInputPixels` defaults to 268,402,689 (0x3FFF²) —
+  https://sharp.pixelplumbing.com/api-constructor.
+- libvips: no pixel-count limit; `VIPS_MAX_COORD` caps each dimension.
+- ImageMagick: limits are open by default; `policy.xml` accounts memory, map,
+  disk and area budgets, the example policy uses 512 MiB memory, 32 MP area,
+  8 KP width/height — https://imagemagick.org/security-policy/.
+- All but ImageMagick bound pixel counts, not memory. The 8192 x 8192
+  contract (67 MP) sits below Pillow's warning threshold; the per-format
+  estimator here is finer-grained, at the cost of tracking decoder changes,
+  which the allocation sweep test guards.
+
+### golang.org/x/image/webp (v0.46) allocations
+
+- `vp8.parseOtherPartitions` rejects a final partition of 16 MiB or more
+  (golang/go#10790) but then allocates the whole remaining declared chunk
+  before reading it, up to about 8 x 16 MiB, whatever the image dimensions.
+  A VP8 chunk longer than the file can never decode, so it is now rejected
+  before decoding; a valid one is charged its declared length.
+- An extended (VP8X) file reports `YCbCr` from `DecodeConfig` unless its alpha
+  flag is set, even when its image chunk is lossless VP8L.
+- VP8L decodes to NRGBA; inverse color indexing allocates a full 4 B/px copy
+  (the bundled input is 2 B/px at most when two pixels share a byte), and the
+  decoder accepts up to 2600 Huffman groups (`maxHuffImageSize`, added for
+  GO-2026-6222 / CVE-2026-46603, fixed in v0.45.0), whose tables can reach
+  ~193 MiB independent of the image size.
+- 2026 advisories for the package, all fixed at or before the pinned
+  v0.46.0: GO-2026-4961 (VP8X canvas panic, v0.42.0), GO-2026-5061 (VP8
+  dimension mismatch panic, v0.43.0), GO-2026-6222 (VP8L Huffman groups,
+  v0.45.0) — https://pkg.go.dev/search?q=golang.org%2Fx%2Fimage&m=vuln.
+
+### Go image/jpeg
+
+- `image/jpeg` handles an APP14 (Adobe) segment wherever it appears before
+  EOI, including between progressive scans, and converts three-component
+  planes to RGBA when the transform is "unknown" (`isRGB`) — Go source
+  `src/image/jpeg/reader.go`. A marker scan that stops at the first SOS misses
+  that 4 B/px copy.

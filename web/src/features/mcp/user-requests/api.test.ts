@@ -60,6 +60,24 @@ describe('createUserRequest', () => {
     expect(getPrivateErrorMessage(caught)).toBe('User requests operation failed');
     expect(caught!.attachmentIndex).toBe(2);
   });
+
+  it('reports image_busy as a typed, retryable error without an attachment index', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      statusText: 'Service Unavailable',
+      text: async () => JSON.stringify({ error: 'image_busy', message: 'image request queue is full: image service is busy, retry later' }),
+    });
+    let caught: ImageSubmissionError | null = null;
+    try {
+      await createUserRequest('sk-test', { content: 'x', files: [new File([''], 'a.png', { type: 'image/png' })] });
+    } catch (err) {
+      caught = err as ImageSubmissionError;
+    }
+    expect(caught).not.toBeNull();
+    expect(caught!.code).toBe('image_busy');
+    expect(caught!.attachmentIndex).toBeUndefined();
+  });
 });
 
 describe('getQuota', () => {

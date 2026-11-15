@@ -47,7 +47,16 @@ across uploads, the delete lease against late deletes, lost reservations,
 shared-object safety, expired-ref revival charging, the GC revival race, the
 claims-driven reconciler (crashed uploads, protected and unclaimed keys), the
 image create caps, and lifecycle rules preserved or left untouched on shared
-buckets. The estimator-versus-allocation sweep, the timing-based heavy/light
+buckets. After the second review of PR #94 they also cover one regression per
+claim-lifecycle invariant (GC batches that roll back together, the late-write
+re-check of an abandoned PUT, the last releaser of a shared key, re-pointed
+refs, admission before the body is read and the bounded wait queue), the
+decoder layouts the estimator undercounted (late PNG tRNS, Adobe APP14 after
+the first scan, lossless VP8L in VP8X, truncated VP8 chunks), and
+collision-free, bounded lifecycle rule IDs. The other new tests of those
+packages (GC batching, re-check of a later committed upload, concurrent
+reconciler deletes, streamed attachments, legacy rule IDs) run in
+`make test`. The estimator-versus-allocation sweep, the timing-based heavy/light
 admission test, the fuzz targets and the PostgreSQL tests (`TestPostgres*`
 with `MCP_USER_REQUESTS_TEST_POSTGRES_DSN` set to a disposable database; they
 cover the pool-starvation repros and REPEATABLE READ) stay deliberate

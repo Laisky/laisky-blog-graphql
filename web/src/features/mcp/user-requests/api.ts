@@ -245,6 +245,10 @@ export type ImageErrorCode =
   | 'decode_failed'
   | 'storage_unavailable'
   | 'feature_disabled'
+  // 503 with Retry-After: the image create cap, its bounded queue, or the
+  // decode budget is full, or a previous copy of the image is still being
+  // deleted. The request had no effect and may be retried.
+  | 'image_busy'
   | 'unknown';
 
 export interface ImageSubmissionError extends Error {

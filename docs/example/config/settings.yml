@@ -112,12 +112,16 @@ settings:
         # Maximum due claims one reconciler pass processes.
         # Optional. Default: 1000.
         orphan_sweep_batch: 1000
-        # Image create requests running at once in this process; more wait
-        # until their deadline and then get 503 image_busy.
+        # Image create requests running at once in this process. Up to as
+        # many more wait (then 503 image_busy at their deadline); requests
+        # beyond that queue get 503 image_busy at once. A request is admitted
+        # before its multipart body is read, so input memory is bounded by
+        # this value x (8 MiB + per_image_max_bytes).
         # Optional. Default: 8.
         max_concurrent_requests: 8
         # Image create requests of one user identity running at once in this
-        # process. Optional. Default: 2.
+        # process; up to as many more of that identity wait.
+        # Optional. Default: 2.
         max_concurrent_requests_per_user: 2
         url_fetch:
           # Allow plain http:// image_url inputs. Not recommended for

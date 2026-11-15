@@ -152,7 +152,11 @@
       "TestApplyOrientationMatchesLegacy",
       "TestApplyOrientationAllocatesOneCopy",
       "TestReadJPEGOrientationHostileIFD",
-      "TestParseTIFFLayout"
+      "TestParseTIFFLayout",
+      "TestPNGTransparencyBeyondChunkScanLimit",
+      "TestJPEGAdobeMarkerAfterFirstScan",
+      "TestWebPExtendedLosslessIsChargedAsLossless",
+      "TestWebPRejectsTruncatedVP8Chunk"
     ]
   },
   {
@@ -172,7 +176,13 @@
       "TestReconcileImageObjectsNeverTouchesUnclaimedObjects",
       "TestImageCreateLimiterCaps",
       "TestHandleCreateImageBusyWhenCreateCapIsFull",
-      "TestHandleCreateDecodeMemoryBudget"
+      "TestHandleCreateDecodeMemoryBudget",
+      "TestGCExpiredImageRefsRecordsOrphansAtomically",
+      "TestCreateWithImagesLatePutAfterCompensationIsReconciled",
+      "TestOverlappingFailedCreatesReleaseSharedKey",
+      "TestFinalizeRepointedRefRecordsOldKey",
+      "TestHandleCreateAdmitsBeforeReadingMultipartBody",
+      "TestImageCreateLimiterBoundsWaiters"
     ]
   },
   {
@@ -180,7 +190,9 @@
     "tests": [
       "TestEnsureLifecyclePreservesOtherRules",
       "TestEnsureLifecycleRefusesLossyRewrite",
-      "TestMinIODeleteIsIdempotent"
+      "TestMinIODeleteIsIdempotent",
+      "TestMergeLifecycleRuleSeparatesCollidingPrefixes",
+      "TestLifecycleRuleIDIsBounded"
     ]
   }
 ]
