@@ -27,7 +27,10 @@ type FakeStore struct {
 	// presignTTL records the TTL the most recent PresignedGet observed, so tests
 	// can assert on the requested lifetime.
 	lastPresignTTL time.Duration
-	// PutErr, GetErr, PresignErr, LifecycleErr, DeleteErr can be set by tests to force failures.
+	// PutErr, GetErr, PresignErr, LifecycleErr, DeleteErr can be set by tests
+	// to force failures. These fields and the hooks below may be assigned
+	// directly before the store is shared; once other goroutines may call it,
+	// change them through Inject.
 	PutErr       error
 	GetErr       error
 	PresignErr   error
@@ -59,6 +62,37 @@ type fakeObject struct {
 	UserMeta    map[string]string
 }
 
+// fakeInjections is a consistent snapshot of a FakeStore's injected failures
+// and hooks, read under f.mu.
+type fakeInjections struct {
+	putErr, getErr, presignErr, lifecycleErr, deleteErr, lifecycleCheckErr error
+	beforePut, afterPut, beforeDelete                                      func(ctx context.Context, key string) error
+	hostBase                                                               string
+	discardBodies                                                          bool
+}
+
+// Inject runs change with the store locked, so a test can change injected
+// failures and hooks while other goroutines (a lifecycle controller,
+// parallel uploads) are calling the store. change must not call f.
+func (f *FakeStore) Inject(change func(*FakeStore)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	change(f)
+}
+
+// injected snapshots the injected failures and hooks under f.mu. Hooks run
+// after the lock is released, so they may block or call the store.
+func (f *FakeStore) injected() fakeInjections {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return fakeInjections{
+		putErr: f.PutErr, getErr: f.GetErr, presignErr: f.PresignErr,
+		lifecycleErr: f.LifecycleErr, deleteErr: f.DeleteErr, lifecycleCheckErr: f.LifecycleCheckErr,
+		beforePut: f.BeforePut, afterPut: f.AfterPut, beforeDelete: f.BeforeDelete,
+		hostBase: f.HostBase, discardBodies: f.DiscardBodies,
+	}
+}
+
 // NewFakeStore constructs an empty FakeStore with a default host base suitable for tests.
 func NewFakeStore() *FakeStore {
 	return &FakeStore{
@@ -73,17 +107,18 @@ func (f *FakeStore) Put(ctx context.Context, key string, body io.Reader, size in
 	if err := ctx.Err(); err != nil {
 		return errors.Wrap(err, "fake put context canceled")
 	}
-	if f.PutErr != nil {
-		return f.PutErr
+	inj := f.injected()
+	if inj.putErr != nil {
+		return inj.putErr
 	}
-	if f.BeforePut != nil {
-		if err := f.BeforePut(ctx, key); err != nil {
+	if inj.beforePut != nil {
+		if err := inj.beforePut(ctx, key); err != nil {
 			return err
 		}
 	}
 	buf := new(bytes.Buffer)
 	var sink io.Writer = buf
-	if f.DiscardBodies {
+	if inj.discardBodies {
 		sink = io.Discard
 	}
 	if _, err := io.Copy(sink, body); err != nil {
@@ -102,8 +137,8 @@ func (f *FakeStore) Put(ctx context.Context, key string, body io.Reader, size in
 	f.puts = append(f.puts, key)
 	f.mu.Unlock()
 	_ = size
-	if f.AfterPut != nil {
-		return f.AfterPut(ctx, key)
+	if inj.afterPut != nil {
+		return inj.afterPut(ctx, key)
 	}
 	return nil
 }
@@ -113,11 +148,12 @@ func (f *FakeStore) Delete(ctx context.Context, key string) error {
 	if err := ctx.Err(); err != nil {
 		return errors.Wrap(err, "fake delete context canceled")
 	}
-	if f.DeleteErr != nil {
-		return f.DeleteErr
+	inj := f.injected()
+	if inj.deleteErr != nil {
+		return inj.deleteErr
 	}
-	if f.BeforeDelete != nil {
-		if err := f.BeforeDelete(ctx, key); err != nil {
+	if inj.beforeDelete != nil {
+		if err := inj.beforeDelete(ctx, key); err != nil {
 			return err
 		}
 	}
@@ -164,8 +200,8 @@ func (f *FakeStore) Get(ctx context.Context, key string) (io.ReadCloser, int64, 
 	if err := ctx.Err(); err != nil {
 		return nil, 0, errors.Wrap(err, "fake get context canceled")
 	}
-	if f.GetErr != nil {
-		return nil, 0, f.GetErr
+	if err := f.injected().getErr; err != nil {
+		return nil, 0, err
 	}
 	f.mu.Lock()
 	obj, ok := f.objects[key]
@@ -181,13 +217,14 @@ func (f *FakeStore) PresignedGet(ctx context.Context, key string, ttl time.Durat
 	if err := ctx.Err(); err != nil {
 		return "", errors.Wrap(err, "fake presign context canceled")
 	}
-	if f.PresignErr != nil {
-		return "", f.PresignErr
+	inj := f.injected()
+	if inj.presignErr != nil {
+		return "", inj.presignErr
 	}
 	f.mu.Lock()
 	f.lastPresignTTL = ttl
 	f.mu.Unlock()
-	return fmt.Sprintf("%s/%s?X-Amz-Expires=%d&X-Amz-Signature=fake", f.HostBase, key, int(ttl.Seconds())), nil
+	return fmt.Sprintf("%s/%s?X-Amz-Expires=%d&X-Amz-Signature=fake", inj.hostBase, key, int(ttl.Seconds())), nil
 }
 
 // EnsureLifecycle records the requested expiry so tests can assert on it. It
@@ -198,9 +235,10 @@ func (f *FakeStore) EnsureLifecycle(ctx context.Context, prefix string, days int
 	}
 	f.mu.Lock()
 	f.lifecycleCalls++
+	lifecycleErr := f.LifecycleErr
 	f.mu.Unlock()
-	if f.LifecycleErr != nil {
-		return false, f.LifecycleErr
+	if lifecycleErr != nil {
+		return false, lifecycleErr
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -220,9 +258,10 @@ func (f *FakeStore) CheckLifecycle(ctx context.Context, prefix string, days int)
 	}
 	f.mu.Lock()
 	f.lifecycleCalls++
+	checkErr := f.LifecycleCheckErr
 	f.mu.Unlock()
-	if f.LifecycleCheckErr != nil {
-		return f.LifecycleCheckErr
+	if checkErr != nil {
+		return checkErr
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()

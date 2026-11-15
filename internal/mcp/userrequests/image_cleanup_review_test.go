@@ -124,7 +124,9 @@ func TestLifecycleControllerReportsEachDistinctProblem(t *testing.T) {
 		return countMessages(observed, zapcore.ErrorLevel, "check image bucket lifecycle rule failed") == 1
 	}, 2*time.Second, time.Millisecond)
 
-	store.LifecycleCheckErr = nil // readable now, and the rule is missing
+	// readable now, and the rule is missing; the controller is running, so
+	// the change goes through Inject
+	store.Inject(func(s *storage.FakeStore) { s.LifecycleCheckErr = nil })
 	require.Eventually(t, func() bool {
 		return countMessages(observed, zapcore.ErrorLevel, "lifecycle_mode is verify") == 1
 	}, 2*time.Second, time.Millisecond)
