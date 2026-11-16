@@ -757,6 +757,94 @@ describe('UserRequestsPage preference restore', () => {
   });
 });
 
+describe('UserRequestsPage API key switch', () => {
+  const flush = (ms = 0) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  const useKey = (apiKey: string) => vi.mocked(useApiKey).mockReturnValue({ apiKey, isToolConsoleLocked: false, status: 'valid' });
+  const resultCards = () => screen.queryAllByText('Consumed');
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    useKey('key-a');
+    vi.mocked(api.listUserRequests).mockResolvedValue({ pending: [], consumed: [] });
+    vi.mocked(api.getPreferencesFromServer).mockResolvedValue({ return_mode: 'all' });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** typeSearch opens the history search and types a query, which starts the debounce. */
+  const typeSearch = async (query: string) => {
+    fireEvent.click(screen.getByRole('button', { name: /search history/i }));
+    await flush();
+    fireEvent.change(screen.getByRole('textbox', { name: /search directive history/i }), { target: { value: query } });
+  };
+
+  it('never sends a debounced search for the previous key after a direct switch', async () => {
+    vi.mocked(api.searchUserRequests).mockResolvedValue({ results: [makeRequest('a-secret')] } as Awaited<ReturnType<typeof api.searchUserRequests>>);
+    const view = render(<UserRequestsPage />);
+    await flush();
+    await typeSearch('deploy');
+
+    useKey('key-b');
+    view.rerender(<UserRequestsPage />);
+    await flush(1000);
+
+    expect(api.searchUserRequests).not.toHaveBeenCalledWith('key-a', expect.anything(), expect.anything());
+    expect(resultCards()).toHaveLength(0);
+  });
+
+  it('aborts an in-flight search for the previous key and never shows its results', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.searchUserRequests>>>();
+    vi.mocked(api.searchUserRequests).mockReturnValue(pending.promise);
+    const view = render(<UserRequestsPage />);
+    await flush();
+    await typeSearch('deploy');
+    await flush(250);
+    expect(api.searchUserRequests).toHaveBeenCalledWith('key-a', 'deploy', expect.anything());
+    const { signal } = vi.mocked(api.searchUserRequests).mock.calls[0][2] as { signal: AbortSignal };
+
+    useKey('key-b');
+    view.rerender(<UserRequestsPage />);
+    await flush();
+    expect(signal.aborted).toBe(true);
+
+    pending.resolve({ results: [makeRequest('a-secret')] } as Awaited<ReturnType<typeof api.searchUserRequests>>);
+    await flush();
+    expect(resultCards()).toHaveLength(0);
+  });
+
+  it('never appends a load-more page fetched for the previous key', async () => {
+    vi.mocked(api.listUserRequests).mockImplementation(async (key, options) => {
+      if (key === 'key-a' && !options?.cursor) {
+        return { pending: [], consumed: Array.from({ length: 10 }, (_, i) => makeRequest(`a${i}`)), total_consumed: 20 };
+      }
+      return { pending: [], consumed: [] };
+    });
+    const view = render(<UserRequestsPage />);
+    await flush();
+    expect(resultCards()).toHaveLength(10);
+
+    const more = deferred<Awaited<ReturnType<typeof api.listUserRequests>>>();
+    vi.mocked(api.listUserRequests).mockImplementation(async (key, options) => (key === 'key-a' && options?.cursor ? more.promise : { pending: [], consumed: [] }));
+    fireEvent.click(screen.getByRole('button', { name: /load more/i }));
+    await flush();
+
+    useKey('key-b');
+    view.rerender(<UserRequestsPage />);
+    await flush();
+    expect(resultCards()).toHaveLength(0);
+
+    more.resolve({ pending: [], consumed: [makeRequest('a10'), makeRequest('a11')], total_consumed: 20 });
+    await flush();
+    expect(resultCards()).toHaveLength(0);
+  });
+});
+
 describe('UserRequestsPage polling backoff', () => {
   const flush = (ms = 0) =>
     act(async () => {

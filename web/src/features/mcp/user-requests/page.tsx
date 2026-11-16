@@ -120,7 +120,20 @@ function loadDeleteOptionIndex(): number {
   return Number.isInteger(index) && index >= 0 && index < DELETE_OPTIONS.length ? index : 0;
 }
 
+/**
+ * UserRequestsPage scopes the console to one API-key session. Every list, search, hold,
+ * load-more and preference request in the page belongs to the key it was started for, so
+ * the page body remounts whenever the key (or its session) changes: a timer, request or
+ * response left over from the previous key can then only reach an unmounted component,
+ * and its in-flight requests are aborted by the body's own cleanup.
+ */
 export function UserRequestsPage() {
+  const { apiKey, sessionId } = useApiKey();
+  return <UserRequestsSession key={`${apiKey}:${sessionId}`} />;
+}
+
+/** UserRequestsSession is the user-requests console for the current API-key session. */
+function UserRequestsSession() {
   const { apiKey, isToolConsoleLocked } = useApiKey();
   const [pending, setPending] = useState<UserRequest[]>([]);
   const [consumed, setConsumed] = useState<UserRequest[]>([]);

@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { act, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
@@ -210,5 +211,76 @@ describe('AppLayout navigation semantics', () => {
     for (const href of consoleLinks) {
       expect(registered, `${href} has no entry in consolePages`).toContain(href);
     }
+  });
+});
+
+describe('AppLayout API key sessions', () => {
+  /** Counter is a console page with local state, standing in for any page's per-key work. */
+  function Counter() {
+    const [count, setCount] = useState(0);
+    return (
+      <button type="button" onClick={() => setCount((value) => value + 1)}>
+        clicked {count}
+      </button>
+    );
+  }
+
+  function mockKey(apiKey: string, sessionId: number, isToolConsoleLocked = false) {
+    vi.mocked(useToolsConfig).mockReturnValue({
+      ask_user: true,
+      extract_key_info: true,
+      file_io: true,
+      get_user_request: true,
+      memory: true,
+      web_fetch: true,
+      web_search: true,
+    });
+    vi.mocked(useApiKey).mockReturnValue({
+      apiKey,
+      disconnect: vi.fn(),
+      history: [],
+      isToolConsoleLocked,
+      keyEntries: [],
+      remainQuota: 300000,
+      removeFromHistory: vi.fn(),
+      sessionId,
+      setAliasForKey: vi.fn(),
+      setApiKey: vi.fn(),
+      status: isToolConsoleLocked ? 'validating' : 'valid',
+      switchApiKey: vi.fn(),
+      validateApiKey: vi.fn(),
+    });
+  }
+
+  const tree = () => (
+    <MemoryRouter initialEntries={['/']}>
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route index element={<Counter />} />
+        </Route>
+      </Routes>
+    </MemoryRouter>
+  );
+
+  it('remounts the console page for every key session but not for a lock change', () => {
+    mockKey('key-a', 1);
+    const view = render(tree());
+    act(() => screen.getByRole('button', { name: 'clicked 0' }).click());
+    expect(screen.getByRole('button', { name: 'clicked 1' })).toBeInTheDocument();
+
+    // Revalidating the same key locks the consoles for a moment; the page keeps its state.
+    mockKey('key-a', 1, true);
+    view.rerender(tree());
+    expect(screen.getByRole('button', { name: 'clicked 1' })).toBeInTheDocument();
+
+    // A different key, or a new session of the same key, starts the page over, so nothing
+    // a page started for the previous session can reach the new one.
+    mockKey('key-b', 2);
+    view.rerender(tree());
+    expect(screen.getByRole('button', { name: 'clicked 0' })).toBeInTheDocument();
+    act(() => screen.getByRole('button', { name: 'clicked 0' }).click());
+    mockKey('key-b', 3);
+    view.rerender(tree());
+    expect(screen.getByRole('button', { name: 'clicked 0' })).toBeInTheDocument();
   });
 });
