@@ -71,6 +71,9 @@ func loadRequestBodySettings(get func(string) any) requestBodySettings {
 		MCP: mcp.RequestBodyBudget{
 			MaxBytes:          configInt64(value("mcp_max_bytes"), mcp.DefaultMCPMaxBodyBytes),
 			AnonymousMaxBytes: configInt64(value("mcp_anonymous_max_bytes"), mcp.DefaultMCPAnonymousMaxBodyBytes),
+			// Unset (0) lets the transport derive it from mcp_max_bytes
+			// (mcp.DefaultMCPInflightBodyFactor × the cap, never below it).
+			MaxInflightBytes: configInt64(value("mcp_max_inflight_bytes"), 0),
 		},
 	}
 	if settings.MinBytesPerSecond <= 0 {

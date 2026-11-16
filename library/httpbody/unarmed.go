@@ -11,6 +11,10 @@ import (
 // one per entry and interval.
 const UnarmedWarnInterval = time.Minute
 
+// entryLabel is the metric label naming the transport or route class of a
+// body budget; its values come from a small fixed set, never from requests.
+const entryLabel = "entry"
+
 // unarmedDeadlines counts requests whose read deadline could not be armed.
 // Such a body is still capped in bytes, but nothing bounds how slowly it may
 // arrive, so a rising count means the slow-body protection is off on that
@@ -18,7 +22,7 @@ const UnarmedWarnInterval = time.Minute
 var unarmedDeadlines = prometheus.NewCounterVec(prometheus.CounterOpts{
 	Name: "http_request_body_read_deadline_unarmed_total",
 	Help: "Requests with a body whose read deadline could not be armed, by entry; only the byte cap bounds those bodies.",
-}, []string{"entry"})
+}, []string{entryLabel})
 
 func init() {
 	prometheus.MustRegister(unarmedDeadlines)

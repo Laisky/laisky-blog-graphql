@@ -104,16 +104,8 @@ func serveAnonymous(w http.ResponseWriter, r *http.Request, next http.Handler, a
 		return
 	}
 
-	body, err := bufferRequestBody(r)
-	switch {
-	case httpbody.IsTooLarge(err):
-		writeRequestTooLarge(w, httpbody.Limit(err))
-		return
-	case err != nil:
-		if logger != nil {
-			logger.Debug("anonymous mcp request body unreadable", zap.Error(err))
-		}
-		writeUnreadableBody(w)
+	body, ok := readBufferedBody(w, r, logger, "anonymous mcp request body unreadable")
+	if !ok {
 		return
 	}
 
@@ -129,8 +121,37 @@ func serveAnonymous(w http.ResponseWriter, r *http.Request, next http.Handler, a
 	next.ServeHTTP(w, r)
 }
 
-// bufferRequestBody reads the whole body, already bounded in size and time by
-// the transport budget, and replays it to the next handler.
+// readBufferedBody buffers r's body (bufferRequestBody) and answers the
+// request itself when that fails: 413 over the byte cap, 503 when the
+// transport's in-flight body budget is spent, 400 for anything else (a
+// stalled upload cut by the read deadline, a truncated body). It reports
+// whether the caller may continue with the returned body.
+func readBufferedBody(w http.ResponseWriter, r *http.Request, logger logSDK.Logger, unreadable string) ([]byte, bool) {
+	body, err := bufferRequestBody(r)
+	switch {
+	case err == nil:
+		return body, true
+	case httpbody.IsTooLarge(err):
+		writeRequestTooLarge(w, httpbody.Limit(err))
+	case httpbody.IsInflightExhausted(err):
+		if logger != nil {
+			logger.Debug("mcp request refused: in-flight body budget spent while reading", zap.Error(err))
+		}
+		writeTransportBusy(w)
+	default:
+		if logger != nil {
+			logger.Debug(unreadable, zap.Error(err))
+		}
+		writeUnreadableBody(w)
+	}
+	return nil, false
+}
+
+// bufferRequestBody reads the whole body, already bounded in size, time and
+// in-flight bytes by the transport budget, and replays it to the next
+// handler. The buffer grows with the bytes received (io.ReadAll), never to a
+// declared length up front, so memory follows what the client sent and the
+// in-flight charge, which counts bytes read, stays truthful.
 func bufferRequestBody(r *http.Request) ([]byte, error) {
 	if r.Body == nil || r.Body == http.NoBody {
 		return nil, nil
@@ -138,7 +159,7 @@ func bufferRequestBody(r *http.Request) ([]byte, error) {
 	source := r.Body
 	body, err := io.ReadAll(source)
 	if err != nil {
-		return nil, errors.Wrap(err, "read anonymous mcp request body")
+		return nil, errors.Wrap(err, "read mcp request body")
 	}
 	r.Body = &loggingReplayBody{ReadCloser: source, prefix: bytes.NewReader(body)}
 	return body, nil
@@ -192,49 +213,4 @@ func requireVerifiedToolCaller(next srv.ToolHandlerFunc) srv.ToolHandlerFunc {
 			zap.String("tool", boundedLogValue(request.Params.Name, maxLoggedMethodBytes)))
 		return mcp.NewToolResultError(authenticationRequiredDescription), nil
 	}
-}
-
-// serveVerified forwards a request whose credential the gate verified, except
-// a 2026-07-28 cancellation notification (mcp.MethodNotificationCancelled),
-// which is accepted (202) and dropped.
-//
-// The 2026-07-28 Streamable HTTP transport defines no client-to-server
-// notifications: a client cancels a request by closing its response stream,
-// which the SDK already turns into a canceled request context. The SDK
-// nevertheless still acts on a POSTed cancellation notification, keyed by the
-// request id alone because modern requests carry no session, so it would
-// abort whichever caller's in-flight request has that id. Legacy sessions keep
-// their cancellations: their keys include the credential-bound session id.
-func serveVerified(w http.ResponseWriter, r *http.Request, next http.Handler, logger logSDK.Logger) {
-	if r.Method != http.MethodPost || !mcp.IsModernProtocol(r.Header.Get(mcp.HeaderProtocolVersion)) {
-		next.ServeHTTP(w, r)
-		return
-	}
-
-	// The whole body is classified (already bounded in size and time by the
-	// transport budget): a method member placed after a large params value
-	// must not escape the check.
-	body, err := bufferRequestBody(r)
-	switch {
-	case httpbody.IsTooLarge(err):
-		writeRequestTooLarge(w, httpbody.Limit(err))
-		return
-	case err != nil:
-		if logger != nil {
-			logger.Debug("mcp request body unreadable", zap.Error(err))
-		}
-		writeUnreadableBody(w)
-		return
-	}
-
-	var routing jsonRPCRouting
-	if json.Unmarshal(body, &routing) == nil && routing.Method == mcp.MethodNotificationCancelled {
-		if logger != nil {
-			logger.Debug("ignored a 2026-07-28 cancellation notification; modern requests are canceled by closing their stream",
-				zap.String("jsonrpc_method", string(routing.Method)))
-		}
-		w.WriteHeader(http.StatusAccepted)
-		return
-	}
-	next.ServeHTTP(w, r)
 }

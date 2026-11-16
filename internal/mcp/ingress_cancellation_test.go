@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,10 +32,18 @@ type cancelProbe struct {
 
 // newCancelProbeServer registers the blocking probe tool on a server that
 // accepts the victim's and the attacker's keys.
-func newCancelProbeServer(t *testing.T) (*Server, *cancelProbe) {
+func newCancelProbeServer(t *testing.T, options ...ServerOption) (*Server, *cancelProbe) {
+	t.Helper()
+	s, probe, _ := newCancelProbeServerWithFixture(t, options...)
+	return s, probe
+}
+
+// newCancelProbeServerWithFixture is newCancelProbeServer that also returns
+// the one-api fixture, whose call counter shows whether a request was validated.
+func newCancelProbeServerWithFixture(t *testing.T, options ...ServerOption) (*Server, *cancelProbe, *oneAPITokenFixture) {
 	t.Helper()
 	fixture := newOneAPITokenFixture(t, cancelVictimKey, cancelAttackerKey)
-	s, _ := newIngressTestServer(t, fixture)
+	s, _ := newIngressTestServer(t, fixture, options...)
 	probe := &cancelProbe{started: make(chan struct{}, 1), canceled: make(chan struct{}, 1), release: make(chan struct{})}
 	s.sdk.AddTool(mcpgo.NewTool("test_cancel_probe"), func(ctx context.Context, _ mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 		probe.started <- struct{}{}
@@ -46,7 +55,7 @@ func newCancelProbeServer(t *testing.T) (*Server, *cancelProbe) {
 			return mcpgo.NewToolResultText("probe finished"), nil
 		}
 	})
-	return s, probe
+	return s, probe, fixture
 }
 
 // modernProbeCall builds the victim's modern stateless tools/call with id 7.
@@ -255,4 +264,84 @@ func TestIngressModernRequestIsCanceledByClosingItsStream(t *testing.T) {
 		t.Fatal("closing the stream must cancel the request")
 	}
 	require.ErrorIs(t, <-done, context.Canceled)
+}
+
+// TestModernCancellationPolicyClassifiesLikeTheSDK pins the isolated policy:
+// it decodes a body exactly as the SDK's Streamable HTTP transport does, so a
+// cancellation cannot hide from it behind an encoding/json quirk, and nothing
+// else is mistaken for one.
+func TestModernCancellationPolicyClassifiesLikeTheSDK(t *testing.T) {
+	padding := strings.Repeat("x", 256<<10)
+	for name, tc := range map[string]struct {
+		body   string
+		cancel bool
+	}{
+		"plain cancellation":          {`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}`, true},
+		"case-folded key":             {`{"jsonrpc":"2.0","METHOD":"notifications/cancelled"}`, true},
+		"mixed-case key":              {`{"jsonrpc":"2.0","Method":"notifications/cancelled"}`, true},
+		"escaped key":                 {`{"jsonrpc":"2.0","\u006dethod":"notifications/cancelled"}`, true},
+		"escaped value":               {`{"jsonrpc":"2.0","method":"notifications\/cancelled"}`, true},
+		"duplicate key, cancel last":  {`{"jsonrpc":"2.0","id":1,"method":"tools/call","method":"notifications/cancelled"}`, true},
+		"duplicate key, cancel first": {`{"jsonrpc":"2.0","id":1,"method":"notifications/cancelled","method":"tools/call"}`, false},
+		"method after large params":   {`{"jsonrpc":"2.0","params":{"pad":"` + padding + `"},"method":"notifications/cancelled"}`, true},
+		"with a null id":              {`{"jsonrpc":"2.0","id":null,"method":"notifications/cancelled"}`, true},
+		"trailing whitespace":         {`{"jsonrpc":"2.0","method":"notifications/cancelled"}` + "  \n", true},
+		"other notification":          {`{"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":1}}`, false},
+		"tool call":                   {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"x"}}`, false},
+		"batch array":                 {`[{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":7}}]`, false},
+		"non-string method":           {`{"jsonrpc":"2.0","method":7}`, false},
+		"invalid json":                {`{"method":"notifications/cancelled"`, false},
+		"empty body":                  {``, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.cancel, isModernCancellation([]byte(tc.body)))
+		})
+	}
+
+	for name, tc := range map[string]struct {
+		method   string
+		version  string
+		classify bool
+	}{
+		"modern post":       {http.MethodPost, mcpgo.ProtocolVersion20260728, true},
+		"legacy post":       {http.MethodPost, mcpgo.ProtocolVersion20250618, false},
+		"no version header": {http.MethodPost, "", false},
+		"modern get":        {http.MethodGet, mcpgo.ProtocolVersion20260728, false},
+		"modern delete":     {http.MethodDelete, mcpgo.ProtocolVersion20260728, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(tc.method, "/mcp/", nil)
+			if tc.version != "" {
+				request.Header.Set(mcpgo.HeaderProtocolVersion, tc.version)
+			}
+			require.Equal(t, tc.classify, needsCancellationClassification(request))
+		})
+	}
+}
+
+// TestIngressModernBatchCancellationNeverReachesARequest covers the one shape
+// the policy leaves to the SDK: a batch array is not classified, reaches the
+// SDK unchanged, and the SDK refuses it as a parse error without canceling
+// the victim's in-flight request.
+func TestIngressModernBatchCancellationNeverReachesARequest(t *testing.T) {
+	s, probe := newCancelProbeServer(t)
+	handler := s.Handler()
+	victim, done := runVictim(t, handler, probe, modernProbeCall(t, "Bearer "+cancelVictimKey))
+
+	batch := modernPost([]byte(`[{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":7}}]`),
+		"notifications/cancelled", "Bearer "+cancelAttackerKey)
+	attack := httptest.NewRecorder()
+	handler.ServeHTTP(attack, batch)
+	require.NotEqual(t, http.StatusAccepted, attack.Code, "a batch is not an accepted notification")
+	require.Contains(t, attack.Body.String(), "not valid json", "the SDK refuses a batch as a parse error")
+
+	select {
+	case <-probe.canceled:
+		t.Fatal("a batched modern cancellation aborted an in-flight request")
+	case <-time.After(150 * time.Millisecond):
+	}
+	close(probe.release)
+	<-done
+	require.Equal(t, http.StatusOK, victim.Code, victim.Body.String())
+	require.Contains(t, victim.Body.String(), "probe finished")
 }

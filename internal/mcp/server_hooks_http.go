@@ -17,6 +17,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	"github.com/Laisky/laisky-blog-graphql/library/clientip"
+	"github.com/Laisky/laisky-blog-graphql/library/httpbody"
 	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -110,7 +111,13 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		startAt := time.Now()
 		body, truncated, err := readAndRestoreRequestBody(r, httpLogBodyLimit)
-		if err != nil {
+		switch {
+		case err == nil:
+		case httpbody.IsTooLarge(err), httpbody.IsTimeout(err), httpbody.IsInflightExhausted(err):
+			// The body budget refused the client's body; the handler answers
+			// it (413/408/503). A flood must not become one ERROR per request.
+			logger.Debug("read request body refused by the body budget", zap.Error(err))
+		default:
 			logger.Error("read request body", zap.Error(err))
 		}
 		sessionID := strings.TrimSpace(r.Header.Get(srv.HeaderKeySessionID))

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -24,9 +25,15 @@ import (
 // rate. Bytes delivered faster bank at most DefaultBodyMaxIdle of read time,
 // so a burst cannot fund a later stall, and the whole read is capped
 // absolutely.
+//
+// The in-flight budget bounds the body bytes all in-flight MCP requests hold
+// together (DefaultMCPInflightBodyFactor times the per-request cap unless
+// configured): the per-request cap alone does not stop many concurrent
+// requests from each buffering a large body.
 const (
 	DefaultMCPMaxBodyBytes          int64 = 32 << 20
 	DefaultMCPAnonymousMaxBodyBytes int64 = 1 << 20
+	DefaultMCPInflightBodyFactor    int64 = 4
 	DefaultBodyMinBytesPerSecond          = 4096
 	DefaultBodyReadGrace                  = 10 * time.Second
 	DefaultBodyMaxIdle                    = 30 * time.Second
@@ -39,6 +46,11 @@ type RequestBodyBudget struct {
 	MaxBytes int64
 	// AnonymousMaxBytes caps a request without any credential.
 	AnonymousMaxBytes int64
+	// MaxInflightBytes bounds the body bytes held by all in-flight requests
+	// of the transport together (httpbody.Inflight). Unset uses
+	// DefaultMCPInflightBodyFactor × MaxBytes; it is never below MaxBytes, so
+	// one body at the cap always fits an idle transport.
+	MaxInflightBytes int64
 	// MinBytesPerSecond is the delivery rate a body must sustain after ReadGrace.
 	MinBytesPerSecond float64
 	// ReadGrace is the time allowed before the first bytes must arrive.
@@ -55,6 +67,7 @@ func DefaultRequestBodyBudget() RequestBodyBudget {
 	return RequestBodyBudget{
 		MaxBytes:          DefaultMCPMaxBodyBytes,
 		AnonymousMaxBytes: DefaultMCPAnonymousMaxBodyBytes,
+		MaxInflightBytes:  DefaultMCPInflightBodyFactor * DefaultMCPMaxBodyBytes,
 		MinBytesPerSecond: DefaultBodyMinBytesPerSecond,
 		ReadGrace:         DefaultBodyReadGrace,
 		MaxIdle:           DefaultBodyMaxIdle,
@@ -77,6 +90,13 @@ func (b RequestBodyBudget) normalized() RequestBodyBudget {
 		b.AnonymousMaxBytes = defaults.AnonymousMaxBytes
 	}
 	b.AnonymousMaxBytes = min(b.AnonymousMaxBytes, b.MaxBytes)
+	if b.MaxInflightBytes <= 0 {
+		b.MaxInflightBytes = b.MaxBytes
+		if b.MaxBytes <= math.MaxInt64/DefaultMCPInflightBodyFactor {
+			b.MaxInflightBytes = DefaultMCPInflightBodyFactor * b.MaxBytes
+		}
+	}
+	b.MaxInflightBytes = max(b.MaxInflightBytes, b.MaxBytes)
 	if b.MinBytesPerSecond <= 0 {
 		b.MinBytesPerSecond = defaults.MinBytesPerSecond
 	}
@@ -119,18 +139,30 @@ const bodyDeadlineEntryMCP = "mcp"
 // declared over-budget body before any byte is read, caps streamed bodies, and
 // bounds the time spent reading them. It precedes the request logger because
 // the logger reads a body preview.
+//
+// It also charges every body to the transport's in-flight budget, because
+// every POST body is held in memory: the MCP SDK io.ReadAll()s each one, and
+// serveVerified and serveAnonymous buffer theirs for classification first.
+// A body is charged the bytes it actually delivers, as they are read, never
+// a declared length that has not arrived, so slow senders cannot reserve
+// capacity (this wrapper runs before authentication). A read that does not
+// fit fails: our buffering answers 503, while the SDK, which reads legacy
+// POSTs directly, answers its own JSON-RPC parse error. The charge is
+// released when the request's handler returns.
 func withRequestBodyBudget(next http.Handler, budget RequestBodyBudget, logger logSDK.Logger) http.Handler {
 	if next == nil {
 		return nil
 	}
 	budget = budget.normalized()
 	unarmed := httpbody.NewUnarmedReporter(httpbody.UnarmedWarnInterval)
+	inflight := httpbody.NewInflight(bodyDeadlineEntryMCP, budget.MaxInflightBytes, budget.MaxBytes)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		result, err := httpbody.Enforce(w, r, budget.httpbody())
 		if err != nil {
 			writeRequestTooLarge(w, httpbody.Limit(err))
 			return
 		}
+		defer inflight.Admit(r)()
 		if result.DeadlineErr != nil {
 			// Only the byte cap bounds this body now: count it and say so.
 			warn, suppressed := unarmed.Record(bodyDeadlineEntryMCP, time.Now())
@@ -231,6 +263,23 @@ func writeValidationUnavailable(w http.ResponseWriter) {
 	writeIngressJSON(w, http.StatusServiceUnavailable, ingressError{
 		Error:       "temporarily_unavailable",
 		Description: "API key validation is temporarily unavailable; retry shortly.",
+	})
+}
+
+// transportBusyRetryAfterSeconds is the Retry-After hint of a request refused
+// because the in-flight body budget was spent; held bodies drain quickly.
+const transportBusyRetryAfterSeconds = 2
+
+// writeTransportBusy answers 503 for a body the transport's in-flight budget
+// could not hold while it was read, and closes the connection instead of
+// draining the rest of the body.
+func writeTransportBusy(w http.ResponseWriter) {
+	w.Header().Set("Connection", "close")
+	w.Header().Set("Retry-After", strconv.Itoa(transportBusyRetryAfterSeconds))
+	w.Header().Set("Cache-Control", "no-store")
+	writeIngressJSON(w, http.StatusServiceUnavailable, ingressError{
+		Error:       "temporarily_unavailable",
+		Description: "The MCP transport is holding too many request bodies right now; retry shortly.",
 	})
 }
 
