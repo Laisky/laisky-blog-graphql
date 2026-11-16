@@ -29,7 +29,9 @@ var (
 // Context carries canonical MCP authorization metadata derived from API keys.
 //
 // Only an Authenticator produces a verified Context. FromContext ignores any
-// other value, so no request path can derive a tenant from an unvalidated bearer.
+// other value, so no request path can derive a tenant from an unvalidated
+// bearer. Verification seals the identity fields: a copy whose fields are
+// changed afterwards (pointed at another tenant) is no longer verified.
 type Context struct {
 	RawHeader    string
 	APIKey       string
@@ -38,13 +40,26 @@ type Context struct {
 	UserID       string
 	UserIdentity string
 	AIIdentity   string
-	// verified is set only by Authenticator.Authenticate.
+	// verified and sealed are set only by Authenticator.Authenticate; sealed
+	// is the identity the authority accepted.
 	verified bool
+	sealed   contextIdentity
 }
 
-// Verified reports whether the credential authority accepted this context's API key.
+// contextIdentity is the comparable identity of a Context.
+type contextIdentity struct {
+	rawHeader, apiKey, apiKeyHash, keySuffix, userID, userIdentity, aiIdentity string
+}
+
+// identity returns the current identity fields of a.
+func (a *Context) identity() contextIdentity {
+	return contextIdentity{a.RawHeader, a.APIKey, a.APIKeyHash, a.KeySuffix, a.UserID, a.UserIdentity, a.AIIdentity}
+}
+
+// Verified reports whether the credential authority accepted this context's
+// API key and its identity fields are still the ones it accepted.
 func (a *Context) Verified() bool {
-	return a != nil && a.verified
+	return a != nil && a.verified && a.sealed == a.identity()
 }
 
 // parseAuthorizationHeader parses an Authorization header and derives the

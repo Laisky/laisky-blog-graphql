@@ -82,5 +82,7 @@ func (a *Authenticator) BeginAuthorityCall(baseURL, apiKey string) func(accepted
 // (verdictStore.refresh), under the verdict lock, so it can never resurrect
 // a key whose rejection was recorded in the meantime.
 func (a *Authenticator) refreshTrust(key string, acceptedAt time.Time) {
+	// one-api answered this consume with a verdict, so it is not down.
+	a.outage.recovered()
 	a.verdicts.refresh(key, acceptedAt)
 }

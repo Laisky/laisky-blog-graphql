@@ -43,8 +43,8 @@ type CallLedger struct {
 }
 
 // NewCallLedger returns a ledger over window, at one-second resolution. One
-// slot more than the window covers one-api's whole-second truncation, under
-// which a call made window+0.9s ago still counts.
+// slot more than the window keeps the count conservative against one-api's
+// whole-second comparison of call timestamps.
 func NewCallLedger(window time.Duration) *CallLedger {
 	slots := max(int(window/time.Second), 1) + 1
 	return &CallLedger{seconds: make([]int64, slots), counts: make([]int, slots)}

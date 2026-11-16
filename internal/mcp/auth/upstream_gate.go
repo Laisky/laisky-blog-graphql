@@ -60,6 +60,11 @@ type GatewaySource struct {
 // which it shares with every other one-api REST call of the process (the
 // consumes, recorded in oneapi.CallLedger).
 type UpstreamGate struct {
+	// charging serializes charge: golang.org/x/time/rate cannot fully
+	// refund a canceled reservation once a later reservation landed, so two
+	// refused calls interleaving reserve and cancel would leave a bucket in
+	// debt. Holding it makes every refused charge refund exactly.
+	charging     sync.Mutex
 	now          func() time.Time
 	sources      *sourceBudgets
 	global       *rate.Limiter
@@ -138,6 +143,8 @@ func (g *UpstreamGate) refusal(source sourceBudget, class callClass, now time.Ti
 // call in the one-api window. It returns the refusing budget, or "" once the
 // call is charged. A refused call keeps every token it had reserved.
 func (g *UpstreamGate) charge(source sourceBudget, class callClass, now time.Time) string {
+	g.charging.Lock()
+	defer g.charging.Unlock()
 	if class == callRevalidation && g.revalidation != nil {
 		if reservation, ok := reserveNow(g.revalidation, now); ok {
 			if g.ledger.TryRecord(now, oneapi.RouteTokenBalance, g.windowLimit) {

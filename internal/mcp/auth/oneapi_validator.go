@@ -18,6 +18,14 @@ import (
 // used as the credential authority. It has no billing side effect.
 const OneAPITokenBalancePath = "/api/token/balance" //nolint:gosec // G101: a URL path, not a credential
 
+// ErrKeySpecificNoVerdict marks an answer without a verdict that concerns
+// only the presented key (one-api's 500 for a failed owner lookup, or a 200
+// {"success": false} controller failure). Like every unavailable verdict it
+// may serve that key from its stale grace, but it never opens the
+// process-wide outage window, so a caller holding such a token cannot
+// extend other keys' lives. It also matches ErrValidationUnavailable.
+var ErrKeySpecificNoVerdict = errors.New("one-api gave no verdict for this api key")
+
 // maxValidationResponseBytes bounds how much of an authority response is read.
 const maxValidationResponseBytes = 64 << 10
 
@@ -60,6 +68,11 @@ func NewOneAPITokenValidator(baseURL string, client *http.Client) (*OneAPITokenV
 	parsed, err := parseAuthorityURL(baseURL)
 	if err != nil {
 		return nil, errors.Wrap(err, "one-api base url")
+	}
+	if parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
+		// The base is a prefix of /api routes; a query or fragment would end
+		// up in front of the route and send every validation elsewhere.
+		return nil, errors.Errorf("one-api base url must not carry a query or fragment, got %q", parsed.Redacted())
 	}
 	return &OneAPITokenValidator{
 		endpoint: strings.TrimSuffix(parsed.String(), "/") + OneAPITokenBalancePath,
@@ -134,6 +147,10 @@ func (v *OneAPITokenValidator) FetchBalance(ctx context.Context, apiKey string) 
 	switch {
 	case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
 		return Balance{}, errors.Wrapf(ErrCredentialRejected, "one-api refused the api key with status %d", response.StatusCode)
+	case response.StatusCode == http.StatusInternalServerError:
+		// one-api answers 500 for its own per-token failures (an owner lookup
+		// that fails), which say nothing about other keys.
+		return Balance{}, errors.Wrap(errors.Join(ErrValidationUnavailable, ErrKeySpecificNoVerdict), "one-api token validation returned status 500")
 	case response.StatusCode != http.StatusOK:
 		return Balance{}, errors.Wrapf(ErrValidationUnavailable, "one-api token validation returned status %d", response.StatusCode)
 	case readErr != nil:
@@ -160,7 +177,8 @@ func decodeBalance(contentType string, body []byte) (Balance, error) {
 		return Balance{}, errors.Wrap(errors.Join(ErrValidationUnavailable, err), "decode one-api answer")
 	}
 	if !envelope.Success {
-		return Balance{}, errors.Wrap(ErrValidationUnavailable, "one-api answered 200 without success")
+		// A controller failure for this token: no evidence about other keys.
+		return Balance{}, errors.Wrap(errors.Join(ErrValidationUnavailable, ErrKeySpecificNoVerdict), "one-api answered 200 without success")
 	}
 	return envelope.Data, nil
 }

@@ -20,8 +20,17 @@ import (
 // a non-test file and how the credential it reads, or the one-api route it
 // calls, is authenticated or budgeted. TestIngressInventory scans the whole
 // module and fails when the code and a registry disagree in either
-// direction, so a new entrypoint cannot read a credential, call one-api or
-// build an identity without being reviewed and documented.
+// direction.
+//
+// It is a syntactic tripwire, not a proof. It finds credential reads
+// through Get/GetHeader/Values/Query/DefaultQuery/GetQuery/FormValue/
+// PostFormValue calls and map indexing, with the name spelled as a string
+// literal or a string constant (same or imported package); one-api routes
+// spelled in a string literal or as separate "api", "token"/"user"/...
+// segments of one call (url.JoinPath); identity literals; and
+// ctxkeys.AuthContext writes. It cannot see a credential arriving as a
+// GraphQL argument, a JSON field or a chat message, or a name computed at
+// run time; those entrypoints are kept in the architecture table by review.
 var (
 	// credentialReaders read an inbound credential: an Authorization header
 	// or the MCP query key.
@@ -41,6 +50,9 @@ var (
 		"internal/library/search/service.go":              "GraphQL WebFetch/WebSearch: FromContextOrHeader",
 		"internal/web/arweave/controller/arweave.go":      "GraphQL ArweaveUpload: blog JWT, else FromContextOrHeader before the consume",
 		"internal/web/blog/service/posts.go":              "blog SSO JWT bearer, verified by signature (not an API key)",
+		"internal/web/sso_code.go":                        "SSO code exchange and userinfo: SSO bearer verified by signature (not an API key)",
+		"internal/web/generated.go":                       "gqlgen decodes api_key arguments: ValidateOneapiAPIKey (Authenticator.Balance), retired GeneralAddLLMStormTask (ignored)",
+		"cmd/api.go":                                      "platform search-engine keys read from configuration, not caller credentials",
 	}
 	// oneapiRESTCallers build a request to one-api's per-IP-limited /api group.
 	oneapiRESTCallers = map[string]string{
@@ -129,7 +141,14 @@ func moduleRoot(t *testing.T) string {
 	}
 }
 
-// scanModule parses every non-test Go file of the module once.
+// parsedFile is one non-test Go file of the module.
+type parsedFile struct {
+	rel  string
+	file *ast.File
+}
+
+// scanModule parses every non-test Go file of the module, collects the
+// string constants of every package, then scans each file.
 func scanModule(t *testing.T, root string) inventoryFindings {
 	t.Helper()
 	found := inventoryFindings{
@@ -137,6 +156,7 @@ func scanModule(t *testing.T, root string) inventoryFindings {
 		builders: map[string][]string{}, writers: map[string][]string{},
 	}
 	fset := token.NewFileSet()
+	var files []parsedFile
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -161,28 +181,111 @@ func scanModule(t *testing.T, root string) inventoryFindings {
 		if err != nil {
 			return err
 		}
-		scanFile(fset, filepath.ToSlash(rel), file, &found)
+		files = append(files, parsedFile{rel: filepath.ToSlash(rel), file: file})
 		return nil
 	})
 	require.NoError(t, err)
+
+	// constants maps a package directory (module-relative) to its string constants.
+	constants := map[string]map[string]string{}
+	for _, parsed := range files {
+		dir := filepath.ToSlash(filepath.Dir(parsed.rel))
+		if constants[dir] == nil {
+			constants[dir] = map[string]string{}
+		}
+		collectStringConstants(parsed.file, constants[dir])
+	}
+	modulePath := modulePathOf(t, root)
+	for _, parsed := range files {
+		scanFile(fset, parsed.rel, parsed.file, constants, modulePath, &found)
+	}
 	return found
 }
 
+// modulePathOf reads the module path from go.mod.
+func modulePathOf(t *testing.T, root string) string {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	require.NoError(t, err)
+	for line := range strings.SplitSeq(string(content), "\n") {
+		if path, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
+			return strings.TrimSpace(path)
+		}
+	}
+	t.Fatal("go.mod has no module line")
+	return ""
+}
+
+// collectStringConstants records the package-level string constants of file.
+func collectStringConstants(file *ast.File, into map[string]string) {
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			value, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for index, name := range value.Names {
+				if index >= len(value.Values) {
+					break
+				}
+				if literal, ok := value.Values[index].(*ast.BasicLit); ok && literal.Kind == token.STRING {
+					if unquoted, err := strconv.Unquote(literal.Value); err == nil {
+						into[name.Name] = unquoted
+					}
+				}
+			}
+		}
+	}
+}
+
 // scanFile records the inventory sites of one file.
-func scanFile(fset *token.FileSet, rel string, file *ast.File, found *inventoryFindings) {
+func scanFile(fset *token.FileSet, rel string, file *ast.File, constants map[string]map[string]string, modulePath string, found *inventoryFindings) {
 	imports := importNames(file)
-	ownPackage := "/" + filepath.ToSlash(filepath.Dir(rel))
+	ownDir := filepath.ToSlash(filepath.Dir(rel))
+	ownPackage := "/" + ownDir
+	resolve := func(expr ast.Expr) (string, bool) {
+		switch typed := expr.(type) {
+		case *ast.BasicLit:
+			if typed.Kind != token.STRING {
+				return "", false
+			}
+			value, err := strconv.Unquote(typed.Value)
+			return value, err == nil
+		case *ast.Ident:
+			value, ok := constants[ownDir][typed.Name]
+			return value, ok
+		case *ast.SelectorExpr:
+			pkg, ok := typed.X.(*ast.Ident)
+			if !ok {
+				return "", false
+			}
+			dir, ok := strings.CutPrefix(imports[pkg.Name], modulePath+"/")
+			if !ok {
+				return "", false
+			}
+			value, ok := constants[dir][typed.Sel.Name]
+			return value, ok
+		}
+		return "", false
+	}
 	record := func(into map[string][]string, node ast.Node) {
 		into[rel] = append(into[rel], strconv.Itoa(fset.Position(node.Pos()).Line))
 	}
 	ast.Inspect(file, func(node ast.Node) bool {
+		if isCredentialRead(node, resolve) {
+			record(found.readers, node)
+		}
 		switch typed := node.(type) {
 		case *ast.CallExpr:
-			if isCredentialRead(typed) {
-				record(found.readers, typed)
-			}
 			if isAuthContextWrite(typed, imports) {
 				record(found.writers, typed)
+			}
+			if joinsOneAPIRoute(typed, resolve) {
+				record(found.oneapi, typed)
 			}
 		case *ast.BasicLit:
 			if typed.Kind == token.STRING && namesOneAPIRoute(typed.Value) {
@@ -212,22 +315,30 @@ func importNames(file *ast.File) map[string]string {
 	return names
 }
 
-// isCredentialRead matches x.Get/GetHeader/Values("Authorization") and
-// x.Get("apikey"|"api_key"|"APIKEY").
-func isCredentialRead(call *ast.CallExpr) bool {
-	selector, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || len(call.Args) == 0 || !slices.Contains([]string{"Get", "GetHeader", "Values"}, selector.Sel.Name) {
-		return false
+// credentialReadMethods are the request accessors that can return a credential.
+var credentialReadMethods = []string{"Get", "GetHeader", "Values", "Query", "DefaultQuery", "GetQuery", "FormValue", "PostFormValue"}
+
+// isCredentialName reports whether a header, query or form name carries a credential.
+func isCredentialName(name string) bool {
+	return strings.EqualFold(name, "Authorization") || slices.Contains(credentialQueryKeys, strings.ToLower(name))
+}
+
+// isCredentialRead matches accessor calls such as x.Get("Authorization") or
+// c.Query(apiKeyParam) and map indexing such as r.Header["Authorization"].
+func isCredentialRead(node ast.Node, resolve func(ast.Expr) (string, bool)) bool {
+	switch typed := node.(type) {
+	case *ast.CallExpr:
+		selector, ok := typed.Fun.(*ast.SelectorExpr)
+		if !ok || len(typed.Args) == 0 || !slices.Contains(credentialReadMethods, selector.Sel.Name) {
+			return false
+		}
+		name, ok := resolve(typed.Args[0])
+		return ok && isCredentialName(name)
+	case *ast.IndexExpr:
+		name, ok := resolve(typed.Index)
+		return ok && isCredentialName(name)
 	}
-	literal, ok := call.Args[0].(*ast.BasicLit)
-	if !ok || literal.Kind != token.STRING {
-		return false
-	}
-	value, err := strconv.Unquote(literal.Value)
-	if err != nil {
-		return false
-	}
-	return strings.EqualFold(value, "Authorization") || slices.Contains(credentialQueryKeys, strings.ToLower(value))
+	return false
 }
 
 // isAuthContextWrite matches context.WithValue(ctx, ctxkeys.AuthContext, ...).
@@ -258,6 +369,24 @@ func namesOneAPIRoute(quoted string) bool {
 	return false
 }
 
+// oneapiRouteGroups are the one-api /api route groups this server could call.
+var oneapiRouteGroups = []string{"token", "user", "channel", "log"}
+
+// joinsOneAPIRoute matches a call that assembles a one-api route from
+// separate segments, such as url.JoinPath(base, "api", "token", "consume").
+func joinsOneAPIRoute(call *ast.CallExpr, resolve func(ast.Expr) (string, bool)) bool {
+	for index := 0; index+1 < len(call.Args); index++ {
+		first, ok := resolve(call.Args[index])
+		if !ok || strings.Trim(first, "/") != "api" {
+			continue
+		}
+		if next, ok := resolve(call.Args[index+1]); ok && slices.Contains(oneapiRouteGroups, strings.Trim(next, "/")) {
+			return true
+		}
+	}
+	return false
+}
+
 // buildsIdentity matches a composite literal of a registered identity type,
 // qualified (pkg.Type{}) or, inside its own package, unqualified (Type{}).
 func buildsIdentity(expr ast.Expr, imports map[string]string, ownPackage string) bool {
@@ -280,4 +409,41 @@ func buildsIdentity(expr ast.Expr, imports map[string]string, ownPackage string)
 		}
 	}
 	return false
+}
+
+// TestInventoryScannerSeesIndirectSpellings covers the spellings an
+// independent review found the first scanner missed: a header name in a
+// constant (same or imported package), map indexing, query and form
+// accessors, and a one-api route assembled from path segments.
+func TestInventoryScannerSeesIndirectSpellings(t *testing.T) {
+	const source = `package x
+
+import (
+	"net/http"
+	"net/url"
+
+	"example.com/m/internal/names"
+)
+
+const header = "Authorization"
+
+func reads(r *http.Request, c interface{ Query(string) string }) {
+	_ = r.Header.Get(header)
+	_ = r.Header.Get(names.Auth)
+	_ = r.Header["Authorization"]
+	_ = r.URL.Query()["apikey"]
+	_ = r.FormValue("api_key")
+	_ = c.Query("APIKEY")
+	_, _ = url.JoinPath("https://oneapi.example.com", "api", "token", "consume")
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "x.go", source, parser.SkipObjectResolution)
+	require.NoError(t, err)
+	constants := map[string]map[string]string{"internal/x": {}, "internal/names": {"Auth": "Authorization"}}
+	collectStringConstants(file, constants["internal/x"])
+	found := inventoryFindings{readers: map[string][]string{}, oneapi: map[string][]string{}, builders: map[string][]string{}, writers: map[string][]string{}}
+	scanFile(fset, "internal/x/x.go", file, constants, "example.com/m", &found)
+	require.Len(t, found.readers["internal/x/x.go"], 6)
+	require.Len(t, found.oneapi["internal/x/x.go"], 1)
 }

@@ -30,7 +30,7 @@ func TestParseAuthorizationContextSupportsPlainToken(t *testing.T) {
 func TestFromContextOrHeaderPrefersContext(t *testing.T) {
 	seed, err := DeriveFromAPIKey("sk-from-context")
 	require.NoError(t, err)
-	seed.verified = true
+	markVerified(seed)
 
 	ctx := WithContext(context.Background(), seed)
 	resolved, err := FromContextOrHeader(ctx, "Bearer workspace@sk-from-header")

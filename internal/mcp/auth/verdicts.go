@@ -69,7 +69,8 @@ type verdictStore struct {
 
 	mu       sync.Mutex
 	positive *ttlCache[positiveEntry]
-	negative *ttlCache[struct{}]
+	// negative maps a rejected key to when the rejection was recorded.
+	negative *ttlCache[time.Time]
 	balances *ttlCache[Balance]
 }
 
@@ -81,7 +82,7 @@ func newVerdictStore(opts AuthenticatorOptions) *verdictStore {
 		staleGrace:  opts.StaleGrace,
 		now:         opts.Now,
 		positive:    newTTLCache[positiveEntry](opts.MaxEntries),
-		negative:    newTTLCache[struct{}](opts.MaxEntries),
+		negative:    newTTLCache[time.Time](opts.MaxEntries),
 		balances:    newTTLCache[Balance](opts.MaxEntries),
 	}
 }
@@ -113,24 +114,39 @@ type recordOutcome struct {
 	// rejectedKnown: one-api rejected a key it had accepted before
 	// (revocation, exhaustion, or one of its own token-store failures).
 	rejectedKnown bool
+	// superseded: the call accepted the key, but a rejection recorded
+	// after the call started is newer evidence, so the acceptance was dropped.
+	superseded bool
 }
 
-// record stores the outcome err of one upstream call for key.
-func (s *verdictStore) record(key string, err error) recordOutcome {
+// record stores the outcome err of one upstream call for key that started
+// at startedAt. An acceptance is dated at startedAt (one-api accepted the key
+// at some instant of the call, so trust never outlasts positive_ttl after
+// it), never moves a newer acceptance backwards, and never undoes a
+// rejection recorded after the call started: calls for one key can overlap
+// (a validation and a balance query), and the newer rejection wins.
+// Rejections always win, failing closed.
+func (s *verdictStore) record(key string, err error, startedAt time.Time) recordOutcome {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := s.now()
 	switch {
 	case err == nil:
+		if rejectedAt, rejected := s.negative.get(key, now); rejected && !rejectedAt.Before(startedAt) {
+			return recordOutcome{superseded: true}
+		}
 		s.negative.remove(key)
-		s.positive.put(key, positiveEntry{validatedAt: now}, s.knownUntil(now))
+		if entry, ok := s.positive.get(key, now); ok && entry.validatedAt.After(startedAt) {
+			return recordOutcome{}
+		}
+		s.positive.put(key, positiveEntry{validatedAt: startedAt}, s.knownUntil(startedAt))
 		return recordOutcome{}
 	case errors.Is(err, ErrCredentialRejected):
 		_, wasKnown := s.positive.get(key, now)
 		s.positive.remove(key)
 		s.balances.remove(key)
-		s.negative.put(key, struct{}{}, now.Add(s.negativeTTL))
+		s.negative.put(key, now, now.Add(s.negativeTTL))
 		return recordOutcome{rejectedKnown: wasKnown}
 	default:
 		if entry, ok := s.positive.get(key, now); ok {

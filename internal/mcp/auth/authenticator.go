@@ -128,6 +128,7 @@ type Authenticator struct {
 	// (see BeginAuthorityCall).
 	authority string
 	verdicts  *verdictStore
+	outage    authorityOutage
 	flights   singleflight.Group
 	gate      *UpstreamGate
 	staleLog  *LogSampler
@@ -219,10 +220,11 @@ func (a *Authenticator) Validator() Validator {
 // receiver fails closed with ErrValidationUnavailable.
 //
 // A key one-api accepted before is served past its trust period only while
-// one-api itself gives no verdict (errAuthorityNoVerdict) and within
-// PositiveTTL+StaleGrace. Neither a refusal by this server's own budgets nor
-// a caller that stopped waiting is evidence of an outage, so neither extends
-// a key's life.
+// one-api itself gives no verdict (errAuthorityNoVerdict, for this key or,
+// through the outage window, for everyone) and within
+// PositiveTTL+StaleGrace. Neither a refusal by this server's own budgets
+// nor a caller that stopped waiting is evidence of an outage, so neither
+// extends a key's life on its own.
 func (a *Authenticator) Authenticate(ctx context.Context, header string) (*Context, error) {
 	candidate, err := a.parseCandidate(header)
 	if err != nil {
@@ -247,6 +249,11 @@ func (a *Authenticator) Authenticate(ctx context.Context, header string) (*Conte
 		// one-api failed for this key moments ago; do not ask again yet.
 		return a.staleOr(ctx, candidate, trust.entry, now,
 			errors.Wrap(errors.Join(ErrValidationUnavailable, errAuthorityNoVerdict), "one-api was unavailable moments ago"))
+	case trust.known() && !a.outage.claimProbe(now):
+		// one-api is down for everyone and another caller holds this
+		// interval's probe: no upstream call, no budget spent.
+		return a.staleOr(ctx, candidate, trust.entry, now,
+			errors.Wrap(errors.Join(ErrValidationUnavailable, errAuthorityNoVerdict), "one-api is unavailable; waiting for the next probe"))
 	}
 
 	class := callNewKey
@@ -261,11 +268,21 @@ func (a *Authenticator) Authenticate(ctx context.Context, header string) (*Conte
 	case isCredentialRejection(lookupErr):
 		observeDecision(decisionRejectedAuthority)
 		return nil, errors.WithStack(lookupErr)
-	case !trust.known() || !isAuthorityFailure(lookupErr):
+	case !trust.known():
+		observeUnavailable(lookupErr)
+		return nil, errors.WithStack(lookupErr)
+	case isAuthorityFailure(lookupErr):
+		return a.staleOr(ctx, candidate, trust.entry, a.opts.Now(), lookupErr)
+	case errors.Is(lookupErr, ErrUpstreamThrottled) && a.outage.active(a.opts.Now()):
+		// This server's budget refused the probe, but one-api's last real
+		// failure is recent: the outage, not the refusal, is the evidence.
+		// Without a fresh failure the window closes within outageWindow, so
+		// a refusal can never keep it open by itself.
+		return a.staleOr(ctx, candidate, trust.entry, a.opts.Now(), lookupErr)
+	default:
 		observeUnavailable(lookupErr)
 		return nil, errors.WithStack(lookupErr)
 	}
-	return a.staleOr(ctx, candidate, trust.entry, a.opts.Now(), lookupErr)
 }
 
 // isCredentialRejection reports a definitive refusal by the authority.
@@ -349,12 +366,24 @@ func (a *Authenticator) upstream(parent context.Context, key string, class callC
 	}
 	defer release()
 
+	startedAt := a.opts.Now()
 	err = call(ctx)
 	observeAuthorityCall(label, err)
-	if outcome := a.verdicts.record(key, err); outcome.rejectedKnown {
+	switch {
+	case err == nil, isCredentialRejection(err):
+		a.outage.recovered()
+	case errors.Is(err, ErrKeySpecificNoVerdict):
+		// Says nothing about other keys; only this key retries later.
+	default:
+		a.outage.failed(a.opts.Now())
+	}
+	outcome := a.verdicts.record(key, err, startedAt)
+	if outcome.rejectedKnown {
 		authMetrics.knownKeyRejections.Inc()
 	}
 	switch {
+	case outcome.superseded:
+		return errors.Wrap(ErrCredentialRejected, "a newer rejection supersedes this call's acceptance")
 	case err == nil, isCredentialRejection(err):
 		return errors.WithStack(err)
 	default:
@@ -388,6 +417,7 @@ func (a *Authenticator) validateUpstream(parent context.Context, candidate *Cont
 // markVerified flags a freshly parsed context as accepted by the authority.
 func markVerified(candidate *Context) *Context {
 	candidate.verified = true
+	candidate.sealed = candidate.identity()
 	return candidate
 }
 
