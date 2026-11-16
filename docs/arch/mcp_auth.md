@@ -6,16 +6,16 @@ This manual describes how every entrypoint of this server turns a presented API 
 
 ## 1. Invariants
 
-Each invariant has a test that fails when it breaks. `TestIngressInventory` (`internal/mcp/auth/ingress_inventory_test.go`) scans every non-test Go file of the module, so a new reader of credentials, a new one-api REST call or a new way to build an identity cannot be added without being registered here.
+Each invariant has a test that fails when it breaks. `TestIngressInventory` (`internal/mcp/auth/ingress_inventory_test.go`) scans every non-test Go file of the module and fails on an unregistered credential read, one-api REST route, identity literal or `ctxkeys.AuthContext` write. It is a syntactic tripwire: it resolves names spelled as literals or string constants, map indexing, query and form accessors and route segments (`TestInventoryScannerSeesIndirectSpellings`), but it cannot see a credential arriving as a JSON field or chat message, or a name computed at run time. Those entrypoints are kept in section 3 by review.
 
 | # | Invariant | Enforced by |
 | --- | --- | --- |
-| I1 | Only `Authenticator.Authenticate` produces a verified `mcpauth.Context`; `mcpauth.FromContext` ignores every other value, and only `internal/mcp/auth` writes `ctxkeys.AuthContext`. | `TestIngressInventory` (writers), `TestFromContextIgnoresUnverifiedContexts` |
+| I1 | Only `Authenticator.Authenticate` produces a verified `mcpauth.Context`; `mcpauth.FromContext` ignores every other value, verification seals the identity fields (a copy pointed at another tenant is unverified), and only `internal/mcp/auth` writes `ctxkeys.AuthContext`. | `TestIngressInventory` (writers), `TestFromContextIgnoresUnverifiedContexts`, `TestCopiedContextPointedAtAnotherTenantIsUnverified` |
 | I2 | Every inbound reader of a credential (an `Authorization` header, the MCP query key, a key typed into Telegram, a key argument) is registered below with the call that authenticates it. | `TestIngressInventory` (readers) |
 | I3 | Every one-api REST call (`/api/...`, limited by one-api per client address) is either admitted by the `UpstreamGate` (validation, revalidation, balance) or recorded in `oneapi.CallLedger` (consume), so the gate sees the combined traffic. | `TestIngressInventory` (routes), `TestGateYieldsToConsumesInOneAPIWindow` |
 | I4 | A key longer than `MaxAPIKeyLength` (256 bytes) or an `Authorization` header longer than 2 KiB is refused before it is hashed, looked up or sent anywhere. | `TestOversizedKeyIsRefusedBeforeDerivation` |
-| I5 | A key accepted before is served past its trust period only while one-api itself gave no verdict. A refusal by this server's budgets and a waiter whose own request ended never extend a key's life. | `TestCanceledWaiterNeverReceivesStaleGrace`, `TestLocalBudgetRefusalNeverGrantsStaleGrace` |
-| I6 | A key (the caller's or the platform's) is only sent to the configured origin: no client that carries one follows a redirect. | `TestOneAPIValidatorRefusesRedirectsWithInjectedClient`, `TestCheckUserExternalBillingNeverFollowsRedirects`, `TestOpenAIEmbedderRefusesRedirects`, `TestCohereRerankClientRefusesRedirects`, `TestResponsesHelperRefusesRedirects`, `TestOpenAILLMRefusesRedirects` |
+| I5 | A key accepted before is served past its trust period only while one-api itself gave no verdict (for that key, or for everyone within the outage window), and an acceptance never undoes a newer rejection. A refusal by this server's budgets and a waiter whose own request ended never extend a key's life by themselves. | `TestCanceledWaiterNeverReceivesStaleGrace`, `TestLocalBudgetRefusalNeverGrantsStaleGrace`, `TestOutageWindowNeedsFreshEvidence`, `TestKeySpecificFailureOpensNoOutage`, `TestLateAcceptanceNeverUndoesANewerRejection` |
+| I6 | A credential (a caller's or platform key, an OAuth secret or token, a request signature) is only sent to the configured origin: no client in this module that carries one follows a redirect. Clients built inside SDKs that this code does not configure (minio-go, the go-utils memory heuristic, which allows same-origin redirects only) are outside this rule. | `TestOneAPIValidatorRefusesRedirectsWithInjectedClient`, `TestCheckUserExternalBillingNeverFollowsRedirects`, `TestOpenAIEmbedderRefusesRedirects`, `TestCohereRerankClientRefusesRedirects`, `TestResponsesHelperRefusesRedirects`, `TestOpenAILLMRefusesRedirects`, `TestSearchEngineRefusesRedirects` (Firecrawl, SerpGoogle, Bing, Google), `TestGitHubOAuthRefusesRedirects`, `TestRawBucketLifecycleRefusesRedirects`, `TestBenchmarkClientsRefuseRedirects` |
 | I7 | The tenant is `sha256(TrimSpace(key))`, unchanged since before validation existed, so stored data keeps its owner. | `TestTenantHashIsSHA256OfTheTrimmedKey`, `TestValidateOneAPITokenUsesSharedAuthenticator` |
 | I8 | `mcpauth.Context` is the one identity type. `askuser.AuthorizationContext` is an alias of it, `askuser.FromSharedContext` returns only verified contexts, `files.AuthFromVerified` is the only conversion to the files view, and `askuser.NewTelegramAnswerer` is the one, explicit, key-less delegated principal. | `TestIngressInventory` (literals), `TestFileAuthFromContextRefusesUnverifiedIdentity`, `TestFromSharedContextRefusesUnverified` |
 
@@ -48,11 +48,12 @@ Each invariant has a test that fails when it breaks. `TestIngressInventory` (`in
 - **Sources.** A source is the client address the trusted-proxy policy resolved (`library/clientip`), grouped as an IPv4 address or an IPv6 `/64`; a configured gateway range (`gateways`) replaces that with one shared source and its own budget; a caller without an address names its source (`WithBudgetSource`, e.g. `telegram:<uid>`). Forwarding headers from an untrusted peer never select a source.
 - **`OneAPITokenValidator`** (`oneapi_validator.go`) calls `GET /api/token/balance`. Only `200`, `application/json`, `"success": true` accepts; `401`/`403` reject; everything else is no verdict. It never follows redirects. The deprecated `settings.oneapi.balance_url` is used verbatim as the endpoint (`NewOneAPITokenValidatorAt`).
 - **`oneapi.CallLedger`** (`library/billing/oneapi/ledger.go`) counts this process's one-api REST calls over one-api's 3-minute sliding window. Consumes record unconditionally (the tool call already ran); the gate records atomically with its admission and refuses once the window holds `oneapi_rate_limit` calls.
+- **Outage window** (`outage.go`): one authority failure that is not key-specific (`ErrKeySpecificNoVerdict` marks one-api's per-token `500` and `200 {"success": false}`) opens a 30-second process-wide window. Known keys within grace are then served without upstream calls, one caller per 15 seconds probes, and any verdict closes it. Acceptances are dated at the call's start and never undo a rejection recorded after it.
 - **`BeginAuthorityCall`** (`authority_observation.go`) lets a consume that proves acceptance (`oneapi.ConsumeReceipt.TokenAccepted`) restart a known key's trust period, so keys that call tools need no revalidation calls.
 
 ## 3. Credential ingress inventory
 
-Every entrypoint that reads a credential, and the call that authenticates it. `TestIngressInventory` holds the same list.
+Every entrypoint that reads a credential, and the call that authenticates it. `TestIngressInventory` registers every row it can detect (header, query, form and GraphQL `api_key` argument reads); the Telegram and JSON-body rows are kept by review.
 
 | Entrypoint | Credential | Authenticated by |
 | --- | --- | --- |
@@ -68,6 +69,7 @@ Every entrypoint that reads a credential, and the call that authenticates it. `T
 | Telegram `/askuser` and upload key linking (`internal/web/telegram/service`) | key typed into the chat | `Authenticate` with `WithBudgetSource("telegram:<uid>")`; the binding stores the verified hash (ask_user) or key (uploads) |
 | Telegram ask_user answers | Telegram sender + binding | delegated principal `askuser.NewTelegramAnswerer` (no key, never verified) |
 | Blog posts (`internal/web/blog/service/posts.go`) | SSO JWT bearer | JWT signature (not an API key) |
+| SSO code exchange and userinfo (`internal/web/sso_code.go`) | SSO bearer | SSO token signature (not an API key) |
 
 Keys used later without a request: the file index worker reuses the caller's key from the encrypted credential store within `credential_cache_ttl_seconds`; Telegram uploads reuse the bound key. Both only send the key to one-api, whose `TokenAuth` refuses it once revoked.
 
@@ -88,7 +90,7 @@ With the defaults the gate starts at most 266 calls per window, leaving at least
 
 | Situation | Result | Signal |
 | --- | --- | --- |
-| one-api down, slow, `429`, `5xx`, non-success `200` | Known keys within `positive_ttl + stale_grace` served; others `503` | `mcp_auth_decisions_total{result="accepted_stale"|"unavailable_authority"}` |
+| one-api down, slow, `429`, `5xx`, non-success `200` | Known keys within `positive_ttl + stale_grace` served (outage window, one probe per 15 s); others `503` | `mcp_auth_decisions_total{result="accepted_stale"|"unavailable_authority"}` |
 | Flood of unknown keys from one source | That source gets `503` after its burst; others unaffected | `mcp_auth_gate_refusals_total{budget="per_source"}` |
 | Flood from many sources | Global budget spent; known keys revalidate from the reserve | `{budget="global"}`, `unavailable_local_budget` |
 | Consume traffic fills one-api's window | Gate yields (`503` for new keys, no stale grace) | `{budget="oneapi_window"}`, `oneapi_rest_calls_in_window` |

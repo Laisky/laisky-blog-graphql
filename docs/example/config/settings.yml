@@ -265,7 +265,8 @@ settings:
       graphql_max_bytes: 67108864 # 64 MiB
       mcp_max_bytes: 33554432 # 32 MiB, requests with a validated key
       mcp_anonymous_max_bytes: 1048576 # 1 MiB, discovery without credentials
-      mcp_max_inflight_bytes: 134217728 # 128 MiB (default 4 × mcp_max_bytes), body bytes actually read that all in-flight MCP requests hold together; 503 beyond it
+      mcp_max_inflight_bytes: 134217728 # 128 MiB (default 4 × mcp_max_bytes), body bytes actually read that in-flight verified MCP requests hold together; one key at most a quarter; 503 beyond it
+      mcp_anonymous_max_inflight_bytes: 8388608 # 8 MiB (default 8 × mcp_anonymous_max_bytes), the same for MCP requests without credentials
     sso:
       user_store: oneapi # use mongo only during a controlled rollback window
     github_oauth:

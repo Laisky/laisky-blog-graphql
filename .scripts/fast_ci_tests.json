@@ -255,7 +255,17 @@
       "TestNamedBudgetSourceIsIndependentOfAddresses",
       "TestTenantHashIsSHA256OfTheTrimmedKey",
       "TestIngressInventory",
-      "TestAuthenticateDecisionMetrics"
+      "TestAuthenticateDecisionMetrics",
+      "TestOutageKeepsEveryKnownKeyWithinGrace",
+      "TestOutageEndsWithTheFirstAnsweredProbe",
+      "TestKeySpecificFailureOpensNoOutage",
+      "TestOutageWindowNeedsFreshEvidence",
+      "TestRefusedChargesNeverSpendTokens",
+      "TestLateAcceptanceNeverUndoesANewerRejection",
+      "TestAcceptanceIsDatedAtCallStart",
+      "TestCopiedContextPointedAtAnotherTenantIsUnverified",
+      "TestBaseURLWithQueryOrFragmentIsRefused",
+      "TestInventoryScannerSeesIndirectSpellings"
     ]
   },
   {
@@ -291,7 +301,13 @@
       "TestIngressInflightBudgetBoundsConcurrentBodies",
       "TestIngressInflightBudgetIgnoresUnsentDeclaredBytes",
       "TestModernCancellationPolicyClassifiesLikeTheSDK",
-      "TestIngressModernBatchCancellationNeverReachesARequest"
+      "TestIngressModernBatchCancellationNeverReachesARequest",
+      "TestIngressAnonymousBodiesCannotBlockVerifiedCallers",
+      "TestIngressOneKeyCannotStarveAnotherKey",
+      "TestIngressUnverifiedBodiesAreNeverCharged",
+      "TestClientBodyReadErrorClassification",
+      "TestIngressOversizedAuthorizationHeaderIsRefusedCheaply",
+      "TestBearerHeaderBoundMirrorsAuthenticator"
     ]
   },
   {
@@ -311,7 +327,11 @@
       "TestInflightChargesOnlyBytesRead",
       "TestInflightSlowSendersDoNotReserveCapacity",
       "TestInflightRefusesReadsBeyondCapacity",
-      "TestInflightBodyAtTheCapFitsAnIdleBudget"
+      "TestInflightBodyAtTheCapFitsAnIdleBudget",
+      "TestChargePendingBytesMoveOnAssign",
+      "TestChargePendingBoundRefusesUnclassifiedReads",
+      "TestInflightTenantShareKeepsOtherTenantsServed",
+      "TestInflightAssignRefusesWhenPendingBytesDoNotFit"
     ]
   },
   {
@@ -486,6 +506,18 @@
     "package": "./internal/web/general/controller",
     "tests": [
       "TestValidateOneapiAPIKeyRefusesOversizedKeyBeforeHashing"
+    ]
+  },
+  {
+    "package": "./library/search/firecrawl",
+    "tests": [
+      "TestSearchEngineRefusesRedirects"
+    ]
+  },
+  {
+    "package": "./library/search/bing",
+    "tests": [
+      "TestSearchEngineRefusesRedirects"
     ]
   }
 ]
