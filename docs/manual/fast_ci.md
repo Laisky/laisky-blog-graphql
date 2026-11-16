@@ -22,19 +22,31 @@ the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller`,
 `internal/web/telegram/dao`, `internal/web/telegram/service`, `library/clientip`,
 `internal/web/blog/service`, `internal/web/blog/oneapi`, `internal/web/blog/controller`,
-`internal/mcp/imageproc`, `internal/mcp/storage` and `library/memlimit`. The MCP ingress
+`internal/mcp/imageproc`, `internal/mcp/storage`, `internal/mcp/tools`,
+`internal/web/arweave/controller`, `internal/web/general/controller` and `library/memlimit`. The MCP ingress
 selections cover API key validation at every entrypoint (transport, console APIs,
 ask_user console, GraphQL shared fields), caching, flood bounds, outage
 fail-closed behavior, production wiring, the prod-mode refusal of disabled
 validation, the configured protected-resource metadata URL, upstream budgets
 spent only by calls that hold a slot, request-body caps, slow-body and
 burst-then-stall cuts, the count of bodies whose read deadline cannot be armed, the
+in-flight body budget of the MCP transport (only bytes actually read are
+charged, so stalled senders reserve nothing; reads beyond it are refused;
+release on return and on panic; never overcharged under races), the
 startup bounds of the validation budgets, and held requests that outlive the read budget. They
 also cover the anonymous access boundary: the transport allowlist, refusal of
 anonymous tool calls before any handler, and the SDK dispatch check for every
 registered tool. They also check that no caller can cancel another caller's
-request, while legacy sessions keep their own cancellations. Other selections
+request, while legacy sessions keep their own cancellations, and that the
+isolated cancellation policy decodes bodies exactly like the SDK. Other selections
 keep credentials off redirect targets for the validator and the consume call.
+The third-review selections pin the credential inventory (`TestIngressInventory`:
+every credential reader, one-api REST call and identity construction is
+registered), the one-api window shared with consumes, gateway and named
+(Telegram) source budgets, the verbatim legacy balance endpoint, stale grace
+only for authority failures, the length bound before hashing, and the
+Telegram, ArweaveUpload, balance-proxy and `ValidateOneapiAPIKey` paths
+through the shared authenticator.
 They check that only one-api's success envelope on a consume refreshes an
 active key's verdict, and that the refresh never revives a rejected key. The
 request-body read-credit arithmetic runs on a fake clock. Real-socket timing

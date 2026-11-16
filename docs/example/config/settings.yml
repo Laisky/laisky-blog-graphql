@@ -50,7 +50,11 @@ settings:
         max_sources: 10000
         revalidation_rate_per_second: 0.2 # reserved for known keys whose trust period ended; 0 disables
         revalidation_burst: 20
-        oneapi_rate_limit: 480 # one-api's GLOBAL_API_RATE_LIMIT per 3 minutes for this egress; 0 when exempt
+        oneapi_rate_limit: 480 # this process's share of one-api's GLOBAL_API_RATE_LIMIT per 3 minutes (consumes included); 0 when exempt
+        # gateways: # client ranges that serve many users from few addresses get their own per-source budget
+        #   - cidr: 203.0.113.10/32 # matched against the client address the trusted-proxy policy resolved
+        #     rate_per_second: 0.5 # at most upstream_rate_per_second
+        #     burst: 20 # at most upstream_burst
     tools:
       web_search:
         enabled: true # Enable/disable web_search tool
@@ -261,6 +265,7 @@ settings:
       graphql_max_bytes: 67108864 # 64 MiB
       mcp_max_bytes: 33554432 # 32 MiB, requests with a validated key
       mcp_anonymous_max_bytes: 1048576 # 1 MiB, discovery without credentials
+      mcp_max_inflight_bytes: 134217728 # 128 MiB (default 4 × mcp_max_bytes), body bytes actually read that all in-flight MCP requests hold together; 503 beyond it
     sso:
       user_store: oneapi # use mongo only during a controlled rollback window
     github_oauth:

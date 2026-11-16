@@ -78,7 +78,9 @@
     "tests": [
       "TestAlertDeliveryLiteralShortText",
       "TestAlertDeliveryDocumentWholePayload",
-      "TestAlertDeliveryAPIErrorsAreVisibleAndNeverRetried"
+      "TestAlertDeliveryAPIErrorsAreVisibleAndNeverRetried",
+      "TestValidateOneAPITokenUsesSharedAuthenticator",
+      "TestTelegramKeyFloodSpendsOnlyThatUsersBudget"
     ]
   },
   {
@@ -95,7 +97,8 @@
       "TestValidateStartupConfigRefusesDisabledValidationInProdMode",
       "TestValidateStartupConfigImageLifecycleMode",
       "TestSizeImageMemoryAtStartup",
-      "TestValidateStartupConfigRefusesUnsafeValidationBounds"
+      "TestValidateStartupConfigRefusesUnsafeValidationBounds",
+      "TestValidateStartupConfigChecksAuthorityURLsAndGateways"
     ]
   },
   {
@@ -140,7 +143,9 @@
       "TestRV95SingleHostXFFRotationLocksOutNewValidKeys",
       "TestRV95BalanceProxyFloodExhaustsOneAPIBudgetAndLocksOutValidation",
       "TestProductionWiringRefusesDisabledValidationOutsideDebug",
-      "TestRequestBodyPolicyCountsUnarmedDeadlines"
+      "TestRequestBodyPolicyCountsUnarmedDeadlines",
+      "TestRequestBodySettingsLoadMCPInflightBudget",
+      "TestBalanceProxyBoundsTheKeyBeforeNormalizing"
     ]
   },
   {
@@ -239,7 +244,18 @@
       "TestValidationCapacityMatchesTheManual",
       "TestUnavailableCauseSeparatesAuthorityFromLocalFailures",
       "TestValidationSettingsRefuseUnsafeBounds",
-      "TestExampleSettingsPassValidationBounds"
+      "TestExampleSettingsPassValidationBounds",
+      "TestCanceledWaiterNeverReceivesStaleGrace",
+      "TestOversizedKeyIsRefusedBeforeDerivation",
+      "TestLegacyBalanceURLKeepsItsExactEndpoint",
+      "TestGateYieldsToConsumesInOneAPIWindow",
+      "TestProductionGateSharesTheConsumeLedger",
+      "TestSharedSourceOnboardingCapacity",
+      "TestParseGatewaysRefusesMisconfiguration",
+      "TestNamedBudgetSourceIsIndependentOfAddresses",
+      "TestTenantHashIsSHA256OfTheTrimmedKey",
+      "TestIngressInventory",
+      "TestAuthenticateDecisionMetrics"
     ]
   },
   {
@@ -271,7 +287,11 @@
       "TestMCPFailureTypedCauses",
       "TestShouldDowngradeMCPErrorLog",
       "TestShouldDowngradeMCPErrorLogFalse",
-      "TestBodyBudgetCountsUnarmedDeadlines"
+      "TestBodyBudgetCountsUnarmedDeadlines",
+      "TestIngressInflightBudgetBoundsConcurrentBodies",
+      "TestIngressInflightBudgetIgnoresUnsentDeclaredBytes",
+      "TestModernCancellationPolicyClassifiesLikeTheSDK",
+      "TestIngressModernBatchCancellationNeverReachesARequest"
     ]
   },
   {
@@ -285,7 +305,13 @@
       "TestReadCreditIsBoundedAndDrains",
       "TestBurstThenStallIsCutAfterTheIdleBound",
       "TestNoteUnarmedDeadlineCountsAndSamples",
-      "TestEnforceReportsAnUnarmableDeadline"
+      "TestEnforceReportsAnUnarmableDeadline",
+      "TestInflightReleaseOnPanic",
+      "TestInflightConcurrentChargesStayWithinCapacity",
+      "TestInflightChargesOnlyBytesRead",
+      "TestInflightSlowSendersDoNotReserveCapacity",
+      "TestInflightRefusesReadsBeyondCapacity",
+      "TestInflightBodyAtTheCapFitsAnIdleBudget"
     ]
   },
   {
@@ -299,7 +325,10 @@
     "tests": [
       "TestCheckUserExternalBillingNeverFollowsRedirects",
       "TestCheckUserExternalBillingKeepsTheDefaultClientTransport",
-      "TestConsumeAtReceiptRequiresOneAPISuccessEnvelope"
+      "TestConsumeAtReceiptRequiresOneAPISuccessEnvelope",
+      "TestCallLedgerCountsTheTrailingWindow",
+      "TestCallLedgerTryRecordRefusesAtTheLimit",
+      "TestCallLedgerTryRecordIsAtomic"
     ]
   },
   {
@@ -354,7 +383,8 @@
   {
     "package": "./internal/mcp/askuser",
     "tests": [
-      "TestAskUserConsoleValidatesBearer"
+      "TestAskUserConsoleValidatesBearer",
+      "TestFromSharedContextRefusesUnverified"
     ]
   },
   {
@@ -442,7 +472,20 @@
     "tests": [
       "TestFileMutationSchemasExposeCompleteUnionArguments",
       "TestFileMutationSchemasKeepPreconditions",
-      "TestFileMutationAlternativesDeclareOnlyAcceptedArguments"
+      "TestFileMutationAlternativesDeclareOnlyAcceptedArguments",
+      "TestFileAuthFromContextRefusesUnverifiedIdentity"
+    ]
+  },
+  {
+    "package": "./internal/web/arweave/controller",
+    "tests": [
+      "TestArweaveUploadAuthenticatesBearerBeforeCharging"
+    ]
+  },
+  {
+    "package": "./internal/web/general/controller",
+    "tests": [
+      "TestValidateOneapiAPIKeyRefusesOversizedKeyBeforeHashing"
     ]
   }
 ]

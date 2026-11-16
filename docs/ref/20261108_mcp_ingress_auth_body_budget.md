@@ -366,3 +366,25 @@ Research checked on 2026-11-15 against the primary sources linked below.
 - **Why refuse, not clamp.** Clamping silently runs a different configuration
   from the one written; every other refused value in this namespace (disabled
   validation in prod mode, a bad public origin) also fails startup.
+
+## Third maintainer review (2026-11-16, revision cce5895)
+
+The review asked for the authenticator to be complete rather than patched per finding. Two read-only sweeps (every credential reader, every one-api caller) found the gaps listed below; `TestIngressInventory` now keeps both inventories exact (`docs/arch/mcp_auth.md`).
+
+### one-api rate limits (source: `one-api` repo, `middleware/rate_limit.go`, `router/*.go`)
+
+- The `/api` group (`GlobalAPIRateLimit`, mark `GA`) is keyed by `c.ClientIP()`. Redis and memory limiters keep the last `GLOBAL_API_RATE_LIMIT` accepted timestamps and refuse while the oldest is younger than the window (`int64(now.Sub(old).Seconds()) < 180`): a sliding window that counts accepted calls only, with whole-second truncation (a call 180.9 s old still counts). `oneapi.CallLedger` therefore keeps window + 1 one-second slots and counts calls when they start, which can only overcount.
+- `/api/token/consume`, `/api/token/balance` and `/api/user/get-by-token` are all in that group, so validations, consumes and the former Telegram check shared one budget.
+- Relay routes (`/v1/...`) use `GlobalRelayRateLimit` (mark `GR`), keyed by a hash of the token, not the client address. Embedding, rerank and Responses calls made with callers' keys therefore do not draw on the shared per-IP budget.
+
+### Findings and changes
+
+- **Shared capacity (P2).** Consumes (MCP and GraphQL tools, ArweaveUpload, Telegram uploads) are recorded in a process-wide ledger; the gate admits against it and refuses once `oneapi_rate_limit` calls are in the window, so validation yields to billing instead of pushing the egress into `429`. A full window is a local refusal: no stale grace, because the conservative rule (no local refusal extends a key) is simpler to reason about than proving the window cannot be filled by unauthenticated traffic.
+- **Ungated validation callers.** Telegram key linking called `GET /api/user/get-by-token` directly (own accept rule, hard-coded origin, redirects followed, no cache or budget), once per chat message. ArweaveUpload forwarded any `Authorization` header straight to a consume. Both now authenticate through the shared authenticator; Telegram chats are named budget sources.
+- **Gateways (P2).** One address onboards 5 keys, then one per 10 s. `gateways` gives listed ranges (matched on the trusted-proxy-resolved address, never on raw headers) their own budget within the global one. Alternatives considered: trusting a gateway's forwarding header (rejected: any peer could claim a range), raising the default per-source rate (rejected: weakens single-source flood isolation for everyone).
+- **Legacy endpoint (P2).** `settings.oneapi.balance_url` was an exact URL on master (`general.go` used it verbatim). It is honored verbatim again (`NewOneAPITokenValidatorAt`); only a value ending in `/api/token/balance` names a one-api base for consume observation.
+- **Canceled waiter (P3).** A waiter whose own context ended returned `ErrValidationUnavailable` without an authority classification but was still served from stale grace. Stale grace now requires `errAuthorityNoVerdict`.
+- **Length bound (P3).** The 256-byte bound moved into `DeriveFromAPIKey` (and a 2 KiB bound on the whole header into the parser), so no path hashes an oversized key; the GraphQL fingerprint and Telegram paths are bounded too.
+- **Identity types (section 4).** `askuser.AuthorizationContext` is an alias of `mcpauth.Context`, so the verified bit travels with it; `FromSharedContext` refuses unverified contexts; `files.AuthFromVerified` is the only conversion to the files view, and the file tools' unverified context fallback (reachable only from tests) is gone.
+- **Redirects.** The embedder, rerank, Responses and PageIndex clients carried keys and followed redirects; they now refuse them like the validator and consume.
+- **Body memory (P3).** An in-flight body budget for the MCP transport counts bytes actually read (not declared lengths, which would let slow senders reserve the budget without sending), covering the SDK's own copy.

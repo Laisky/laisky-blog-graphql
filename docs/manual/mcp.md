@@ -60,6 +60,8 @@ If no tool dependencies are met the server skips MCP initialisation.
 
 ## Authentication Model
 
+> **Upgrade note (PR #95).** A key is a tenant only while one-api accepts it. Keys that are unknown, revoked, expired, disabled, quota-exhausted or subnet-restricted now get `401` on every entrypoint, including the free file, memory and user-request tools, and their stored data is unreachable until the key is active again (the data itself is kept, under the same key hash). Clients that read files or request history with a depleted key must top it up first. This is a deliberate security policy, recorded with its rationale and revisit triggers in [`docs/requirements/mcp_credential_policy.md`](../requirements/mcp_credential_policy.md); the design is [`docs/arch/mcp_auth.md`](../arch/mcp_auth.md).
+
 ### Bearer Tokens
 
 Both tools rely on a Bearer token supplied via the `Authorization` header. The backend accepts two formats:
@@ -72,6 +74,8 @@ Only the token decides who the caller is:
 - The token is validated with one-api (see below).
 - Its SHA-256 hash is the tenant namespace. The user and AI identities are both derived from that hash, so `sk-example` and `workspace@sk-example` are the same tenant.
 - The last four characters are kept for display in the ask_user dashboard.
+
+A key longer than 256 bytes, or an `Authorization` header longer than 2 KiB, is refused as invalid before it is hashed, cached or sent to one-api.
 
 Store tokens securely; the server does not persist them in plain text.
 
@@ -112,13 +116,15 @@ Requests without a body keep reaching the SDK: legacy SSE `GET` streams and sess
 
 - That transport defines no client-to-server notifications.
 - The MCP SDK would key such a cancellation by request id alone, because those requests have no session. It would then abort whichever caller's request carried that id.
+- The SDK dispatches notifications before it checks the `Mcp-Method` header against the body, so the transport classifies the whole body, decoded exactly as the SDK decodes it: case-folded or escaped `method` keys and duplicate keys (the last one wins) cannot hide a cancellation, nor can a `method` placed after a large `params` value. A batch array is not a single message; the SDK refuses it as a parse error and cancels nothing.
+- The policy is one isolated function of the protocol header and the body (`internal/mcp/server_ingress_cancellation.go`), with its own table test (`TestModernCancellationPolicyClassifiesLikeTheSDK`).
 - Legacy sessions keep `notifications/cancelled`, scoped to their credential-bound session id.
 
 ### Credential Validation
 
-Every entrypoint that derives a tenant from a bearer — the MCP transport, the `/tools/*/api` console APIs, the ask_user console and the GraphQL fields shared with MCP tools — authenticates it through one authenticator (`internal/mcp/auth`). A tenant exists only for a key that one-api accepted; a key that is merely non-empty never becomes a tenant.
+Every entrypoint that reads an API key — the MCP transport, the `/tools/*/api` console APIs, the ask_user console, the GraphQL fields shared with MCP tools, GraphQL `ArweaveUpload` with an API key, the balance proxy and `ValidateOneapiAPIKey`, and Telegram's key linking — authenticates it through one authenticator (`internal/mcp/auth`). A tenant exists only for a key that one-api accepted; a key that is merely non-empty never becomes a tenant. The full inventory, and the test that keeps it complete, is in [`docs/arch/mcp_auth.md`](../arch/mcp_auth.md).
 
-- **Authority.** The key is sent to one-api's read-only `GET /api/token/balance` (behind one-api `TokenAuth`, no billing side effect).
+- **Authority.** The key is sent to one-api's read-only `GET /api/token/balance` (behind one-api `TokenAuth`, no billing side effect), under `base_url`. The deprecated `settings.oneapi.balance_url` is still honored when `base_url` is unset, as the exact endpoint URL it always was (a proxy path such as `/custom/balance` keeps working); startup logs a deprecation WARN. A custom path names no one-api base, so consumes then cannot refresh verdicts (`consumes_refresh_verdicts=false`).
   - A key is accepted only on `200` with `Content-Type: application/json` and a bounded body carrying `"success": true`.
   - `401` and `403` reject the key.
   - Everything else means one-api gave no verdict: `429`, `5xx`, redirects, transport errors, timeouts, and also `200 {"success": false}` or an HTML page.
@@ -138,7 +144,7 @@ Every entrypoint that derives a tenant from a bearer — the MCP transport, the 
 
 #### One-api upstream gate
 
-Every call from this server to one-api's per-IP-limited REST API goes through one gate (`mcpauth.UpstreamGate`). That covers API key validation and revalidation, the `POST /api/oneapi/balance` proxy, and the GraphQL `ValidateOneapiAPIKey` query.
+Every call this server makes to one-api's per-IP-limited REST API on behalf of a presented key goes through one gate (`mcpauth.UpstreamGate`). That covers API key validation and revalidation from every entrypoint above, the `POST /api/oneapi/balance` proxy, and the GraphQL `ValidateOneapiAPIKey` query. The only other one-api REST call, the consume (`POST /api/token/consume`) that every tool call sends, is counted in the same per-IP window (see **One-api window** below).
 
 - A call is charged only when it is about to start: after it holds one of the `max_concurrent` slots. A caller that times out waiting for a slot never contacts one-api and spends no budget. A caller whose budget is already spent is refused at once, without queuing for a slot. Cache hits, negative-cache hits and coalesced waiters are free.
 - Balance answers are reused per key hash for 30 seconds. A balance call also records the key's validation verdict, so `ValidateOneapiAPIKey` and the MCP entrypoints share one cache.
@@ -154,7 +160,12 @@ The gate's budgets:
   - It falls back to the per-source and global budgets when the reserve is empty.
   - Each key needs at most one revalidation per `positive_ttl`; see [Capacity](#capacity-and-scaling) for how many active keys that sustains.
   - `0` disables the reserve.
-- **Client source.** The source is the identity the request-identity middleware resolves with the trusted-proxy policy (`library/clientip`, see `docs/manual/client_identity.md`). Forwarding headers count only when sent by a configured trusted proxy, so one direct peer that rotates `X-Forwarded-For` stays one source. Handlers served outside gin fall back to the TCP peer.
+- **Client source.** The source is the identity the request-identity middleware resolves with the trusted-proxy policy (`library/clientip`, see `docs/manual/client_identity.md`). Forwarding headers count only when sent by a configured trusted proxy, so one direct peer that rotates `X-Forwarded-For` stays one source. Handlers served outside gin fall back to the TCP peer. Telegram key linking has no client address; each chat is its own source (`telegram:<uid>`).
+- **Gateways.** A legitimate gateway or NAT that serves many users from few addresses shares one source, so with the defaults it can onboard 5 new keys at once and then one every 10 seconds (14 of 100 new users arriving one per second; `TestSharedSourceOnboardingCapacity`). Known keys are unaffected: they revalidate from the reserve or refresh through their consumes. List such ranges under `gateways` to give each its own budget:
+  - every address of a range is one source with the configured `rate_per_second` and `burst`, which may not exceed the global budget (a gateway can never take more than all sources share, and should stay below it so other sources keep a share);
+  - ranges are matched against the client address the trusted-proxy policy resolved, so an untrusted peer cannot claim a gateway's budget with a forwarding header;
+  - startup refuses invalid or overlapping ranges, ranges wider than IPv4 `/16` or IPv6 `/32`, and more than 64 ranges.
+- **One-api window.** Besides its own buckets, the gate counts every one-api REST call this process starts within one-api's 3-minute sliding window (`oneapi.CallLedger`), consumes included. It starts no validation, balance or revalidation call once that count reaches `oneapi_rate_limit`, so validation never pushes the process over one-api's limit and consumes keep priority. Such a refusal is local (`503`, no stale grace). `0` (an exempt egress) turns the check off.
 
 Outages and local refusals behave differently:
 
@@ -175,9 +186,9 @@ Consequences to know:
 - **Exhausted tokens.** one-api's `TokenAuth` rejects quota-exhausted tokens with `401`, and one-api offers no validation route that skips the quota check. Such keys therefore lose access to free tools too (file, memory, user-request tools) until the token is topped up or replaced. Stored data stays intact under the same key.
 - **Subnet-restricted tokens.** one-api compares the subnet with *this server's* egress IP, so a token restricted to the end user's network is rejected with `403`, which becomes `401` here. Paid tools already failed the same way at `/api/token/consume`.
 - **Token-store failures.** one-api answers its own token-store failures with `401` as well. During such a failure, keys whose positive cache expired are rejected until it recovers. This matches one-api's own behavior for its relay.
-- **Rate limits.** one-api's per-IP REST rate limit (`GLOBAL_API_RATE_LIMIT`, default 480 per 3 minutes) covers every call from this server.
-  - With the defaults, the gate uses at most `1/s × 180 + 30 = 210` new-key and balance calls plus `0.2/s × 180 + 20 = 56` revalidations per 3 minutes. That leaves about 214 per 3 minutes for paid-tool `/api/token/consume` calls.
-  - Consume calls are tied to verified keys and are never refused by the gate. If paid-tool traffic exceeds that remainder, one-api answers them with `429`. The billing outcome is then classified as denied (no quota spent) and the paid tool fails. Lower the gate's rates if consume traffic needs more of the limit.
+- **Rate limits.** one-api's per-IP REST rate limit (`GLOBAL_API_RATE_LIMIT`, default 480 per 3 minutes, a sliding window) covers every `/api` call from this server. Relay calls (`/v1/...`: embeddings, rerank, Responses) are limited per token by one-api (`GLOBAL_RELAY_RATE_LIMIT`) and do not share it.
+  - With the defaults, the gate's buckets allow at most `1/s × 180 + 30 = 210` new-key and balance calls plus `0.2/s × 180 + 20 = 56` revalidations per 3 minutes. That leaves at least 214 per 3 minutes for `/api/token/consume` calls (every tool call's charge or zero-cost usage report, MCP and GraphQL alike, plus ArweaveUpload and Telegram uploads).
+  - Consume calls are never refused locally, because the tool already ran. When they need more than that remainder, the gate yields (**One-api window** above) instead of competing with them. If consumes alone exceed one-api's limit, one-api answers them with `429`; the billing outcome is then classified as denied (no quota spent) and the paid tool fails.
 
 #### Capacity and scaling
 
@@ -222,9 +233,29 @@ Before treating the defaults as safe for a deployment, compare its real number o
 - **Exhaustion signal.** The `api key validation unavailable` lines carry `unavailable_cause`:
   - `local_budget` when the local budgets ran out;
   - `authority` when one-api gave no verdict;
-  - `local` for a request that ended while waiting, or a missing authenticator.
+  - `local` for a request that ended while waiting, or a missing authenticator. A request that ended while waiting never receives stale grace.
 
-  Each cause gets its own WARN summary per minute, so a capacity shortage stays visible during an outage.
+  Each cause gets its own WARN summary per minute, so a capacity shortage stays visible during an outage. The same causes are counted in the metrics below.
+
+#### Monitoring
+
+The authenticator exports, on `/metrics`:
+
+| Metric | Meaning |
+| --- | --- |
+| `mcp_auth_decisions_total{result}` | One per authentication: `accepted_cache`, `accepted_authority`, `accepted_stale`, `rejected_cache`, `rejected_authority`, `invalid`, `unavailable_local_budget`, `unavailable_authority`, `unavailable_local`. |
+| `mcp_auth_gate_refusals_total{budget}` | Calls the gate refused, by the budget that refused them: `per_source`, `global`, `oneapi_window`, `concurrency`. |
+| `mcp_auth_authority_calls_total{class,verdict}` | Calls the gate started (`new_key`, `revalidation`, `balance`) and one-api's verdict (`accepted`, `rejected`, `no_verdict`). |
+| `mcp_auth_known_key_rejections_total` | Rejections of keys one-api had accepted before: revocations, exhausted quota, or one-api's own token-store failures. |
+| `oneapi_rest_calls_total{route}`, `oneapi_rest_calls_in_window` | one-api REST calls this process started (`token_balance`, `token_consume`), and how many fall in the current 3-minute window. |
+| `mcp_auth_oneapi_rate_limit` | The configured `oneapi_rate_limit` (`0` = exempt). |
+
+Suggested alerts:
+
+- **one-api outage:** `rate(mcp_auth_decisions_total{result=~"accepted_stale|unavailable_authority"}[5m]) > 0`.
+- **Capacity:** `rate(mcp_auth_decisions_total{result="unavailable_local_budget"}[5m]) > 0`; `mcp_auth_gate_refusals_total` names the budget to raise or the flood to look for.
+- **Shared one-api limit:** `oneapi_rest_calls_in_window / mcp_auth_oneapi_rate_limit > 0.8` (when the limit is not `0`).
+- **Token-store failure or mass revocation:** a spike of `rate(mcp_auth_known_key_rejections_total[5m])`. one-api answers its token-store failures with `401`, which this server cannot tell from a revocation.
 
 Revocation and failure:
 
@@ -233,9 +264,9 @@ Revocation and failure:
 
 Several replicas:
 
-- Every budget, cache and concurrency cap is local to one process.
+- Every budget, cache, concurrency cap and the one-api window ledger are local to one process.
 - Replicas behind a shared egress address therefore add up at one-api: `N` replicas can send `N` times the configured rates.
-- Divide `upstream_*`, `revalidation_*` and `max_concurrent` by the replica count, or route one-api calls through one egress per replica.
+- Divide `upstream_*`, `revalidation_*`, `max_concurrent` and `oneapi_rate_limit` by the replica count, or route one-api calls through one egress per replica.
 - A shared limiter would avoid that division. An example is a Redis GCRA keyed by egress address, with a local fallback of budget/N when Redis is unreachable. It is not built in, because it makes Redis a hard dependency of every authentication. Consider it only if replicas scale dynamically.
 
 #### Prod mode
@@ -247,7 +278,7 @@ Settings (`settings.mcp.auth.validation.*`). For `stale_grace` and `revalidation
 | Key                        | Default                    | Meaning                                                      |
 | -------------------------- | -------------------------- | ------------------------------------------------------------ |
 | `enabled`                  | `true`                     | One-api validation. `false` is a development-only opt-out: refused at startup without `--debug`, and with `--debug` it logs a WARN and accepts any non-empty bearer. |
-| `base_url`                 | `settings.oneapi.balance_url` origin, else `oneapi.BillingAPI` | one-api origin.             |
+| `base_url`                 | `oneapi.BillingAPI`        | one-api origin; the endpoint is `base_url` + `/api/token/balance`. When unset, the deprecated `settings.oneapi.balance_url` is used verbatim as the endpoint. Startup refuses a URL that is not absolute `http(s)` or carries user info. |
 | `timeout`                  | `5s` (100ms–30s)           | Upstream timeout per call, including the wait for a slot.    |
 | `positive_ttl`             | `5m` (1s–1h)               | Trust period for an accepted key (revocation lag).           |
 | `negative_ttl`             | `30s` (1s–5m)              | Refusal period for a rejected key.                           |
@@ -261,7 +292,8 @@ Settings (`settings.mcp.auth.validation.*`). For `stale_grace` and `revalidation
 | `max_sources`              | `10000` (at most 1,000,000) | Client sources tracked (least recently used evicted).       |
 | `revalidation_rate_per_second` | `0.2` (`0` disables)   | Reserved rate for revalidating known keys.                   |
 | `revalidation_burst`       | `20`                       | Reserved burst for revalidating known keys.                  |
-| `oneapi_rate_limit`        | `480` (`0` = egress exempt) | one-api's per-IP `GLOBAL_API_RATE_LIMIT` for this server's egress, in calls per 3 minutes. Startup refuses a gate that may start more calls than this (the per-3-minute total under **Rate limits** above), since paid-tool consumes share the limit. |
+| `oneapi_rate_limit`        | `480` (`0` = egress exempt) | This process's share of one-api's per-IP `GLOBAL_API_RATE_LIMIT`, in calls per 3 minutes. Startup refuses a gate whose buckets may start more calls than this (the per-3-minute total under **Rate limits** above); at run time the gate starts no call once this process's one-api REST calls in the window, consumes included, reach it. |
+| `gateways`                 | none                       | List of `{cidr, rate_per_second, burst}`: client ranges with their own per-source budget (see **Gateways** above). |
 
 Startup also refuses budgets that would defeat themselves: any rate that is not finite or exceeds 1000/s, any burst above 100,000, `per_source_rate_per_second` above `upstream_rate_per_second`, and `per_source_burst` above `upstream_burst` (one source could otherwise spend the whole global budget). These checks apply while validation is enabled.
 
@@ -277,6 +309,12 @@ Request bodies are budgeted per route family before any middleware or handler re
 - **Minimum data rate.** A client gets `read_grace` for its first bytes and must then keep delivering at least `min_data_rate` bytes per second. Every byte earns `1/min_data_rate` seconds of read time. Large uploads over slow but live links therefore succeed, while a stalled or trickling (slow-loris) body is cut.
 - **Bounded credit.** Bytes delivered faster than the minimum rate bank at most `max_idle` of read time. A fast client may therefore pause up to `max_idle`. A burst cannot fund a later stall or a trickle below the minimum rate, which a cumulative rate (Kestrel's `MinRequestBodyDataRate`, Apache's `MinRate`) would allow: 1 MiB at once would otherwise buy about 4.5 minutes of silence. A plain inter-read timer (nginx `client_body_timeout`) would still admit a trickle. Over any interval, a live body delivers at least `min_data_rate × (interval − max_idle)` bytes.
 - **Absolute cap.** The whole read is limited to the smaller of `max_read_duration` and `read_grace + cap / min_data_rate`.
+- **In-flight body budget (MCP transport).** The per-request cap does not stop many concurrent requests from each holding a large body in memory: the MCP SDK reads every POST body whole, and the transport buffers 2026-07-28 and anonymous bodies whole first to classify them. So all in-flight MCP requests together may hold at most `mcp_max_inflight_bytes` of body (default 4 × `mcp_max_bytes` = 128 MiB; never below `mcp_max_bytes`, so one body at the cap always fits an idle transport).
+  - The budget counts body bytes actually read, as they arrive, for declared and chunked bodies alike. A declared `Content-Length` that has not arrived costs nothing, so slow or stalled senders cannot reserve capacity they do not use (the budget applies before authentication). The transport's buffers grow with the received bytes, never to a declared length up front, so the charge follows memory. A declared length above the byte cap is still refused with `413` before any byte is read.
+  - A read whose bytes do not fit fails. Where the transport buffers the body itself (2026-07-28 and anonymous POSTs), the request gets `503` with `Retry-After: 2`, `Connection: close` and `{"error":"temporarily_unavailable", …}`. A legacy-session POST, which the SDK reads directly, gets the SDK's JSON-RPC parse error instead.
+  - The charge is released when the request's handler returns, so a long tool call keeps its body charged while it runs.
+  - The budget counts body bytes, not heap. While a 2026-07-28 request runs, the transport's copy and the SDK's own copy coexist, and growing buffers over-allocate, so the heap they use is about 2–3 × the charged bytes. Size `mcp_max_inflight_bytes` against the memory reserved for request bodies.
+  - Metrics: `http_request_body_inflight_bytes{entry="mcp"}` (bytes read and not yet released), `http_request_body_inflight_capacity_bytes{entry="mcp"}` and `http_request_body_inflight_refused_total{entry="mcp"}` (refused reads). Alert on a sustained increase of the refusal counter, or on `http_request_body_inflight_bytes / http_request_body_inflight_capacity_bytes` staying above 0.8.
 - **Bodyless requests.** Requests without a body (SSE `GET` streams, held long polls after their body was read, websockets) are never limited.
 - **Protocols and fallback.** The data-rate rule arms a per-request read deadline through `http.ResponseController`, which works on HTTP/1.1 and on HTTP/2 streams (both covered by real-socket tests). If a deadline cannot be armed, for example behind a `ResponseWriter` wrapper without `Unwrap`, the request still runs with its byte cap only. Each such request is counted in `http_request_body_read_deadline_unarmed_total{entry="mcp|graphql|tool_console|default"}` and logged at WARN at most once a minute per entry (`suppressed_since_last` counts the rest). Alert on any increase: slow-body protection is off on that entry.
 
@@ -286,6 +324,7 @@ Settings (`settings.web.request_body.*`, plus `settings.web.idle_timeout`):
 | ------------------------- | --------- | ---------------------------------------------------------------------------------------------- |
 | `mcp_max_bytes`           | 32 MiB    | MCP transport requests that carry a validated key. This leaves room for the largest tool call, `extract_key_info` with 10 MB of materials. |
 | `mcp_anonymous_max_bytes` | 1 MiB     | MCP transport requests without credentials (discovery only, see [Access Boundary](#access-boundary)). |
+| `mcp_max_inflight_bytes`  | 4 × `mcp_max_bytes` (128 MiB) | Body bytes actually read that all in-flight MCP transport requests may hold together; never below `mcp_max_bytes`. A read beyond it fails with a retryable `503` (see above). |
 | `graphql_max_bytes`       | 64 MiB    | `/query` and `/query/v2`. gqlgen's multipart upload limit (32 MiB) still applies inside.        |
 | `default_max_bytes`       | 1 MiB     | Every other route (one-api balance proxy, SSO code exchange, webhooks). Routes with tighter own caps keep them. |
 | `min_data_rate`           | `4096` B/s | Minimum delivery rate after the grace period, on every route.                                 |
