@@ -232,8 +232,9 @@ changing charging/refund policy without a separate product decision.
 ## HOWTO: patch the caller build toolchain
 
 Build the caller with Go 1.27.3 or a later patched Go 1.27 release. The module
-minimum, Docker builder and explicit CI pins select 1.27.3; workflows that read
-`go.mod` inherit that minimum. [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)
+minimum, Docker builder and explicit CI pins now select 1.27.4 (see
+[the toolchain note](../ref/go_toolchain.md)); workflows that read `go.mod`
+inherit that minimum. [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)
 affects `crypto/x509.Certificate.Verify` in earlier toolchains, and the
 [Go 1.27.3 release](https://go.dev/doc/devel/release#go1.27.3) fixes it.
 After selecting the patched compiler, verify the caller's existing MCP HTTPS

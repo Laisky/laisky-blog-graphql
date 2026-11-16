@@ -105,6 +105,16 @@ It exposed two real source/API incompatibilities:
    implement. Migrate the test-only import to `pgxmock/v5 v5.2.0`, whose release
    explicitly supports pgx 5.11 and TypeMap. Keep the production pgx major version.
 
+Later, `pgx v5.12.0` added `BatchResults.Tx()`. `pgxmock/v5 v5.2.0`, the last v5
+release, does not implement it, so pgxmock itself fails to compile against
+pgx 5.12 or newer. Upstream development continues as `pgxmock/v6`, and the
+test-only import now uses `pgxmock/v6 v6.0.0-beta2`. That release is built
+against pgx 5.12 and implements `Tx`, and the existing tests needed no API
+changes. If a future pgx release breaks pgxmock again and no compatible
+release exists, rewrite the affected tests against a real PostgreSQL test
+database instead of holding pgx back. The owner prefers real databases to
+database mocks.
+
 `make gen` now uses the gqlgen version selected by `go.mod`, rather than a
 second hardcoded version that drifts from the runtime dependency. Generated
 GraphQL artifacts must come from that command, never manual edits.

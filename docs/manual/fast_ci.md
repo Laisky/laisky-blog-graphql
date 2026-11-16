@@ -7,7 +7,7 @@ developer machine or staging, rather than on every push or pull request.
 This changes when tests run, not their assertions or acceptance criteria.
 
 Current fast, quality, network-security and compatibility/database acceptance
-CI jobs select the Go release named by the root `go.mod` (currently 1.27.3),
+CI jobs select the Go release named by the root `go.mod` (currently 1.27.4),
 either by an explicit pin or through `go-version-file: go.mod`;
 [the toolchain note](../ref/go_toolchain.md) explains the drift guard that keeps
 them equal. Historical timing measurements below retain the toolchain versions
