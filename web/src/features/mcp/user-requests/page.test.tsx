@@ -359,6 +359,43 @@ describe('UserRequestsPage Command Template', () => {
   });
 });
 
+describe('UserRequestsPage quota readout', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useApiKey).mockReturnValue({ apiKey: 'test-api-key', isToolConsoleLocked: false, status: 'valid' });
+    vi.mocked(api.listUserRequests).mockResolvedValue({ pending: [], consumed: [] });
+    vi.mocked(api.getPreferencesFromServer).mockResolvedValue({ return_mode: 'all' });
+  });
+
+  it('shows the bytes unfinished uploads reserve, counted like admission counts them', async () => {
+    vi.mocked(api.getQuota).mockResolvedValueOnce({
+      user_identity: 'u',
+      used_bytes: 1024 * 1024,
+      reserved_bytes: 1024 * 1024,
+      available_bytes: 2 * 1024 * 1024,
+      quota_bytes: 4 * 1024 * 1024,
+      object_count: 1,
+      ttl_days: 7,
+    });
+    render(<UserRequestsPage />);
+    expect(
+      await screen.findByText('1.0 MiB / 4.0 MiB used + 1.0 MiB reserved by unfinished uploads (50.0%), images expire in 7 days'),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the readout of servers that do not report reservations', async () => {
+    vi.mocked(api.getQuota).mockResolvedValueOnce({
+      user_identity: 'u',
+      used_bytes: 1024 * 1024,
+      quota_bytes: 4 * 1024 * 1024,
+      object_count: 1,
+      ttl_days: 7,
+    });
+    render(<UserRequestsPage />);
+    expect(await screen.findByText('1.0 MiB / 4.0 MiB used (25.0%), images expire in 7 days')).toBeInTheDocument();
+  });
+});
+
 /** deferred returns a promise whose settlement the test controls. */
 function deferred<T>() {
   let resolve!: (value: T) => void;

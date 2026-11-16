@@ -47,7 +47,8 @@ func TestMultipartLimitsAreAppliedBeforeAttachmentAllocation(t *testing.T) {
 			settings.PerImageMaxBytes = 32
 			settings.MaxPerRequest = 2
 			h := &httpHandler{imageManager: NewImageManager(storage.NewFakeStore(), nil, settings), logger: log.Logger}
-			_, _, attachments, err := h.parseMultipart(req)
+			_, _, attachments, cleanup, err := h.parseMultipart(req)
+			defer cleanup()
 			if tc.want != nil {
 				require.ErrorIs(t, err, tc.want)
 				require.Nil(t, attachments)
@@ -55,7 +56,10 @@ func TestMultipartLimitsAreAppliedBeforeAttachmentAllocation(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Len(t, attachments, tc.count)
-			require.Len(t, attachments[0].FileBytes, tc.size)
+			require.Nil(t, attachments[0].FileBytes, "parts are streamed by Prepare, not buffered at parse time")
+			body, err := readAttachment(attachments[0].Open, settings.PerImageMaxBytes)
+			require.NoError(t, err)
+			require.Len(t, body, tc.size)
 		})
 	}
 }
@@ -66,7 +70,7 @@ func TestMultipartRejectsOverflowAndCanceledRequests(t *testing.T) {
 	settings.PerImageMaxBytes = math.MaxInt64
 	settings.MaxPerRequest = 2
 	h := &httpHandler{imageManager: NewImageManager(storage.NewFakeStore(), nil, settings), logger: log.Logger}
-	_, _, _, err := h.parseMultipart(httptest.NewRequest(http.MethodPost, "/", nil))
+	_, _, _, _, err := h.parseMultipart(httptest.NewRequest(http.MethodPost, "/", nil))
 	require.Error(t, err)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

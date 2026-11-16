@@ -1207,8 +1207,9 @@ export function UserRequestsPage() {
           </div>
           {hasImageFeature && quota && (
             <p className="text-xs text-muted-foreground">
-              {formatBytes(quota.used_bytes)} / {formatBytes(quota.quota_bytes)} used ({quotaPercent.toFixed(1)}%), images expire in{' '}
-              {quota.ttl_days} days
+              {formatBytes(quota.used_bytes)} / {formatBytes(quota.quota_bytes)} used
+              {quota.reserved_bytes ? ` + ${formatBytes(quota.reserved_bytes)} reserved by unfinished uploads` : ''} (
+              {quotaPercent.toFixed(1)}%), images expire in {quota.ttl_days} days
             </p>
           )}
           <UrlAttachmentDialog open={isUrlDialogOpen} onOpenChange={setIsUrlDialogOpen} onSubmit={handleUrlAttach} />

@@ -220,7 +220,21 @@ export interface UserRequest {
 
 export interface QuotaResponse {
   user_identity: string;
+  /** Bytes of committed (live) images. */
   used_bytes: number;
+  /**
+   * Bytes reserved by this user's unfinished uploads (each image once; the
+   * reservation of a crashed upload lapses within 10 minutes). Absent from
+   * servers that predate it.
+   */
+  reserved_bytes?: number;
+  /**
+   * New bytes the next submission may add: quota - used - reserved. A new
+   * image larger than this is refused with `quota_exceeded`; an image the user
+   * already holds or is uploading is not charged again. Absent from servers
+   * that predate it.
+   */
+  available_bytes?: number;
   quota_bytes: number;
   object_count: number;
   ttl_days: number;
@@ -237,6 +251,13 @@ export type ImageErrorCode =
   | 'decode_failed'
   | 'storage_unavailable'
   | 'feature_disabled'
+  // 503 with Retry-After: the image create cap, its bounded queue, or the
+  // decode budget is full, or a previous copy of the image is still being
+  // deleted. The request had no effect and may be retried.
+  | 'image_busy'
+  // 500: a server fault; the message is a fixed text and the detail is
+  // only in the server log.
+  | 'internal_error'
   | 'unknown';
 
 export interface ImageSubmissionError extends Error {
