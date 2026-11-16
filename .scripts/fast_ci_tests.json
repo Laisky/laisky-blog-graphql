@@ -94,7 +94,8 @@
       "TestValidateStartupConfigSSORedirectPolicy",
       "TestValidateStartupConfigRefusesDisabledValidationInProdMode",
       "TestValidateStartupConfigImageLifecycleMode",
-      "TestSizeImageMemoryAtStartup"
+      "TestSizeImageMemoryAtStartup",
+      "TestValidateStartupConfigRefusesUnsafeValidationBounds"
     ]
   },
   {
@@ -138,7 +139,8 @@
       "TestGinBodyBudgetCutsSlowBodiesThroughTheProductionWriterChain",
       "TestRV95SingleHostXFFRotationLocksOutNewValidKeys",
       "TestRV95BalanceProxyFloodExhaustsOneAPIBudgetAndLocksOutValidation",
-      "TestProductionWiringRefusesDisabledValidationOutsideDebug"
+      "TestProductionWiringRefusesDisabledValidationOutsideDebug",
+      "TestRequestBodyPolicyCountsUnarmedDeadlines"
     ]
   },
   {
@@ -235,7 +237,9 @@
       "TestBeginAuthorityCallChangesNothingElse",
       "TestBeginAuthorityCallNeverResurrectsARejectedKey",
       "TestValidationCapacityMatchesTheManual",
-      "TestUnavailableCauseSeparatesAuthorityFromLocalFailures"
+      "TestUnavailableCauseSeparatesAuthorityFromLocalFailures",
+      "TestValidationSettingsRefuseUnsafeBounds",
+      "TestExampleSettingsPassValidationBounds"
     ]
   },
   {
@@ -266,7 +270,8 @@
       "TestMCPFailureAlertProductionWiring",
       "TestMCPFailureTypedCauses",
       "TestShouldDowngradeMCPErrorLog",
-      "TestShouldDowngradeMCPErrorLogFalse"
+      "TestShouldDowngradeMCPErrorLogFalse",
+      "TestBodyBudgetCountsUnarmedDeadlines"
     ]
   },
   {
@@ -278,7 +283,9 @@
       "TestTightenLowersTheCap",
       "TestReadDeadlineReachesThroughUnwrappingWriters",
       "TestReadCreditIsBoundedAndDrains",
-      "TestBurstThenStallIsCutAfterTheIdleBound"
+      "TestBurstThenStallIsCutAfterTheIdleBound",
+      "TestNoteUnarmedDeadlineCountsAndSamples",
+      "TestEnforceReportsAnUnarmableDeadline"
     ]
   },
   {

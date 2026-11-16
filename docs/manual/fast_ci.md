@@ -28,7 +28,8 @@ ask_user console, GraphQL shared fields), caching, flood bounds, outage
 fail-closed behavior, production wiring, the prod-mode refusal of disabled
 validation, the configured protected-resource metadata URL, upstream budgets
 spent only by calls that hold a slot, request-body caps, slow-body and
-burst-then-stall cuts, and held requests that outlive the read budget. They
+burst-then-stall cuts, the count of bodies whose read deadline cannot be armed, the
+startup bounds of the validation budgets, and held requests that outlive the read budget. They
 also cover the anonymous access boundary: the transport allowlist, refusal of
 anonymous tool calls before any handler, and the SDK dispatch check for every
 registered tool. They also check that no caller can cancel another caller's
@@ -40,7 +41,8 @@ request-body read-credit arithmetic runs on a fake clock. Real-socket timing
 variants stay in `make test` and are not selected:
 `TestReadDeadlineCutsSlowBodyButNotTheResponse`, `TestMinDataRate*`,
 `TestAbsoluteReadCapBoundsFastEnoughClients`, `TestBurstThenTrickle*`,
-`TestPauseWithinTheIdleBoundIsAdmitted`, `TestIngressSSEStreamOutlivesReadBudget`,
+`TestPauseWithinTheIdleBoundIsAdmitted`, `TestReadDeadlineCutsSlowBodyOverHTTP2`,
+`TestIngressSSEStreamOutlivesReadBudget`,
 `TestIngressCutsBurstThenStallWithinTheIdleBound`,
 `TestGinBodyBudgetCutsBurstThenStallThroughTheProductionChain` and
 `TestProductionEngineAdmitsSlowSteadyLargeUploads`. The capacity simulation
