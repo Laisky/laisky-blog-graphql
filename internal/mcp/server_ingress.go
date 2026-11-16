@@ -111,6 +111,10 @@ func WithRequestBodyBudget(budget RequestBodyBudget) ServerOption {
 	return func(services *sharedServerServices) { services.bodyBudget = budget }
 }
 
+// bodyDeadlineEntryMCP labels the MCP transport in
+// http_request_body_read_deadline_unarmed_total.
+const bodyDeadlineEntryMCP = "mcp"
+
 // withRequestBodyBudget is the outermost transport wrapper: it refuses a
 // declared over-budget body before any byte is read, caps streamed bodies, and
 // bounds the time spent reading them. It precedes the request logger because
@@ -120,14 +124,24 @@ func withRequestBodyBudget(next http.Handler, budget RequestBodyBudget, logger l
 		return nil
 	}
 	budget = budget.normalized()
+	unarmed := httpbody.NewUnarmedReporter(httpbody.UnarmedWarnInterval)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		result, err := httpbody.Enforce(w, r, budget.httpbody())
 		if err != nil {
 			writeRequestTooLarge(w, httpbody.Limit(err))
 			return
 		}
-		if result.DeadlineErr != nil && logger != nil {
-			logger.Debug("mcp body read deadline unavailable", zap.Error(result.DeadlineErr))
+		if result.DeadlineErr != nil {
+			// Only the byte cap bounds this body now: count it and say so.
+			warn, suppressed := unarmed.Record(bodyDeadlineEntryMCP, time.Now())
+			switch {
+			case logger == nil:
+			case warn:
+				logger.Warn("mcp body read deadline unavailable; only the byte cap bounds this body",
+					zap.Int64("suppressed_since_last", suppressed), zap.Error(result.DeadlineErr))
+			default:
+				logger.Debug("mcp body read deadline unavailable", zap.Error(result.DeadlineErr))
+			}
 		}
 		next.ServeHTTP(w, r)
 	})

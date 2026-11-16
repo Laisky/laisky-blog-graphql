@@ -109,12 +109,19 @@ type requestBodyPolicy struct {
 	settings     requestBodySettings
 	routes       map[string]requestBodyClass
 	toolPrefixes []string
+	// unarmed counts bodies whose read deadline could not be armed, per
+	// route class, and samples the WARN lines about them.
+	unarmed *httpbody.UnarmedReporter
 }
 
 // newRequestBodyPolicy derives the route families from the same path helpers
 // that register the routes, so classification cannot drift from registration.
 func newRequestBodyPolicy(prefix urlPrefixConfig, settings requestBodySettings) *requestBodyPolicy {
-	policy := &requestBodyPolicy{settings: settings, routes: make(map[string]requestBodyClass)}
+	policy := &requestBodyPolicy{
+		settings: settings,
+		routes:   make(map[string]requestBodyClass),
+		unarmed:  httpbody.NewUnarmedReporter(httpbody.UnarmedWarnInterval),
+	}
 	for _, path := range mcpTransportRoutePaths(prefix) {
 		policy.routes[path] = bodyClassMCP
 	}
@@ -180,8 +187,16 @@ func (p *requestBodyPolicy) middleware() gin.HandlerFunc {
 			return
 		}
 		if result.DeadlineErr != nil {
-			ginMw.GetLogger(c).Debug("request body read deadline unavailable",
-				zap.String("route_class", string(class)), zap.Error(result.DeadlineErr))
+			// Only the byte cap bounds this body now: count it and say so.
+			logger := ginMw.GetLogger(c)
+			if warn, suppressed := p.unarmed.Record(string(class), time.Now()); warn {
+				logger.Warn("request body read deadline unavailable; only the byte cap bounds this body",
+					zap.String("route_class", string(class)), zap.Int64("suppressed_since_last", suppressed),
+					zap.Error(result.DeadlineErr))
+			} else {
+				logger.Debug("request body read deadline unavailable",
+					zap.String("route_class", string(class)), zap.Error(result.DeadlineErr))
+			}
 		}
 		c.Next()
 	}
