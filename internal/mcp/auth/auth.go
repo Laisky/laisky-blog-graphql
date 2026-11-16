@@ -70,7 +70,7 @@ func parseAuthorizationHeader(header string) (*Context, error) {
 	if trimmedHeader == "" {
 		return nil, errors.WithStack(ErrMissingAuthorization)
 	}
-	if len(trimmedHeader) > maxAuthorizationHeaderLength {
+	if len(trimmedHeader) > MaxAuthorizationHeaderLength {
 		return nil, errors.Wrap(ErrInvalidAuthorization, "authorization header exceeds the maximum length")
 	}
 
@@ -154,10 +154,11 @@ func looksLikeAPIKey(token string) bool {
 	return false
 }
 
-// maxAuthorizationHeaderLength bounds a whole Authorization header before it
-// is split: the scheme, a legacy identity, a key of MaxAPIKeyLength and
-// some whitespace fit easily.
-const maxAuthorizationHeaderLength = 2048
+// MaxAuthorizationHeaderLength bounds a whole Authorization header (or a
+// query key) before it is split: the scheme, a legacy identity, a key of
+// MaxAPIKeyLength and some whitespace fit easily. Transports refuse a longer
+// header before any other work on it.
+const MaxAuthorizationHeaderLength = 2048
 
 // DeriveFromAPIKey builds the canonical, unverified tenant identifiers of a raw API key.
 // The result is never honored by FromContext; use an Authenticator to authenticate a caller.

@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"encoding/json"
-	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -26,18 +25,21 @@ import (
 // so a burst cannot fund a later stall, and the whole read is capped
 // absolutely.
 //
-// The in-flight budget bounds the body bytes all in-flight MCP requests hold
-// together (DefaultMCPInflightBodyFactor times the per-request cap unless
-// configured): the per-request cap alone does not stop many concurrent
-// requests from each buffering a large body.
+// The in-flight budgets bound the body bytes in-flight MCP requests hold
+// together, one for verified and one for anonymous callers
+// (DefaultMCPInflightBodyFactor and DefaultMCPAnonymousInflightBodyFactor
+// times the respective per-request cap unless configured): the per-request
+// cap alone does not stop many concurrent requests from each buffering a
+// large body. See server_ingress_inflight.go.
 const (
-	DefaultMCPMaxBodyBytes          int64 = 32 << 20
-	DefaultMCPAnonymousMaxBodyBytes int64 = 1 << 20
-	DefaultMCPInflightBodyFactor    int64 = 4
-	DefaultBodyMinBytesPerSecond          = 4096
-	DefaultBodyReadGrace                  = 10 * time.Second
-	DefaultBodyMaxIdle                    = 30 * time.Second
-	DefaultBodyMaxReadDuration            = 30 * time.Minute
+	DefaultMCPMaxBodyBytes                int64 = 32 << 20
+	DefaultMCPAnonymousMaxBodyBytes       int64 = 1 << 20
+	DefaultMCPInflightBodyFactor          int64 = 4
+	DefaultMCPAnonymousInflightBodyFactor int64 = 8
+	DefaultBodyMinBytesPerSecond                = 4096
+	DefaultBodyReadGrace                        = 10 * time.Second
+	DefaultBodyMaxIdle                          = 30 * time.Second
+	DefaultBodyMaxReadDuration                  = 30 * time.Minute
 )
 
 // RequestBodyBudget bounds MCP transport request bodies.
@@ -46,11 +48,17 @@ type RequestBodyBudget struct {
 	MaxBytes int64
 	// AnonymousMaxBytes caps a request without any credential.
 	AnonymousMaxBytes int64
-	// MaxInflightBytes bounds the body bytes held by all in-flight requests
-	// of the transport together (httpbody.Inflight). Unset uses
+	// MaxInflightBytes bounds the body bytes held by all in-flight verified
+	// requests together (httpbody.Inflight); one API key may hold at most a
+	// quarter of it, and never less than MaxBytes. Unset uses
 	// DefaultMCPInflightBodyFactor × MaxBytes; it is never below MaxBytes, so
 	// one body at the cap always fits an idle transport.
 	MaxInflightBytes int64
+	// AnonymousMaxInflightBytes bounds the body bytes held by all in-flight
+	// requests without a credential together. Unset uses
+	// DefaultMCPAnonymousInflightBodyFactor × AnonymousMaxBytes; it is never
+	// below AnonymousMaxBytes.
+	AnonymousMaxInflightBytes int64
 	// MinBytesPerSecond is the delivery rate a body must sustain after ReadGrace.
 	MinBytesPerSecond float64
 	// ReadGrace is the time allowed before the first bytes must arrive.
@@ -65,13 +73,14 @@ type RequestBodyBudget struct {
 // DefaultRequestBodyBudget returns the transport defaults.
 func DefaultRequestBodyBudget() RequestBodyBudget {
 	return RequestBodyBudget{
-		MaxBytes:          DefaultMCPMaxBodyBytes,
-		AnonymousMaxBytes: DefaultMCPAnonymousMaxBodyBytes,
-		MaxInflightBytes:  DefaultMCPInflightBodyFactor * DefaultMCPMaxBodyBytes,
-		MinBytesPerSecond: DefaultBodyMinBytesPerSecond,
-		ReadGrace:         DefaultBodyReadGrace,
-		MaxIdle:           DefaultBodyMaxIdle,
-		MaxReadDuration:   DefaultBodyMaxReadDuration,
+		MaxBytes:                  DefaultMCPMaxBodyBytes,
+		AnonymousMaxBytes:         DefaultMCPAnonymousMaxBodyBytes,
+		MaxInflightBytes:          DefaultMCPInflightBodyFactor * DefaultMCPMaxBodyBytes,
+		AnonymousMaxInflightBytes: DefaultMCPAnonymousInflightBodyFactor * DefaultMCPAnonymousMaxBodyBytes,
+		MinBytesPerSecond:         DefaultBodyMinBytesPerSecond,
+		ReadGrace:                 DefaultBodyReadGrace,
+		MaxIdle:                   DefaultBodyMaxIdle,
+		MaxReadDuration:           DefaultBodyMaxReadDuration,
 	}
 }
 
@@ -91,12 +100,13 @@ func (b RequestBodyBudget) normalized() RequestBodyBudget {
 	}
 	b.AnonymousMaxBytes = min(b.AnonymousMaxBytes, b.MaxBytes)
 	if b.MaxInflightBytes <= 0 {
-		b.MaxInflightBytes = b.MaxBytes
-		if b.MaxBytes <= math.MaxInt64/DefaultMCPInflightBodyFactor {
-			b.MaxInflightBytes = DefaultMCPInflightBodyFactor * b.MaxBytes
-		}
+		b.MaxInflightBytes = saturatingMultiple(b.MaxBytes, DefaultMCPInflightBodyFactor)
 	}
 	b.MaxInflightBytes = max(b.MaxInflightBytes, b.MaxBytes)
+	if b.AnonymousMaxInflightBytes <= 0 {
+		b.AnonymousMaxInflightBytes = saturatingMultiple(b.AnonymousMaxBytes, DefaultMCPAnonymousInflightBodyFactor)
+	}
+	b.AnonymousMaxInflightBytes = max(b.AnonymousMaxInflightBytes, b.AnonymousMaxBytes)
 	if b.MinBytesPerSecond <= 0 {
 		b.MinBytesPerSecond = defaults.MinBytesPerSecond
 	}
@@ -140,29 +150,31 @@ const bodyDeadlineEntryMCP = "mcp"
 // bounds the time spent reading them. It precedes the request logger because
 // the logger reads a body preview.
 //
-// It also charges every body to the transport's in-flight budget, because
-// every POST body is held in memory: the MCP SDK io.ReadAll()s each one, and
-// serveVerified and serveAnonymous buffer theirs for classification first.
-// A body is charged the bytes it actually delivers, as they are read, never
-// a declared length that has not arrived, so slow senders cannot reserve
-// capacity (this wrapper runs before authentication). A read that does not
-// fit fails: our buffering answers 503, while the SDK, which reads legacy
-// POSTs directly, answers its own JSON-RPC parse error. The charge is
-// released when the request's handler returns.
+// It also tracks every body for the in-flight budgets (httpbody.Track),
+// because every POST body is held in memory: the MCP SDK io.ReadAll()s each
+// one, and serveVerified and serveAnonymous buffer theirs for classification
+// first. This wrapper runs before authentication, so it charges nothing yet:
+// at most maxPendingBodyBytes (the logger's preview) may be read before the
+// credential gate assigns the body to the verified budget, under its API key,
+// or to the anonymous one (assignRequestBody). Slow senders and callers
+// without a valid key therefore cannot spend the budget verified callers
+// use. Every assigned body is charged the bytes it actually delivers, and its
+// charge is released when the request's handler returns.
 func withRequestBodyBudget(next http.Handler, budget RequestBodyBudget, logger logSDK.Logger) http.Handler {
 	if next == nil {
 		return nil
 	}
 	budget = budget.normalized()
 	unarmed := httpbody.NewUnarmedReporter(httpbody.UnarmedWarnInterval)
-	inflight := httpbody.NewInflight(bodyDeadlineEntryMCP, budget.MaxInflightBytes, budget.MaxBytes)
+	budgets := newIngressBodyBudgets(budget)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		result, err := httpbody.Enforce(w, r, budget.httpbody())
 		if err != nil {
 			writeRequestTooLarge(w, httpbody.Limit(err))
 			return
 		}
-		defer inflight.Admit(r)()
+		r, charge := httpbody.Track(budgets.attach(r), maxPendingBodyBytes)
+		defer charge.Release()
 		if result.DeadlineErr != nil {
 			// Only the byte cap bounds this body now: count it and say so.
 			warn, suppressed := unarmed.Record(bodyDeadlineEntryMCP, time.Now())
@@ -197,10 +209,26 @@ func withBearerAuthentication(next http.Handler, resolve func() *mcpauth.Authent
 	unavailableLog := mcpauth.NewUnavailableLog(time.Minute)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header, source := resolveRequestAuthorizationHeader(r)
+		// Bound the raw header before any parsing: splitting a 1 MiB header
+		// (Go's default MaxHeaderBytes) of short fields allocates about nine
+		// times its size, and mcpauth refuses such a header anyway.
+		if len(header) > maxAuthorizationHeaderBytes {
+			if logger != nil {
+				logger.Debug("mcp bearer rejected: authorization header too long",
+					zap.String("auth_source", source), zap.Int("header_bytes", len(header)))
+			}
+			writeInvalidToken(w, metadataURL)
+			return
+		}
 		// A bearer scheme without a token (e.g. a client whose key variable is
 		// empty) carries no credential: it keeps anonymous discovery, as before,
 		// and can never yield a tenant.
 		if library.StripBearerPrefix(header) == "" {
+			if err := assignRequestBody(r, false, ""); err != nil {
+				logInflightRefusal(logger, "anonymous", err)
+				writeTransportBusy(w)
+				return
+			}
 			serveAnonymous(w, r, next, anonymousMaxBytes, metadataURL, logger)
 			return
 		}
@@ -221,6 +249,13 @@ func withBearerAuthentication(next http.Handler, resolve func() *mcpauth.Authent
 				logger.Debug("mcp bearer rejected", zap.String("auth_source", source), zap.Error(err))
 			}
 			writeInvalidToken(w, metadataURL)
+			return
+		}
+		// Only now, with the key verified, may the body draw on the verified
+		// budget, within that key's share of it.
+		if err := assignRequestBody(r, true, authCtx.APIKeyHash); err != nil {
+			logInflightRefusal(logger, "verified", err)
+			writeTransportBusy(w)
 			return
 		}
 		serveVerified(w, r.WithContext(mcpauth.WithContext(ctx, authCtx)), next, logger)

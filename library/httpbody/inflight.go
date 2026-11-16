@@ -1,6 +1,7 @@
 package httpbody
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"sync"
@@ -9,31 +10,48 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Collectors of the in-flight body budgets, by entry. Entries come from a
-// small fixed set (a transport or route class), never from request data.
+// Refusal reasons of http_request_body_inflight_refused_total.
+const (
+	// InflightRefusedCapacity is a read refused because the budget is full.
+	InflightRefusedCapacity = "capacity"
+	// InflightRefusedTenantShare is a read refused because the request's
+	// tenant already holds its share of the budget.
+	InflightRefusedTenantShare = "tenant_share"
+)
+
+// Collectors of the in-flight body budgets. Entries and reasons come from
+// small fixed sets (a transport class, the reasons above), never from
+// request data.
 var (
 	inflightBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "http_request_body_inflight_bytes",
 		Help: "Request-body bytes read and not yet released by in-flight requests, by entry.",
-	}, []string{entryLabel})
+	}, []string{"entry"})
 	inflightCapacity = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "http_request_body_inflight_capacity_bytes",
 		Help: "Capacity of the in-flight body budget, by entry.",
-	}, []string{entryLabel})
+	}, []string{"entry"})
 	inflightRefused = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "http_request_body_inflight_refused_total",
-		Help: "Request-body reads refused because the in-flight body budget was spent, by entry.",
-	}, []string{entryLabel})
+		Help: "Request-body reads refused by an in-flight body budget, by entry and reason (capacity, tenant_share).",
+	}, []string{"entry", "reason"})
+	unclassifiedRefused = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "http_request_body_unclassified_refused_total",
+		Help: "Request-body reads refused because a request read more than its pending bound before it was assigned to a budget.",
+	})
 )
 
 func init() {
-	prometheus.MustRegister(inflightBytes, inflightCapacity, inflightRefused)
+	prometheus.MustRegister(inflightBytes, inflightCapacity, inflightRefused, unclassifiedRefused)
 }
 
-// InflightExhaustedError reports that the in-flight body budget could not
-// hold more of a request's body. Callers answer it with a retryable 503.
+// InflightExhaustedError reports that a request's body may not be read
+// further: its budget (or its tenant's share of it) is spent, or it read more
+// than its pending bound before it was assigned to a budget. Callers answer
+// it with a retryable 503.
 type InflightExhaustedError struct {
-	// Capacity is the budget's total capacity in bytes.
+	// Capacity is the bound that was hit: the budget's capacity, the tenant
+	// share, or the pending bound.
 	Capacity int64
 }
 
@@ -42,7 +60,7 @@ func (e *InflightExhaustedError) Error() string {
 	return "in-flight request body budget exhausted"
 }
 
-// IsInflightExhausted reports whether err means the in-flight body budget
+// IsInflightExhausted reports whether err means an in-flight body budget
 // refused to hold more of the request's body.
 func IsInflightExhausted(err error) bool {
 	var exhausted *InflightExhaustedError
@@ -50,17 +68,20 @@ func IsInflightExhausted(err error) bool {
 }
 
 // Inflight bounds the request-body bytes held by the in-flight requests of
-// one entry (for example the MCP transport). It never blocks: a read that
-// cannot be charged fails, so a full budget cannot queue connections.
+// one class of callers (for example verified or anonymous MCP requests). It
+// never blocks: a read that cannot be charged fails, so a full budget cannot
+// queue connections.
 //
-// A body is charged exactly the bytes it has delivered, as they are read,
-// whether or not it declared a Content-Length: a declared length that has not
-// arrived costs nothing, so slow or stalled senders cannot reserve capacity
-// they do not use. Handlers must therefore let their buffers grow with the
-// received bytes (io.ReadAll, bytes.Buffer.ReadFrom) instead of allocating a
-// declared length up front, or the charge would understate the memory. The
-// byte cap of the route (Enforce, Tighten) bounds what one body can be
-// charged. The charge is released once, when the request's handler returns.
+// A body is charged exactly the bytes it has delivered, as they are read
+// (see Charge): a declared Content-Length that has not arrived costs nothing,
+// so slow or stalled senders cannot reserve capacity they do not use.
+// Handlers must therefore let their buffers grow with the received bytes
+// (io.ReadAll, bytes.Buffer.ReadFrom) instead of allocating a declared length
+// up front, or the charge would understate the memory.
+//
+// A budget with a tenant share also bounds what the requests of one tenant
+// (a verified API key) hold together, so one caller cannot starve the
+// others. Requests without a tenant are bounded by the capacity only.
 //
 // The budget counts body bytes, not heap: every copy a handler chain keeps of
 // a body (a classification buffer, an SDK's own io.ReadAll) adds to the real
@@ -69,31 +90,45 @@ func IsInflightExhausted(err error) bool {
 type Inflight struct {
 	entry    string
 	capacity int64
+	share    int64
 	gauge    prometheus.Gauge
-	refused  prometheus.Counter
 
-	mu   sync.Mutex
-	used int64
+	mu      sync.Mutex
+	used    int64
+	tenants map[string]int64
 }
 
-// NewInflight returns a budget of capacity bytes for entry. maxBodyBytes is
-// the largest body one request may carry; capacity is raised to it when
-// smaller, so a single body within the per-request cap always fits an idle
-// budget. The capacity is at least one byte.
-func NewInflight(entry string, capacity, maxBodyBytes int64) *Inflight {
+// NewInflight returns a budget of capacity bytes labeled entry in the
+// metrics. maxBodyBytes is the largest body one request may carry; capacity
+// is raised to it, so a single body within the per-request cap always fits an
+// idle budget. tenantShare bounds the bytes one tenant may hold; it is raised
+// to maxBodyBytes and kept within the capacity, and zero or negative disables
+// the share.
+func NewInflight(entry string, capacity, maxBodyBytes, tenantShare int64) *Inflight {
 	capacity = max(capacity, maxBodyBytes, 1)
+	if tenantShare > 0 {
+		tenantShare = min(max(tenantShare, maxBodyBytes), capacity)
+	} else {
+		tenantShare = 0
+	}
 	inflightCapacity.WithLabelValues(entry).Set(float64(capacity))
 	return &Inflight{
 		entry:    entry,
 		capacity: capacity,
+		share:    tenantShare,
 		gauge:    inflightBytes.WithLabelValues(entry),
-		refused:  inflightRefused.WithLabelValues(entry),
+		tenants:  make(map[string]int64),
 	}
 }
 
 // Capacity returns the budget's total capacity in bytes.
 func (f *Inflight) Capacity() int64 {
 	return f.capacity
+}
+
+// TenantShare returns the most one tenant may hold, or zero without a share.
+func (f *Inflight) TenantShare() int64 {
+	return f.share
 }
 
 // InUse returns the bytes currently charged.
@@ -103,99 +138,216 @@ func (f *Inflight) InUse() int64 {
 	return f.used
 }
 
-// tryAcquire charges n bytes when they fit, without waiting.
-func (f *Inflight) tryAcquire(n int64) bool {
+// TenantInUse returns the bytes currently charged to tenant.
+func (f *Inflight) TenantInUse(tenant string) int64 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if n > f.capacity-f.used {
-		return false
-	}
-	f.used += n
-	f.gauge.Add(float64(n))
-	return true
+	return f.tenants[tenant]
 }
 
-// release returns n charged bytes.
-func (f *Inflight) release(n int64) {
+// tryAcquire charges n bytes to tenant when they fit, without waiting. It
+// returns the refusal's error, counted in the metrics, when they do not.
+func (f *Inflight) tryAcquire(tenant string, n int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch {
+	case n > f.capacity-f.used:
+		inflightRefused.WithLabelValues(f.entry, InflightRefusedCapacity).Inc()
+		return errors.WithStack(&InflightExhaustedError{Capacity: f.capacity})
+	case f.share > 0 && tenant != "" && n > f.share-f.tenants[tenant]:
+		inflightRefused.WithLabelValues(f.entry, InflightRefusedTenantShare).Inc()
+		return errors.WithStack(&InflightExhaustedError{Capacity: f.share})
+	}
+	f.used += n
+	if f.share > 0 && tenant != "" && n > 0 {
+		f.tenants[tenant] += n
+	}
+	f.gauge.Add(float64(n))
+	return nil
+}
+
+// release returns n bytes charged to tenant.
+func (f *Inflight) release(tenant string, n int64) {
 	if n <= 0 {
 		return
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.used -= n
+	if held, ok := f.tenants[tenant]; ok {
+		if held <= n {
+			delete(f.tenants, tenant)
+		} else {
+			f.tenants[tenant] = held - n
+		}
+	}
 	f.gauge.Sub(float64(n))
 }
 
-// Admit makes r's body charge the budget for every byte it delivers and
-// returns the function that releases the charge; call it once when the
-// handler returns (defer it, so a panic releases too; extra calls are
-// no-ops). Nothing is charged up front. A read whose bytes do not fit fails
-// with an *InflightExhaustedError, as does every later read of that body.
-// A request without a body is not wrapped.
-func (f *Inflight) Admit(r *http.Request) func() {
-	if f == nil || r == nil || r.Body == nil || r.Body == http.NoBody {
-		return func() {}
-	}
-	body := &inflightBody{ReadCloser: r.Body, budget: f}
-	r.Body = body
-	return body.release
+// Charge is the in-flight accounting of one request body (Track). Bytes read
+// before the request is classified are pending: they are not charged to any
+// budget, and at most maxPending of them may be read. Assign then charges the
+// pending bytes to the budget of the request's class and tenant, and every
+// later read is charged there too. Release returns everything. A nil Charge
+// accounts nothing and refuses nothing.
+type Charge struct {
+	mu         sync.Mutex
+	maxPending int64
+	pending    int64
+	budget     *Inflight
+	tenant     string
+	charged    int64
+	released   bool
+	err        error
 }
 
-// inflightBody charges a body's delivered bytes to the budget.
-type inflightBody struct {
-	io.ReadCloser
-	budget *Inflight
+// chargeKey stores a request's Charge in its context.
+type chargeKey struct{}
 
-	mu       sync.Mutex
-	charged  int64
-	released bool
-	err      error
+// Track wraps r's body so every byte it delivers is accounted by the
+// returned Charge, which is also stored in the returned request's context
+// (ChargeFromContext), because later middleware may replace r.Body. Until
+// Assign, at most maxPending bytes may be read; further reads fail with an
+// *InflightExhaustedError. A request without a body gets a Charge too, so
+// Assign and Release need no special case. Defer Release.
+func Track(r *http.Request, maxPending int64) (*http.Request, *Charge) {
+	charge := &Charge{maxPending: max(maxPending, 0)}
+	if r == nil {
+		return r, charge
+	}
+	tracked := r.WithContext(context.WithValue(r.Context(), chargeKey{}, charge))
+	if r.Body != nil && r.Body != http.NoBody {
+		tracked.Body = &trackedBody{ReadCloser: r.Body, charge: charge}
+	}
+	return tracked, charge
 }
 
-// Read forwards to the body and charges the bytes it delivered. A refused
-// charge fails this and every later read; the bytes of the refused read are
-// dropped, because the request is being refused anyway.
-func (b *inflightBody) Read(p []byte) (int, error) {
-	b.mu.Lock()
-	failed := b.err
-	b.mu.Unlock()
-	if failed != nil {
-		return 0, failed
+// ChargeFromContext returns the Charge Track stored on ctx.
+func ChargeFromContext(ctx context.Context) (*Charge, bool) {
+	if ctx == nil {
+		return nil, false
 	}
-	n, err := b.ReadCloser.Read(p)
-	if n > 0 {
-		if chargeErr := b.charge(int64(n)); chargeErr != nil {
-			return 0, chargeErr
-		}
-	}
-	return n, err //nolint:wrapcheck // io.Reader contract: io.EOF must be returned unwrapped
+	charge, ok := ctx.Value(chargeKey{}).(*Charge)
+	return charge, ok && charge != nil
 }
 
-// charge accounts n delivered bytes. After release the body is no longer
-// charged (a late read cannot leak a charge).
-func (b *inflightBody) charge(n int64) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.released {
+// Assign classifies the request: it charges the bytes read so far to budget
+// on behalf of tenant ("" for none) and makes every later read charge it as
+// well. It returns an *InflightExhaustedError, and fails every later read,
+// when those bytes do not fit the budget or the tenant's share; the caller
+// then answers 503. A request may be assigned once; a nil Charge or budget
+// assigns nothing.
+func (c *Charge) Assign(budget *Inflight, tenant string) error {
+	if c == nil || budget == nil {
 		return nil
 	}
-	if !b.budget.tryAcquire(n) {
-		b.budget.refused.Inc()
-		b.err = errors.WithStack(&InflightExhaustedError{Capacity: b.budget.capacity})
-		return b.err
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	switch {
+	case c.err != nil:
+		return c.err
+	case c.released:
+		return nil
+	case c.budget != nil:
+		return errors.New("request body already assigned to an in-flight budget")
 	}
-	b.charged += n
+	if err := budget.tryAcquire(tenant, c.pending); err != nil {
+		c.err = err
+		return c.err
+	}
+	c.budget, c.tenant, c.charged, c.pending = budget, tenant, c.pending, 0
 	return nil
 }
 
-// release returns the body's whole charge to the budget, once.
-func (b *inflightBody) release() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.released {
+// Pending returns the bytes read and not yet assigned to a budget.
+func (c *Charge) Pending() int64 {
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.pending
+}
+
+// Charged returns the bytes charged to the assigned budget.
+func (c *Charge) Charged() int64 {
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.charged
+}
+
+// Release returns the request's charge to its budget, once; later reads are
+// no longer accounted. Extra calls are no-ops.
+func (c *Charge) Release() {
+	if c == nil {
 		return
 	}
-	b.released = true
-	b.budget.release(b.charged)
-	b.charged = 0
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.released {
+		return
+	}
+	c.released = true
+	if c.budget != nil {
+		c.budget.release(c.tenant, c.charged)
+	}
+	c.charged, c.pending = 0, 0
+}
+
+// account records n delivered bytes: pending before Assign, charged after.
+func (c *Charge) account(n int64) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	switch {
+	case c.err != nil:
+		return c.err
+	case c.released:
+		return nil
+	case c.budget == nil:
+		if n > c.maxPending-c.pending {
+			unclassifiedRefused.Inc()
+			c.err = errors.WithStack(&InflightExhaustedError{Capacity: c.maxPending})
+			return c.err
+		}
+		c.pending += n
+		return nil
+	}
+	if err := c.budget.tryAcquire(c.tenant, n); err != nil {
+		c.err = err
+		return c.err
+	}
+	c.charged += n
+	return nil
+}
+
+// failed returns the error that ended the body's reads, if any.
+func (c *Charge) failed() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.err
+}
+
+// trackedBody accounts every delivered byte through its Charge.
+type trackedBody struct {
+	io.ReadCloser
+	charge *Charge
+}
+
+// Read forwards to the body and accounts the bytes it delivered. A refused
+// read fails this and every later read; the bytes of the refused read are
+// dropped, because the request is being refused anyway.
+func (b *trackedBody) Read(p []byte) (int, error) {
+	if err := b.charge.failed(); err != nil {
+		return 0, err
+	}
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		if accountErr := b.charge.account(int64(n)); accountErr != nil {
+			return 0, accountErr
+		}
+	}
+	return n, err //nolint:wrapcheck // io.Reader contract: io.EOF must be returned unwrapped
 }

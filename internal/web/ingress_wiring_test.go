@@ -102,18 +102,22 @@ func TestRequestBodyPolicyClassifiesRegisteredRoutes(t *testing.T) {
 	require.Zero(t, newRequestBodyPolicy(prefix, settings).budget(bodyClassToolConsole).MaxBytes, "tool consoles own their byte caps")
 }
 
-// TestRequestBodySettingsLoadMCPInflightBudget pins the in-flight budget key:
-// unset leaves the transport's derived default (a multiple of mcp_max_bytes),
-// a configured value reaches the transport budget.
+// TestRequestBodySettingsLoadMCPInflightBudget pins the in-flight budget
+// keys: unset leaves the transport's derived defaults (multiples of the
+// caps), configured values reach the transport budget.
 func TestRequestBodySettingsLoadMCPInflightBudget(t *testing.T) {
-	require.Zero(t, loadRequestBodySettings(nil).MCP.MaxInflightBytes, "unset defers to the transport default")
+	unset := loadRequestBodySettings(nil).MCP
+	require.Zero(t, unset.MaxInflightBytes, "unset defers to the transport default")
+	require.Zero(t, unset.AnonymousMaxInflightBytes, "unset defers to the transport default")
 	configured := loadRequestBodySettings(func(key string) any {
 		return map[string]any{
-			"settings.web.request_body.mcp_max_bytes":          1 << 20,
-			"settings.web.request_body.mcp_max_inflight_bytes": 64 << 20,
+			"settings.web.request_body.mcp_max_bytes":                    1 << 20,
+			"settings.web.request_body.mcp_max_inflight_bytes":           64 << 20,
+			"settings.web.request_body.mcp_anonymous_max_inflight_bytes": 4 << 20,
 		}[key]
 	})
 	require.Equal(t, int64(64<<20), configured.MCP.MaxInflightBytes)
+	require.Equal(t, int64(4<<20), configured.MCP.AnonymousMaxInflightBytes)
 	require.Equal(t, int64(1<<20), configured.MCP.MaxBytes)
 }
 
