@@ -32,6 +32,21 @@ describe('responseStatusError', () => {
     expect(getPrivateErrorMessage(error)).toBe('User requests operation failed');
   });
 
+  it('keeps the status and the private label when the reply body cannot be read', async () => {
+    const broken = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new TypeError('network error while reading the body'));
+      },
+    });
+    const error = await responseStatusError(new Response(broken, { status: 401, statusText: 'Unauthorized' }), 'User requests operation failed');
+    expect(error).toBeInstanceOf(HttpStatusError);
+    expect(error.status).toBe(401);
+    expect(error.message).toBe('Unauthorized');
+    expect(getPrivateErrorMessage(error)).toBe('User requests operation failed');
+    // A final refusal stays final even though its body was lost.
+    expect(isRetryableRequestFailure(error)).toBe(false);
+  });
+
   it('falls back to the status text for an empty reply', async () => {
     const error = await responseStatusError(new Response('', { status: 503, statusText: 'Service Unavailable' }), 'User requests operation failed');
     expect(error.message).toBe('Service Unavailable');

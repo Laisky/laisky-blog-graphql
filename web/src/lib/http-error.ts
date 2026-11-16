@@ -19,11 +19,19 @@ export class HttpStatusError extends Error {
 
 /**
  * responseStatusError reads a non-2xx reply into an HttpStatusError whose message is
- * marked private under label, so telemetry reports only the fixed label.
+ * marked private under label, so telemetry reports only the fixed label. The status
+ * already arrived with the headers, so a body that cannot be read (the stream fails
+ * after the headers) only loses the reply text: the message falls back to the status
+ * text and the status, and with it the retry decision, is kept.
  */
 export async function responseStatusError(response: Response, label: PrivateErrorLabel): Promise<HttpStatusError> {
-  const message = (await response.text()) || response.statusText;
-  return markPrivateError(new HttpStatusError(message, response.status), label);
+  let text = '';
+  try {
+    text = await response.text();
+  } catch {
+    // The body is optional detail; the status is the verdict.
+  }
+  return markPrivateError(new HttpStatusError(text || response.statusText, response.status), label);
 }
 
 /**
