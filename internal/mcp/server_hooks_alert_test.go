@@ -249,8 +249,11 @@ func TestMCPFailureAlertProductionWiring(t *testing.T) {
 	root := newMCPAlertLogger(t, appLog.RootLoggerName, alert, &local).Named(appLog.ServiceLoggerScope)
 	server, err := NewServer(nil, nil, nil, nil, rag.Settings{}, nil, nil, nil, nil, ToolsSettings{MCPPipeEnabled: true}, root)
 	require.NoError(t, err)
+	// tools/call needs a verified caller to reach the SDK (anonymous calls are
+	// refused with 401 before it); TestMain installs an accept-all authority.
 	response := performModernMCPRequest(t, server.Handler(), mcpgo.MethodToolsCall,
-		map[string]any{"name": "__orank_nonexistent_tool_probe__", "arguments": map[string]any{"content": "private-payload-canary"}})
+		map[string]any{"name": "__orank_nonexistent_tool_probe__", "arguments": map[string]any{"content": "private-payload-canary"}},
+		http.Header{"Authorization": []string{"Bearer sk-alert-wiring-probe-1234567890"}})
 	protocolErr, ok := decodeMCPResponse(t, response.Body.Bytes())["error"].(map[string]any)
 	require.True(t, ok)
 	require.EqualValues(t, mcpgo.INVALID_PARAMS, protocolErr["code"])
@@ -262,6 +265,7 @@ func TestMCPFailureAlertProductionWiring(t *testing.T) {
 	require.Equal(t, "tool_not_found", diagnostic["error_kind"])
 	require.Equal(t, float64(1), diagnostic["request_id"])
 	require.NotContains(t, message, "canary")
+	require.NotContains(t, message, "sk-alert-wiring-probe", "the alert never carries the caller's API key")
 	require.Contains(t, local.String(), diagnostic["failure_id"])
 	require.Empty(t, mcpAlertsBefore(t, alert, messages))
 }
