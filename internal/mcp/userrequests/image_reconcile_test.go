@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 )
 
 // reconcileNow is the harness clock (see newOrphanHarness).
@@ -200,7 +201,5 @@ func TestReconcileImageObjectsIsBounded(t *testing.T) {
 // mustAuth parses the authorization context the handler derives from token.
 func mustAuth(t *testing.T, token string) *askuser.AuthorizationContext {
 	t.Helper()
-	auth, err := askuser.ParseAuthorizationContext("Bearer " + token)
-	require.NoError(t, err)
-	return auth
+	return askuser.FromSharedContext(authtest.Verified(token))
 }

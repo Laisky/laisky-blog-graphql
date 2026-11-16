@@ -89,7 +89,10 @@ func logInvalidArrayItemSchemas(logger logSDK.Logger, definition mcp.Tool) {
 
 // Server wraps the MCP server state for the HTTP transport.
 type Server struct {
-	handler                   http.Handler
+	handler http.Handler
+	// sdk is the MCP SDK server behind the transport wrappers; dispatch-level
+	// checks (such as the verified-caller tool middleware) are tested on it.
+	sdk                       *srv.MCPServer
 	logger                    logSDK.Logger
 	billingReporter           externalBillingReporter
 	webSearch                 *tools.WebSearchTool
@@ -165,10 +168,26 @@ func NewServer(
 		srv.WithInstructions("Use web_search for Google Programmable Search queries and web_fetch to retrieve dynamic web pages."),
 		srv.WithRecovery(),
 		srv.WithHooks(hooks),
+		// No tool runs for a caller the bearer gate did not verify, whichever
+		// transport path delivered the call (see server_ingress_anonymous.go).
+		srv.WithToolHandlerMiddleware(requireVerifiedToolCaller),
 	)
 
 	serverLogger := logger.Named("mcp")
-	billingReporter := externalBillingReporter(oneapi.CheckUserExternalBilling)
+	resolveAuthenticator := func() *mcpauth.Authenticator {
+		if shared.authenticator != nil {
+			return shared.authenticator
+		}
+		return mcpauth.Installed()
+	}
+	consumeBaseURL := oneapi.BillingAPI
+	consume := consumeAt(consumeBaseURL)
+	if shared.consume != nil {
+		consume, consumeBaseURL = shared.consume, shared.consumeBaseURL
+	}
+	// Accepted consumes refresh the caller's API key verdict, so active keys
+	// revalidate through the calls they already make.
+	billingReporter := observeAuthorityAcceptance(consume, consumeBaseURL, resolveAuthenticator)
 	// Every paid tool shares this reporter, so the classification happens once
 	// instead of each tool remembering to record it.
 	trackedBillingReporter := trackBillingOutcome(billingReporter)
@@ -177,17 +196,11 @@ func NewServer(
 		mcpServer,
 		srv.WithSessionIdManagerResolver(requestSessionIDResolver{}),
 		srv.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
-			// Inject authorization header with backward-compatible query fallback.
+			// The bearer gate already installed the verified auth context on
+			// r.Context(), from which ctx derives. The raw header is kept only
+			// for tools that re-read it through the same verified context.
 			authHeader, authSource := resolveRequestAuthorizationHeader(r)
 			ctx = context.WithValue(ctx, keyAuthorization, authHeader)
-			if authCtx, err := mcpauth.ParseAuthorizationContext(authHeader); err == nil {
-				ctx = mcpauth.WithContext(ctx, authCtx)
-			} else if authHeader != "" {
-				serverLogger.Debug("mcp authorization parse failed",
-					zap.String("auth_source", authSource),
-					zap.Error(err),
-				)
-			}
 			if authSource != "header" {
 				serverLogger.Debug("mcp authorization source resolved",
 					zap.String("auth_source", authSource),
@@ -211,9 +224,18 @@ func NewServer(
 		}),
 	)
 
-	normalizedAuthHandler := withAuthorizationHeaderNormalization(streamable, serverLogger.Named("auth"))
+	bodyBudget := shared.bodyBudget.normalized()
+	// Order matters: the body budget precedes every body reader (the logger
+	// previews it), the credential gate precedes sessions, preference lookups
+	// and tools, and the tools/list filter reads the body only for verified callers.
+	handler := withAuthorizationHeaderNormalization(streamable, serverLogger.Named("auth"))
+	handler = withToolsListFiltering(handler, serverLogger.Named("tools_list_filter"), userRequestService)
+	handler = withBearerAuthentication(handler, resolveAuthenticator, bodyBudget.AnonymousMaxBytes, shared.resourceMetadataURL, serverLogger.Named("auth_gate"))
+	handler = withHTTPLogging(handler, serverLogger.Named("http"))
+	handler = withRequestBodyBudget(handler, bodyBudget, serverLogger.Named("body_budget"))
 	s := &Server{
-		handler:         withHTTPLogging(withToolsListFiltering(normalizedAuthHandler, serverLogger.Named("tools_list_filter"), userRequestService), serverLogger.Named("http")),
+		handler:         handler,
+		sdk:             mcpServer,
 		logger:          serverLogger,
 		billingReporter: billingReporter,
 		callLogger:      callLogger,
@@ -267,7 +289,7 @@ func NewServer(
 			askUserService,
 			serverLogger.Named("ask_user"),
 			headerProvider,
-			askuser.ParseAuthorizationContext,
+			askuser.ParseAuthorizationFromContext,
 			0,
 		)
 		if err != nil {
@@ -292,7 +314,7 @@ func NewServer(
 			holdMgr,
 			serverLogger.Named("get_user_request"),
 			headerProvider,
-			askuser.ParseAuthorizationContext,
+			askuser.ParseAuthorizationFromContext,
 		)
 		if err != nil {
 			return nil, errors.Wrap(err, "init get_user_request tool")

@@ -2,85 +2,61 @@ package service
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"net/http"
+	"fmt"
 	"strings"
-	"time"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	"github.com/Laisky/zap"
 
-	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
+	"github.com/Laisky/laisky-blog-graphql/library"
 )
 
-const oneapiTokenPath = "/api/user/get-by-token" //nolint:gosec // G101: this is a URL path, not credentials
+// keyValidationUnavailableMsg answers a key the credential authority could
+// not judge right now; the user stays in the waiting state and may resend it.
+const keyValidationUnavailableMsg = "OneAPI API key validation is temporarily unavailable. Please try again shortly."
 
-var defaultHTTPClient = &http.Client{Timeout: 10 * time.Second}
+// invalidOneAPIKeyMsg answers a key the credential authority refused.
+const invalidOneAPIKeyMsg = "Invalid OneAPI API key. Please double-check and try again." //nolint:gosec // G101: a user-facing message, not a credential
 
-// validateOneAPIToken ensures the provided OneAPI token is active by calling the billing service.
-func (s *Telegram) validateOneAPIToken(ctx context.Context, key string) (string, error) {
-	sanitized := strings.TrimSpace(key)
-	if sanitized == "" {
-		return "", errors.New("oneapi api key is empty")
+// authenticator returns the API key authenticator, resolved at call time:
+// the injected one in tests, otherwise the process-wide installed one (nil
+// before installation, which fails closed).
+func (s *Telegram) authenticator() *mcpauth.Authenticator {
+	if s != nil && s.keyAuthenticator != nil {
+		return s.keyAuthenticator()
 	}
+	return mcpauth.Installed()
+}
 
+// validateOneAPIToken authenticates a OneAPI API key that a Telegram user
+// typed, through the shared API key authenticator (internal/mcp/auth): the
+// same one-api accept rule, verdict caches and length bound as every other
+// entrypoint, and a one-api upstream budget charged to the Telegram user
+// ("telegram:<uid>"), so one user's messages cannot flood one-api's per-IP
+// limit. It returns the verified context, whose APIKeyHash is the canonical
+// tenant hash (sha256 of the trimmed key) ask_user bindings are stored under.
+// Errors match mcpauth's: ErrInvalidAuthorization, ErrCredentialRejected, or
+// one for which mcpauth.IsUnavailable is true.
+func (s *Telegram) validateOneAPIToken(ctx context.Context, telegramUID int64, key string) (*mcpauth.Context, error) {
 	logger := gmw.GetLogger(ctx)
-	logger.Debug("validating oneapi token", zap.String("token_mask", maskToken(sanitized)))
-
-	endpoint := strings.TrimSuffix(oneapi.BillingAPI, "/") + oneapiTokenPath
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	ctx = mcpauth.WithBudgetSource(ctx, fmt.Sprintf("telegram:%d", telegramUID))
+	verified, err := s.authenticator().Authenticate(ctx, "Bearer "+library.StripBearerPrefix(strings.TrimSpace(key)))
 	if err != nil {
-		return "", errors.Wrap(err, "build oneapi validation request")
-	}
-	req.Header.Set("Authorization", "Bearer "+sanitized)
-
-	client := defaultHTTPClient
-	if client == nil {
-		client = http.DefaultClient
+		logger.Debug("oneapi token refused", zap.Int64("uid", telegramUID), zap.Bool("unavailable", mcpauth.IsUnavailable(err)), zap.Error(err))
+		return nil, errors.Wrap(err, "authenticate oneapi api key")
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", errors.Wrap(err, "call oneapi validation api")
+	logger.Debug("oneapi token validated", zap.Int64("uid", telegramUID), zap.String("token_mask", verified.MaskedKey()))
+	return verified, nil
+}
+
+// keyRefusalReply is the reply to a key validateOneAPIToken refused: a
+// retry hint when no verdict was available, otherwise the invalid-key text.
+func keyRefusalReply(err error) string {
+	if mcpauth.IsUnavailable(err) {
+		return keyValidationUnavailableMsg
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-	if err != nil {
-		return "", errors.Wrap(err, "read oneapi validation response")
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", errors.Errorf("oneapi validation http %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	var payload struct {
-		Success     bool   `json:"success"`
-		Message     string `json:"message"`
-		TokenStatus int    `json:"token_status"`
-		Data        struct {
-			Token struct {
-				Status int `json:"status"`
-			} `json:"token"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return "", errors.Wrap(err, "decode oneapi validation response")
-	}
-
-	tokenActive := payload.TokenStatus == 1 || payload.Data.Token.Status == 1
-	if !payload.Success || !tokenActive {
-		msg := payload.Message
-		if msg == "" {
-			msg = "token inactive"
-		}
-		return "", errors.Errorf("oneapi validation failed: %s", msg)
-	}
-
-	logger.Debug("oneapi token validated", zap.String("token_mask", maskToken(sanitized)))
-
-	return sanitized, nil
+	return invalidOneAPIKeyMsg
 }

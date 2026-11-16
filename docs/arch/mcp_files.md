@@ -28,12 +28,12 @@ Why this is feasible in the current repository:
 
 ### 2.2 Auth and Tenant Primitives
 
-- `askuser.ParseAuthorizationContext` already computes:
+- `mcpauth.Authenticator` (`internal/mcp/auth`) is the only producer of a tenant. It validates the API key with one-api, then derives:
   - raw token
   - `apikey_hash` (SHA-256)
   - user identity labels
-- Current tools still parse auth individually.
-- FileIO requires stronger normalization: parse once in MCP transport and pass trusted `AuthContext` to FileIO handlers only.
+- The MCP transport authenticates once per HTTP request, before sessions and tool dispatch, and stores the verified context. `mcpauth.FromContext` ignores any context the authenticator did not verify.
+- Console APIs (`mcpauth.HTTPMiddleware`) and GraphQL fields (`mcpauth.FromContextOrHeader`) authenticate through the same installed authenticator. See `docs/manual/mcp.md#credential-validation`.
 
 ### 2.3 Database and Service Patterns
 

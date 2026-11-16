@@ -14,7 +14,7 @@ import (
 
 	srv "github.com/mark3labs/mcp-go/server"
 
-	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
@@ -123,8 +123,7 @@ func (*brokenRecorder) Record(_ context.Context, _ calllog.RecordInput) error {
 
 // ctxWithAuth returns a context carrying a valid MCP auth context.
 func ctxWithAuthKey(apiKey string) context.Context {
-	auth, _ := mcpauth.DeriveFromAPIKey(apiKey)
-	return mcpauth.WithContext(context.Background(), auth)
+	return authtest.WithVerified(context.Background(), apiKey)
 }
 
 // makeReq builds a CallToolRequest with the given arguments.
@@ -553,9 +552,9 @@ func TestApiKeyFromContextBehavior(t *testing.T) {
 		require.Equal(t, "sk-test-key-abc", apiKeyFromContext(ctx))
 	})
 
-	t.Run("from authorization header in context", func(t *testing.T) {
+	t.Run("raw authorization header is never trusted", func(t *testing.T) {
 		ctx := context.WithValue(context.Background(), keyAuthorization, "Bearer sk-fallback-xyz")
-		require.Equal(t, "sk-fallback-xyz", apiKeyFromContext(ctx))
+		require.Empty(t, apiKeyFromContext(ctx), "billing and audit follow only the verified credential")
 	})
 
 	t.Run("empty context returns empty", func(t *testing.T) {

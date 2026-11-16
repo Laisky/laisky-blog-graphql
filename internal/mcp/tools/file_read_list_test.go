@@ -8,7 +8,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 )
@@ -81,7 +81,7 @@ func TestFileReadDefaultLength(t *testing.T) {
 	tool, err := NewFileReadTool(svc)
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{APIKey: "key", APIKeyHash: "hash"})
+	ctx := authtest.WithVerified(context.Background(), "key")
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project": "proj",
 		"path":    "/a.txt",
@@ -99,7 +99,7 @@ func TestFileReadZeroLengthPreserved(t *testing.T) {
 	tool, err := NewFileReadTool(svc)
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{APIKey: "key", APIKeyHash: "hash"})
+	ctx := authtest.WithVerified(context.Background(), "key")
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project": "proj",
 		"path":    "/a.txt",
@@ -118,7 +118,7 @@ func TestFileListDefaultDepth(t *testing.T) {
 	tool, err := NewFileListTool(svc)
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{APIKey: "key", APIKeyHash: "hash"})
+	ctx := authtest.WithVerified(context.Background(), "key")
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project": "proj",
 	}}}
@@ -135,7 +135,7 @@ func TestFileListSlashPathNormalizedToRoot(t *testing.T) {
 	tool, err := NewFileListTool(svc)
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{APIKey: "key", APIKeyHash: "hash"})
+	ctx := authtest.WithVerified(context.Background(), "key")
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project": "proj",
 		"path":    "/",
@@ -153,7 +153,7 @@ func TestFileListRootNotFoundReturnsEmpty(t *testing.T) {
 	tool, err := NewFileListTool(svc)
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{APIKey: "key", APIKeyHash: "hash"})
+	ctx := authtest.WithVerified(context.Background(), "key")
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project": "proj",
 		"path":    "",
@@ -175,7 +175,7 @@ func TestFileListSlashRootNotFoundReturnsEmpty(t *testing.T) {
 	tool, err := NewFileListTool(svc)
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{APIKey: "key", APIKeyHash: "hash"})
+	ctx := authtest.WithVerified(context.Background(), "key")
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project": "proj",
 		"path":    "/",
@@ -197,7 +197,7 @@ func TestFileListNonRootNotFoundReturnsError(t *testing.T) {
 	tool, err := NewFileListTool(svc)
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{APIKey: "key", APIKeyHash: "hash"})
+	ctx := authtest.WithVerified(context.Background(), "key")
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project": "proj",
 		"path":    "/missing",

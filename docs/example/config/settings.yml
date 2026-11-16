@@ -32,6 +32,29 @@ settings:
     base_url: https://api.openai.com # Base URL without /v1 suffix (the code appends /v1/embeddings automatically)
     embedding_model: text-embedding-3-small
   mcp:
+    public_origin: https://mcp.laisky.com # RFC 9728 resource; Bearer challenges point to its /.well-known/oauth-protected-resource
+    auth:
+      validation: # every MCP entrypoint validates bearers with one-api; see docs/manual/mcp.md
+        enabled: true # false is a development-only opt-out, refused at startup unless the server runs with --debug
+        # base_url: https://oneapi.example.com # defaults to the billing API origin
+        timeout: 5s
+        positive_ttl: 5m # revocation lag for an accepted key
+        negative_ttl: 30s
+        stale_grace: 30m # accepted keys survive a genuine one-api failure this long; 0 disables
+        max_entries: 10000
+        max_concurrent: 8
+        upstream_rate_per_second: 1 # shares one-api's per-IP GLOBAL_API_RATE_LIMIT with billing
+        upstream_burst: 30
+        per_source_rate_per_second: 0.1 # each client source (IPv4 or IPv6 /64) refills one validation per 10s
+        per_source_burst: 5
+        max_sources: 10000
+        revalidation_rate_per_second: 0.2 # reserved for known keys whose trust period ended; 0 disables
+        revalidation_burst: 20
+        oneapi_rate_limit: 480 # this process's share of one-api's GLOBAL_API_RATE_LIMIT per 3 minutes (consumes included); 0 when exempt
+        # gateways: # client ranges that serve many users from few addresses get their own per-source budget
+        #   - cidr: 203.0.113.10/32 # matched against the client address the trusted-proxy policy resolved
+        #     rate_per_second: 0.5 # at most upstream_rate_per_second
+        #     burst: 20 # at most upstream_burst
     tools:
       web_search:
         enabled: true # Enable/disable web_search tool
@@ -232,6 +255,18 @@ settings:
       - 100.64.0.0/10 # Tailscale (CGNAT) peers such as the nginx host; prefer its exact address
       - 172.16.0.0/12 # docker bridge gateways
     # client_ip_headers: [X-Forwarded-For] # default; X-Real-IP is not read unless listed
+    idle_timeout: 120s # keep-alive idle connections; no ReadTimeout/WriteTimeout by design
+    request_body: # per-route body budgets, enforced before any body is read
+      min_data_rate: 4096 # bytes/s a body must sustain after read_grace (slow-loris protection)
+      read_grace: 10s
+      max_idle: 30s # longest pause once bytes arrived; bursts bank at most this much read time
+      max_read_duration: 30m # absolute cap of one body read
+      default_max_bytes: 1048576 # 1 MiB
+      graphql_max_bytes: 67108864 # 64 MiB
+      mcp_max_bytes: 33554432 # 32 MiB, requests with a validated key
+      mcp_anonymous_max_bytes: 1048576 # 1 MiB, discovery without credentials
+      mcp_max_inflight_bytes: 134217728 # 128 MiB (default 4 × mcp_max_bytes), body bytes actually read that in-flight verified MCP requests hold together; one key at most a quarter; 503 beyond it
+      mcp_anonymous_max_inflight_bytes: 8388608 # 8 MiB (default 8 × mcp_anonymous_max_bytes), the same for MCP requests without credentials
     sso:
       user_store: oneapi # use mongo only during a controlled rollback window
     github_oauth:

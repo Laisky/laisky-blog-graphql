@@ -12,6 +12,7 @@ import (
 	gconfig "github.com/Laisky/go-config/v2"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/ssoredirect"
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
@@ -53,6 +54,7 @@ func validateStartupConfigWithGetter(get configGetter) error {
 	validateSSOConfig(get, &validationErrs)
 	validateSSORedirectConfig(get, &validationErrs)
 	validateOpenAIConfig(get, &validationErrs)
+	validateMCPIngressConfig(get, &validationErrs)
 
 	if len(validationErrs) == 0 {
 		return nil
@@ -228,6 +230,23 @@ func validateMCPToolsConfig(get configGetter, errs *[]string) {
 
 	for _, key := range keys {
 		validateOptionalBool(get, key, errs)
+	}
+}
+
+// validateMCPIngressConfig refuses disabled API key validation in prod mode
+// and validation budgets that would defeat themselves, and checks the public
+// origin that Bearer challenges advertise.
+func validateMCPIngressConfig(get configGetter, errs *[]string) {
+	debug, _ := parseStrictBool(get("debug"))
+	validation := mcpauth.LoadValidationSettings(get)
+	if err := mcpauth.CheckValidationMode(validation, debug); err != nil {
+		appendValidationErrorf(errs, "%s", err.Error())
+	}
+	if err := mcpauth.CheckValidationBounds(validation); err != nil {
+		appendValidationErrorf(errs, "%s", err.Error())
+	}
+	if _, err := mcpauth.LoadPublicOrigin(get); err != nil {
+		appendValidationErrorf(errs, "%s", err.Error())
 	}
 }
 

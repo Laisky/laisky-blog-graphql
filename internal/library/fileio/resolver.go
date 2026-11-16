@@ -67,11 +67,14 @@ func (r *Resolver) authorize(ctx context.Context) (files.AuthContext, error) {
 		header = ginCtx.GetHeader("Authorization")
 	}
 	authCtx, err := mcpauth.FromContextOrHeader(ctx, header)
-	if err != nil || authCtx == nil {
+	if err != nil {
 		return files.AuthContext{}, permissionDenied()
 	}
-	return files.AuthContext{APIKey: authCtx.APIKey, APIKeyHash: authCtx.APIKeyHash,
-		UserID: authCtx.UserID, UserIdentity: authCtx.UserIdentity}, nil
+	auth, ok := files.AuthFromVerified(authCtx)
+	if !ok {
+		return files.AuthContext{}, permissionDenied()
+	}
+	return auth, nil
 }
 
 // logger returns the request-scoped logger named after the shared tool.

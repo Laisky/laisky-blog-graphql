@@ -13,6 +13,7 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
+	"github.com/Laisky/laisky-blog-graphql/library/httpclient"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
 	"github.com/Laisky/laisky-blog-graphql/library/search/diagnostics"
@@ -164,7 +165,11 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 	}
 
 	startAt := time.Now()
-	resp, err := e.client.Do(req)
+	// The request carries the provider credential, so a redirect answer is
+	// returned as is (a non-200 failure) instead of being followed: Go keeps
+	// Authorization on same-host redirects, forwards custom headers to every
+	// target and a Location may echo a query credential.
+	resp, err := httpclient.WithoutRedirects(e.client).Do(req)
 	if err != nil {
 		// net/http's outer URL error contains request inputs and provider credentials.
 		// Preserve its typed underlying cause without retaining the sensitive request URL.

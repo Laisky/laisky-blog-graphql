@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httputil"
@@ -14,6 +15,8 @@ import (
 	"github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
+
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 )
 
 const (
@@ -39,9 +42,15 @@ type spaHandler struct {
 	index  []byte
 	base   string
 	logger logSDK.Logger
+	// resourceMetadataURL is advertised by agent API probes; empty uses
+	// mcpauth.DefaultResourceMetadataURL.
+	resourceMetadataURL string
 }
 
-func newFrontendSPAHandler(logger logSDK.Logger, defaultBase string) http.Handler {
+// newFrontendSPAHandler serves the built frontend. publicOrigin is the
+// configured MCP public origin (mcpauth.LoadPublicOrigin); empty keeps the
+// default. Agent API probes advertise its RFC 9728 metadata URL.
+func newFrontendSPAHandler(logger logSDK.Logger, defaultBase, publicOrigin string) http.Handler {
 	if logger == nil {
 		return nil
 	}
@@ -82,13 +91,50 @@ func newFrontendSPAHandler(logger logSDK.Logger, defaultBase string) http.Handle
 	if basePath != "" {
 		logger.Info("frontend base path detected", zap.String("base_path", basePath))
 	}
+	if publicOrigin == "" {
+		publicOrigin = mcpauth.DefaultPublicOrigin
+	}
+	warnOnProtectedResourceMismatch(logger, distDir, publicOrigin)
 
 	return &spaHandler{
-		root:   distDir,
-		index:  indexBytes,
-		base:   basePath,
-		logger: logger,
+		root:                distDir,
+		index:               indexBytes,
+		base:                basePath,
+		logger:              logger,
+		resourceMetadataURL: mcpauth.ResourceMetadataURL(publicOrigin),
 	}
+}
+
+// warnOnProtectedResourceMismatch warns when the shipped RFC 9728 document
+// names another resource than the configured public origin: §3.3 requires
+// clients to discard such metadata, so challenges would lead nowhere.
+func warnOnProtectedResourceMismatch(logger logSDK.Logger, root, publicOrigin string) {
+	file, err := os.OpenInRoot(root, filepath.Join(".well-known", "oauth-protected-resource"))
+	if err != nil {
+		logger.Debug("no protected-resource metadata document in the frontend build", zap.Error(err))
+		return
+	}
+	defer func() { _ = file.Close() }()
+	var document struct {
+		Resource string `json:"resource"`
+	}
+	if err := json.NewDecoder(io.LimitReader(file, 64<<10)).Decode(&document); err != nil {
+		logger.Warn("protected-resource metadata document is not valid JSON", zap.Error(err))
+		return
+	}
+	if strings.TrimSuffix(document.Resource, "/") != publicOrigin {
+		logger.Warn("protected-resource metadata names another resource than settings.mcp.public_origin; "+
+			"update web/public/.well-known/oauth-protected-resource or the setting",
+			zap.String("document_resource", document.Resource), zap.String("public_origin", publicOrigin))
+	}
+}
+
+// metadataURL returns the RFC 9728 metadata URL advertised by agent probes.
+func (h *spaHandler) metadataURL() string {
+	if h.resourceMetadataURL == "" {
+		return mcpauth.DefaultResourceMetadataURL
+	}
+	return h.resourceMetadataURL
 }
 
 // readFrontendIndex prevents the cached entry document from escaping the asset root.
@@ -148,7 +194,7 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isAgentAPIProbePath(clean) {
-		serveAgentAPIProbe(w, r)
+		serveAgentAPIProbe(w, r, h.metadataURL())
 		return
 	}
 
@@ -264,9 +310,27 @@ func isAgentAPIProbePath(clean string) bool {
 	}
 }
 
-func serveAgentAPIProbe(w http.ResponseWriter, r *http.Request) {
+// agentAPIProbeChallenge is the JSON body of an agent API probe answer.
+type agentAPIProbeChallenge struct {
+	Error            string `json:"error"`
+	Description      string `json:"error_description"`
+	ResourceMetadata string `json:"resource_metadata"`
+}
+
+// newAgentAPIProbeChallenge builds the probe answer for metadataURL.
+func newAgentAPIProbeChallenge(metadataURL string) agentAPIProbeChallenge {
+	return agentAPIProbeChallenge{
+		Error:            "authentication_required",
+		Description:      "Use a Laisky MCP API key in the Authorization header.",
+		ResourceMetadata: metadataURL,
+	}
+}
+
+// serveAgentAPIProbe answers an agent capability probe with a Bearer
+// challenge pointing to the RFC 9728 metadata document at metadataURL.
+func serveAgentAPIProbe(w http.ResponseWriter, r *http.Request, metadataURL string) {
 	w.Header().Set("Allow", "GET, HEAD, OPTIONS, POST")
-	w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="https://mcp.laisky.com/.well-known/oauth-protected-resource"`)
+	w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+metadataURL+`"`)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
 	if r.Method == http.MethodHead {
@@ -275,7 +339,7 @@ func serveAgentAPIProbe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusUnauthorized)
-	_, _ = w.Write([]byte(`{"error":"authentication_required","error_description":"Use a Laisky MCP API key in the Authorization header.","resource_metadata":"https://mcp.laisky.com/.well-known/oauth-protected-resource"}`))
+	_ = json.NewEncoder(w).Encode(newAgentAPIProbeChallenge(metadataURL)) //nolint:errchkjson // best-effort error response
 }
 
 func prefersMarkdown(r *http.Request) bool {

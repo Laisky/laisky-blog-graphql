@@ -50,7 +50,9 @@ type ChunkEntry struct {
 	Score       float64 `json:"score"`
 }
 
-// AuthContext carries trusted caller identity for file operations.
+// AuthContext carries trusted caller identity for file operations. Request
+// paths build it only through AuthFromVerified; internal callers (system
+// owners, backfills) build their own scoped values.
 type AuthContext struct {
 	APIKey       string
 	APIKeyHash   string

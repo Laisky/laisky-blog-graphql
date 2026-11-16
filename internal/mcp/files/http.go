@@ -218,12 +218,12 @@ func parseVersionID(urlPath, suffix string) (uint64, error) {
 	return id, nil
 }
 
-// toFilesAuth maps the shared auth context to the files-package AuthContext.
-func toFilesAuth(authCtx *askuser.AuthorizationContext) AuthContext {
-	if authCtx == nil {
-		return AuthContext{}
-	}
-	return AuthContext{APIKey: authCtx.APIKey, APIKeyHash: authCtx.APIKeyHash, UserID: authCtx.UserID, UserIdentity: authCtx.UserIdentity}
+// toFilesAuth maps the verified caller to the files-package AuthContext
+// through AuthFromVerified; an unverified or nil caller maps to the empty
+// AuthContext, which every service method refuses.
+func toFilesAuth(authCtx *mcpauth.Context) AuthContext {
+	auth, _ := AuthFromVerified(authCtx)
+	return auth
 }
 
 // writeFileError converts a service error to an HTTP response.

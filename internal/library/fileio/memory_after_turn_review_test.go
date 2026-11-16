@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
-	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
 )
@@ -31,10 +31,7 @@ func (s *afterTurnObserver) AfterTurn(_ context.Context, _ files.AuthContext, re
 // reviewMemoryContext supplies a synthetic authenticated caller without a
 // network request or any production credentials.
 func reviewMemoryContext() context.Context {
-	return mcpauth.WithContext(context.Background(), &mcpauth.Context{
-		APIKey: "synthetic-review-key", APIKeyHash: "synthetic-review-hash",
-		UserID: "review-user", UserIdentity: "review-user",
-	})
+	return authtest.WithVerified(context.Background(), "synthetic-review-key")
 }
 
 // TestMemoryAfterTurnRejectsNegativeBoundaries exercises the stable public

@@ -1,12 +1,10 @@
 package files_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	pageindex "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/pageindex"
@@ -39,7 +37,7 @@ func TestFileIOPluginConditionalLifecycle(t *testing.T) {
 				require.NoError(t, err)
 				renamer, err := tools.NewFileRenameTool(manager)
 				require.NoError(t, err)
-				ctx := context.WithValue(f.ctx, ctxkeys.AuthContext, &f.auth)
+				ctx := f.toolContext()
 				f.write(t, 0, "/a.txt", "A", files.WriteModeTruncate, 0)
 				old := readRaceVersion(t, f, "/a.txt")
 				f.write(t, 1, "/a.txt", "B", files.WriteModeTruncate, 0)
@@ -78,7 +76,7 @@ func TestFileIOUnsupportedConditionBackend(t *testing.T) {
 	require.NoError(t, err)
 	writer, err := tools.NewFileWriteTool(legacyFilePlugin{Plugin: plug})
 	require.NoError(t, err)
-	ctx := context.WithValue(f.ctx, ctxkeys.AuthContext, &f.auth)
+	ctx := f.toolContext()
 	args := map[string]any{"project": "race", "path": "a.txt", "content": "A", "create_only": true}
 	require.Equal(t, "INVALID_ARGUMENT", callRaceToolError(t, ctx, writer, "file_write", args)["code"])
 	require.Zero(t, f.count(t, "mcp_files"))

@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/imageproc"
 )
 
@@ -31,6 +32,10 @@ func TestHandleCreateDecodeMemoryBudget(t *testing.T) {
 	t.Run("not admitted before the request ends", func(t *testing.T) {
 		fetcher := &stubFetcher{result: imageproc.FetchResult{Body: testPNG(t, 40, 30), MIMEHint: "image/png"}}
 		handler, _, store := buildImageHandler(t, "img-budget-busy", defaultImageSettings(), fetcher)
+		// Validate the key with a live context first: the ended request then
+		// passes the API-key gate from its cache and reaches image admission.
+		_, err := mcpauth.Authenticate(context.Background(), "Bearer sk-budget-busy-1234567")
+		require.NoError(t, err)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		payload := []byte(`{"content":"x","image_urls":["https://example.com/a.png"]}`)

@@ -15,6 +15,10 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 )
 
+// sdkUpgradeCaller authenticates tool calls of the SDK upgrade suite: tools
+// run only for a verified caller (anonymous callers may only discover).
+var sdkUpgradeCaller = http.Header{"Authorization": {"Bearer sk-sdk-upgrade"}}
+
 // TestMCPStableSDKToolCalls exercises the application handler, not only SDK discovery.
 func TestMCPStableSDKToolCalls(t *testing.T) {
 	s := newProtocolTestServer(t)
@@ -36,7 +40,7 @@ func TestMCPStableSDKToolCalls(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			response := performModernMCPRequest(t, s.Handler(), mcpgo.MethodToolsCall, map[string]any{
 				"name": "mcp_pipe", "arguments": map[string]any{"spec": tt.spec},
-			})
+			}, sdkUpgradeCaller)
 			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 			require.Empty(t, response.Header().Get("Mcp-Session-Id"))
 			payload := decodeMCPResponse(t, response.Body.Bytes())
@@ -78,7 +82,7 @@ func TestMCPStableSDKRejectsMisroutedRequests(t *testing.T) {
 				"name": "mcp_pipe", "arguments": map[string]any{
 					"spec": `{"steps":[{"id":"one","tool":"test_echo"}]}`,
 				},
-			})
+			}, sdkUpgradeCaller)
 			require.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
 			payload := decodeMCPResponse(t, response.Body.Bytes())
 			protocolErr, ok := payload["error"].(map[string]any)

@@ -1,25 +1,15 @@
 package web
 
 import (
-	"context"
-	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
-	"time"
 
-	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	"github.com/Laisky/zap"
 	"github.com/gin-gonic/gin"
-)
 
-const (
-	oneapiBalanceDefaultURL = "https://oneapi.laisky.com/api/token/balance"
-)
-
-var (
-	oneapiHTTPClient = &http.Client{Timeout: 20 * time.Second}
-	oneapiBalanceURL = oneapiBalanceDefaultURL
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 )
 
 type oneapiBalanceRequest struct {
@@ -82,68 +72,53 @@ func oneapiBalanceHandler() gin.HandlerFunc {
 			return
 		}
 
+		// Bound the caller's value before any work on it: no key, with an
+		// optional Bearer prefix, is longer, and Balance would refuse it anyway.
+		if len(strings.TrimSpace(req.APIKey)) > maxOneapiBalanceKeyInput {
+			logger.Debug("oneapi balance refused: api_key exceeds the maximum length", zap.Int("api_key_length", len(req.APIKey)))
+			ctx.JSON(http.StatusOK, oneapiBalanceResponse{Success: false, Message: "failed to fetch balance"})
+			return
+		}
 		apiKey := normalizeOneapiAPIKey(req.APIKey)
 		if apiKey == "" {
 			ctx.JSON(http.StatusBadRequest, oneapiBalanceResponse{Success: false, Message: "api_key required"})
 			return
 		}
 
-		quota, err := fetchOneapiQuota(ctx.Request.Context(), apiKey)
+		// The shared one-api gate charges this call to the caller's source and
+		// the global budget, and reuses recent answers per key hash.
+		balance, err := mcpauth.Installed().Balance(ctx.Request.Context(), apiKey)
 		if err != nil {
-			logger.Warn("fetch oneapi quota", zap.Error(err))
+			if mcpauth.IsUnavailable(err) {
+				logger.Debug("oneapi balance unavailable", zap.Error(err))
+				ctx.Header("Retry-After", strconv.Itoa(mcpauth.RetryAfterSeconds))
+				ctx.JSON(http.StatusOK, oneapiBalanceResponse{Success: false, Message: "balance temporarily unavailable; retry shortly"})
+				return
+			}
+			logger.Debug("oneapi balance refused", zap.Error(err))
 			ctx.JSON(http.StatusOK, oneapiBalanceResponse{Success: false, Message: "failed to fetch balance"})
 			return
 		}
 
-		ctx.JSON(http.StatusOK, oneapiBalanceResponse{Success: true, Data: quota})
+		ctx.JSON(http.StatusOK, oneapiBalanceResponse{Success: true, Data: &oneapiQuotaData{RemainQuota: balance.RemainQuota, UsedQuota: balance.UsedQuota}})
 	}
 }
 
-// normalizeOneapiAPIKey strips optional "Bearer " prefix and trims whitespace.
+// maxOneapiBalanceKeyInput bounds the balance proxy's api_key value before
+// it is normalized: a key of mcpauth.MaxAPIKeyLength, a Bearer prefix and
+// some whitespace.
+const maxOneapiBalanceKeyInput = mcpauth.MaxAPIKeyLength + 64
+
+// bearerPrefix is the scheme prefix normalizeOneapiAPIKey strips.
+const bearerPrefix = "bearer "
+
+// normalizeOneapiAPIKey strips optional "Bearer " prefixes (any case) and
+// trims whitespace, in time linear in the value: each step compares only the
+// prefix instead of lower-casing the whole remainder.
 func normalizeOneapiAPIKey(value string) string {
 	out := strings.TrimSpace(value)
-	for {
-		lower := strings.ToLower(out)
-		if !strings.HasPrefix(lower, "bearer ") {
-			break
-		}
-		out = strings.TrimSpace(out[len("bearer "):])
+	for len(out) >= len(bearerPrefix) && strings.EqualFold(out[:len(bearerPrefix)], bearerPrefix) {
+		out = strings.TrimSpace(out[len(bearerPrefix):])
 	}
 	return out
-}
-
-// fetchOneapiQuota calls OneAPI /api/token/balance and returns quota info.
-func fetchOneapiQuota(ctx context.Context, apiKey string) (*oneapiQuotaData, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, oneapiBalanceURL, nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "new request")
-	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	resp, err := oneapiHTTPClient.Do(req)
-	if err != nil {
-		return nil, errors.Wrap(err, "request")
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("unexpected status %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Success bool   `json:"success"`
-		Message string `json:"message"`
-		Data    struct {
-			RemainQuota float64 `json:"remain_quota"`
-			UsedQuota   float64 `json:"used_quota"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, errors.Wrap(err, "decode")
-	}
-	if !result.Success {
-		return nil, errors.Errorf("oneapi error: %s", result.Message)
-	}
-
-	return &oneapiQuotaData{RemainQuota: result.Data.RemainQuota, UsedQuota: result.Data.UsedQuota}, nil
 }

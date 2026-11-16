@@ -1,12 +1,23 @@
 package askuser
 
 import (
+	"context"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 )
 
-func TestParseAuthorizationContext(t *testing.T) {
+// TestMain installs an explicit accept-all authenticator: these tests use
+// synthetic bearers and must not depend on one-api.
+func TestMain(m *testing.M) {
+	authtest.InstallAcceptAll()
+	os.Exit(m.Run())
+}
+
+func TestParseAuthorizationFromContext(t *testing.T) {
 	tests := map[string]struct {
 		header      string
 		expectError bool
@@ -36,7 +47,7 @@ func TestParseAuthorizationContext(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := ParseAuthorizationContext(tc.header)
+			ctx, err := ParseAuthorizationFromContext(context.Background(), tc.header)
 			if tc.expectError {
 				require.Error(t, err, "expected error")
 				return

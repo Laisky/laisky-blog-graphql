@@ -78,7 +78,9 @@
     "tests": [
       "TestAlertDeliveryLiteralShortText",
       "TestAlertDeliveryDocumentWholePayload",
-      "TestAlertDeliveryAPIErrorsAreVisibleAndNeverRetried"
+      "TestAlertDeliveryAPIErrorsAreVisibleAndNeverRetried",
+      "TestValidateOneAPITokenUsesSharedAuthenticator",
+      "TestTelegramKeyFloodSpendsOnlyThatUsersBudget"
     ]
   },
   {
@@ -92,8 +94,11 @@
       "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs",
       "TestValidateStartupConfigRequiresCompleteTurnstilePairs",
       "TestValidateStartupConfigSSORedirectPolicy",
+      "TestValidateStartupConfigRefusesDisabledValidationInProdMode",
       "TestValidateStartupConfigImageLifecycleMode",
-      "TestSizeImageMemoryAtStartup"
+      "TestSizeImageMemoryAtStartup",
+      "TestValidateStartupConfigRefusesUnsafeValidationBounds",
+      "TestValidateStartupConfigChecksAuthorityURLsAndGateways"
     ]
   },
   {
@@ -129,7 +134,18 @@
       "TestServerEngineHostCannotDisableChallenge",
       "TestRuntimeConfigServesTheVerifyingWidgetKey",
       "TestLegacyBlogLoginIsRemoved",
-      "TestSSOCodeRegisteredClient"
+      "TestSSOCodeRegisteredClient",
+      "TestProductionWiringInstallsOneAPIValidator",
+      "TestHTTPServerTimeoutsKeepStreamsAlive",
+      "TestRequestBodyPolicyClassifiesRegisteredRoutes",
+      "TestGinBodyBudgetRejectsOversizedBodiesPerRouteFamily",
+      "TestGinBodyBudgetCutsSlowBodiesThroughTheProductionWriterChain",
+      "TestRV95SingleHostXFFRotationLocksOutNewValidKeys",
+      "TestRV95BalanceProxyFloodExhaustsOneAPIBudgetAndLocksOutValidation",
+      "TestProductionWiringRefusesDisabledValidationOutsideDebug",
+      "TestRequestBodyPolicyCountsUnarmedDeadlines",
+      "TestRequestBodySettingsLoadMCPInflightBudget",
+      "TestBalanceProxyBoundsTheKeyBeforeNormalizing"
     ]
   },
   {
@@ -191,6 +207,213 @@
     ]
   },
   {
+    "package": "./internal/mcp/auth",
+    "tests": [
+      "TestAuthenticatorCachesAcceptedKeyForPositiveTTL",
+      "TestAuthenticatorRejectsAndNegativelyCachesUnknownKey",
+      "TestAuthenticatorHonorsRevocationAfterPositiveTTL",
+      "TestAuthenticatorCoalescesConcurrentValidations",
+      "TestAuthenticatorBoundsUpstreamCallsUnderRandomBearerFlood",
+      "TestAuthenticatorStaleIfErrorOnlyForRecentlyAcceptedKeys",
+      "TestAuthenticatorRejectsMalformedAndOversizedKeysWithoutUpstream",
+      "TestUninstalledAuthenticatorFailsClosed",
+      "TestFromContextIgnoresUnverifiedContexts",
+      "TestOneAPITokenValidatorClassifiesAuthorityStatuses",
+      "TestNewAuthenticatorFromSettingsSelectsOneAPIByDefault",
+      "TestAuthenticatorSourceFloodCannotStarveOtherSources",
+      "TestAuthenticatorSourceBudgetsGroupIPv6By64",
+      "TestAuthenticatorSourceBudgetsStayBounded",
+      "TestAuthenticatorCacheHitsDoNotChargeSourceBudget",
+      "TestEnsureClientIPPrefersRequestIdentity",
+      "TestRV95RevokedKeyOutlivesPositiveTTLBySelfDrainingSourceBudget",
+      "TestRV95ZeroStaleGraceCannotBeConfigured",
+      "TestRV95OneAPIFailureEnvelopeAndHTMLAreAccepted",
+      "TestRV95SustainedFloodEventuallyLocksOutActiveKey",
+      "TestLocalBudgetRefusalNeverGrantsStaleGrace",
+      "TestZeroStaleGraceRefusesDuringOutage",
+      "TestOutageRetriesOfOneKnownKeyAreSpaced",
+      "TestBalanceSharesVerdictCachesAndGate",
+      "TestOneAPIValidatorRequiresJSONContentType",
+      "TestSlotWaitersThatNeverStartKeepTheirBudget",
+      "TestRevalidationSlotWaitersKeepTheReserve",
+      "TestParsePublicOriginAcceptsOnlyBareOrigins",
+      "TestOneAPIValidatorRefusesRedirectsWithInjectedClient",
+      "TestBeginAuthorityCallRestartsTrustOfAnAcceptedKey",
+      "TestBeginAuthorityCallChangesNothingElse",
+      "TestBeginAuthorityCallNeverResurrectsARejectedKey",
+      "TestValidationCapacityMatchesTheManual",
+      "TestUnavailableCauseSeparatesAuthorityFromLocalFailures",
+      "TestValidationSettingsRefuseUnsafeBounds",
+      "TestExampleSettingsPassValidationBounds",
+      "TestCanceledWaiterNeverReceivesStaleGrace",
+      "TestOversizedKeyIsRefusedBeforeDerivation",
+      "TestLegacyBalanceURLKeepsItsExactEndpoint",
+      "TestGateYieldsToConsumesInOneAPIWindow",
+      "TestProductionGateSharesTheConsumeLedger",
+      "TestSharedSourceOnboardingCapacity",
+      "TestParseGatewaysRefusesMisconfiguration",
+      "TestNamedBudgetSourceIsIndependentOfAddresses",
+      "TestTenantHashIsSHA256OfTheTrimmedKey",
+      "TestIngressInventory",
+      "TestAuthenticateDecisionMetrics",
+      "TestOutageKeepsEveryKnownKeyWithinGrace",
+      "TestOutageEndsWithTheFirstAnsweredProbe",
+      "TestKeySpecificFailureOpensNoOutage",
+      "TestOutageWindowNeedsFreshEvidence",
+      "TestRefusedChargesNeverSpendTokens",
+      "TestLateAcceptanceNeverUndoesANewerRejection",
+      "TestAcceptanceIsDatedAtCallStart",
+      "TestCopiedContextPointedAtAnotherTenantIsUnverified",
+      "TestBaseURLWithQueryOrFragmentIsRefused",
+      "TestInventoryScannerSeesIndirectSpellings"
+    ]
+  },
+  {
+    "package": "./internal/mcp",
+    "tests": [
+      "TestIngressRejectsUnissuedBearerBeforeSessionAndTools",
+      "TestIngressGateIsToolAgnostic",
+      "TestIngressFailsClosedWhenAuthorityUnavailable",
+      "TestIngressKeepsAnonymousDiscovery",
+      "TestIngressRejectsOversizedBodyBeforeAuthOrBuffering",
+      "TestIngressTerminatesSlowBodyWithinReadBudget",
+      "TestIngressReadBudgetDoesNotCutHeldRequests",
+      "TestIngressSourceFloodCannotLockOutOtherCallers",
+      "TestIngressOutageLogsOneWarnPerInterval",
+      "TestIngressChallengeAdvertisesTheConfiguredMetadataURL",
+      "TestIngressRefusesAnonymousToolExecution",
+      "TestIngressAnonymousMethodPolicy",
+      "TestToolDispatchRequiresVerifiedCallerForEveryTool",
+      "TestIngressActiveKeyStaysServedThroughItsOwnConsumes",
+      "TestIngressCancellationCannotCrossCallers",
+      "TestIngressLegacySessionCancellationStillWorks",
+      "TestCancellationGuardIgnoresOnlyModernCancellations",
+      "TestIngressModernRequestIsCanceledByClosingItsStream",
+      "TestIngressConsumeRefreshNeedsTheValidatorsProof",
+      "TestMCPRequestFailureAlert",
+      "TestMCPFailureAlertReportsSDKMethods",
+      "TestMCPFailureAlertReportsNotificationDelivery",
+      "TestMCPFailureAlertProductionWiring",
+      "TestMCPFailureTypedCauses",
+      "TestShouldDowngradeMCPErrorLog",
+      "TestShouldDowngradeMCPErrorLogFalse",
+      "TestBodyBudgetCountsUnarmedDeadlines",
+      "TestIngressInflightBudgetBoundsConcurrentBodies",
+      "TestIngressInflightBudgetIgnoresUnsentDeclaredBytes",
+      "TestModernCancellationPolicyClassifiesLikeTheSDK",
+      "TestIngressModernBatchCancellationNeverReachesARequest",
+      "TestIngressAnonymousBodiesCannotBlockVerifiedCallers",
+      "TestIngressOneKeyCannotStarveAnotherKey",
+      "TestIngressUnverifiedBodiesAreNeverCharged",
+      "TestClientBodyReadErrorClassification",
+      "TestIngressOversizedAuthorizationHeaderIsRefusedCheaply",
+      "TestBearerHeaderBoundMirrorsAuthenticator"
+    ]
+  },
+  {
+    "package": "./library/httpbody",
+    "tests": [
+      "TestEnforceRejectsDeclaredOversizeWithoutReading",
+      "TestEnforceCapsStreamedBodies",
+      "TestEnforceLeavesBodylessRequestsAlone",
+      "TestTightenLowersTheCap",
+      "TestReadDeadlineReachesThroughUnwrappingWriters",
+      "TestReadCreditIsBoundedAndDrains",
+      "TestBurstThenStallIsCutAfterTheIdleBound",
+      "TestNoteUnarmedDeadlineCountsAndSamples",
+      "TestEnforceReportsAnUnarmableDeadline",
+      "TestInflightReleaseOnPanic",
+      "TestInflightConcurrentChargesStayWithinCapacity",
+      "TestInflightChargesOnlyBytesRead",
+      "TestInflightSlowSendersDoNotReserveCapacity",
+      "TestInflightRefusesReadsBeyondCapacity",
+      "TestInflightBodyAtTheCapFitsAnIdleBudget",
+      "TestChargePendingBytesMoveOnAssign",
+      "TestChargePendingBoundRefusesUnclassifiedReads",
+      "TestInflightTenantShareKeepsOtherTenantsServed",
+      "TestInflightAssignRefusesWhenPendingBytesDoNotFit"
+    ]
+  },
+  {
+    "package": "./library/httpclient",
+    "tests": [
+      "TestWithoutRedirectsReturnsTheRedirectAndKeepsBase"
+    ]
+  },
+  {
+    "package": "./library/billing/oneapi",
+    "tests": [
+      "TestCheckUserExternalBillingNeverFollowsRedirects",
+      "TestCheckUserExternalBillingKeepsTheDefaultClientTransport",
+      "TestConsumeAtReceiptRequiresOneAPISuccessEnvelope",
+      "TestCallLedgerCountsTheTrailingWindow",
+      "TestCallLedgerTryRecordRefusesAtTheLimit",
+      "TestCallLedgerTryRecordIsAtomic"
+    ]
+  },
+  {
+    "package": "./internal/mcp/userrequests",
+    "tests": [
+      "TestConsoleAPIRejectsUnissuedBearerWithoutStorage",
+      "TestConsoleAPIFailsClosedWhenAuthorityUnavailable",
+      "TestReorderBodyIsBounded",
+      "TestCreateWithImagesLeavesNoOrphanObjects",
+      "TestCreateWithImagesQuotaIsCheckedBeforeUpload",
+      "TestCreateWithImagesCompensationKeepsSharedObjects",
+      "TestCreateWithImagesSuccessKeepsObjects",
+      "TestCreateRequestWithImages_RevivingExpiredImageIsCharged",
+      "TestGCExpiredImageRefsKeepsRefRevivedDuringSweep",
+      "TestCreateWithImagesHoldsNoTransactionDuringUpload",
+      "TestCreateWithImagesLateDeleteCannotRemoveCommittedObject",
+      "TestCreateWithImagesFailsWhenReservationIsLost",
+      "TestReconcileImageObjectsDeletesCrashedUploads",
+      "TestReconcileImageObjectsKeepsProtectedKeys",
+      "TestReconcileImageObjectsNeverTouchesUnclaimedObjects",
+      "TestImageCreateLimiterCaps",
+      "TestHandleCreateImageBusyWhenCreateCapIsFull",
+      "TestHandleCreateDecodeMemoryBudget",
+      "TestGCExpiredImageRefsRecordsOrphansAtomically",
+      "TestCreateWithImagesLatePutAfterCompensationIsReconciled",
+      "TestOverlappingFailedCreatesReleaseSharedKey",
+      "TestFinalizeRepointedRefRecordsOldKey",
+      "TestHandleCreateAdmitsBeforeReadingMultipartBody",
+      "TestImageCreateLimiterBoundsWaiters",
+      "TestHandleCreateSlowBodyReleasesSlotAtDeadline",
+      "TestCreateWithImagesUploadsFitTheRequestDeadline",
+      "TestCreateWithImagesRefusesWithoutTimeToUpload",
+      "TestCreateWithImagesFailedUploadCancelsTheOthers",
+      "TestReconcileTickDrainsBacklogBeyondOneBatch",
+      "TestReconcileTickExportsBacklogAndFailures",
+      "TestLifecycleControllerRestoresErasedRule",
+      "TestLifecycleControllerVerifyModeNeverWrites",
+      "TestImageMemoryEnvelopeDefaults",
+      "TestSizeImageMemory",
+      "TestReconcileTickKeepsDrainingPastAFailingKey",
+      "TestLifecycleControllerReportsPeriodicErasure",
+      "TestCreateWithImagesUploadPanicIsCompensated",
+      "TestConcurrentReservationsOfOneImageChargeItOnce",
+      "TestDeduplicatedReservationKeepsBackingItsImage",
+      "TestQuotaReportMatchesAdmission",
+      "TestQuotaReportUsesEnforcedDefaults",
+      "TestImageServerErrorsHideInternalDetails",
+      "TestImageLockIDsSerializeQuotaPerUserAcrossPrefixes",
+      "TestImageClaimsTableGainsSHAColumn"
+    ]
+  },
+  {
+    "package": "./internal/mcp/askuser",
+    "tests": [
+      "TestAskUserConsoleValidatesBearer",
+      "TestFromSharedContextRefusesUnverified"
+    ]
+  },
+  {
+    "package": "./internal/library/fileio",
+    "tests": [
+      "TestGraphQLSharedToolRejectsUnissuedBearer"
+    ]
+  },
+  {
     "package": "./internal/library/ssoredirect",
     "tests": [
       "TestSharedRedirectVectors",
@@ -242,52 +465,6 @@
     ]
   },
   {
-    "package": "./internal/mcp/userrequests",
-    "tests": [
-      "TestCreateWithImagesLeavesNoOrphanObjects",
-      "TestCreateWithImagesQuotaIsCheckedBeforeUpload",
-      "TestCreateWithImagesCompensationKeepsSharedObjects",
-      "TestCreateWithImagesSuccessKeepsObjects",
-      "TestCreateRequestWithImages_RevivingExpiredImageIsCharged",
-      "TestGCExpiredImageRefsKeepsRefRevivedDuringSweep",
-      "TestCreateWithImagesHoldsNoTransactionDuringUpload",
-      "TestCreateWithImagesLateDeleteCannotRemoveCommittedObject",
-      "TestCreateWithImagesFailsWhenReservationIsLost",
-      "TestReconcileImageObjectsDeletesCrashedUploads",
-      "TestReconcileImageObjectsKeepsProtectedKeys",
-      "TestReconcileImageObjectsNeverTouchesUnclaimedObjects",
-      "TestImageCreateLimiterCaps",
-      "TestHandleCreateImageBusyWhenCreateCapIsFull",
-      "TestHandleCreateDecodeMemoryBudget",
-      "TestGCExpiredImageRefsRecordsOrphansAtomically",
-      "TestCreateWithImagesLatePutAfterCompensationIsReconciled",
-      "TestOverlappingFailedCreatesReleaseSharedKey",
-      "TestFinalizeRepointedRefRecordsOldKey",
-      "TestHandleCreateAdmitsBeforeReadingMultipartBody",
-      "TestImageCreateLimiterBoundsWaiters",
-      "TestHandleCreateSlowBodyReleasesSlotAtDeadline",
-      "TestCreateWithImagesUploadsFitTheRequestDeadline",
-      "TestCreateWithImagesRefusesWithoutTimeToUpload",
-      "TestCreateWithImagesFailedUploadCancelsTheOthers",
-      "TestReconcileTickDrainsBacklogBeyondOneBatch",
-      "TestReconcileTickExportsBacklogAndFailures",
-      "TestLifecycleControllerRestoresErasedRule",
-      "TestLifecycleControllerVerifyModeNeverWrites",
-      "TestImageMemoryEnvelopeDefaults",
-      "TestSizeImageMemory",
-      "TestReconcileTickKeepsDrainingPastAFailingKey",
-      "TestLifecycleControllerReportsPeriodicErasure",
-      "TestCreateWithImagesUploadPanicIsCompensated",
-      "TestConcurrentReservationsOfOneImageChargeItOnce",
-      "TestDeduplicatedReservationKeepsBackingItsImage",
-      "TestQuotaReportMatchesAdmission",
-      "TestQuotaReportUsesEnforcedDefaults",
-      "TestImageServerErrorsHideInternalDetails",
-      "TestImageLockIDsSerializeQuotaPerUserAcrossPrefixes",
-      "TestImageClaimsTableGainsSHAColumn"
-    ]
-  },
-  {
     "package": "./internal/mcp/storage",
     "tests": [
       "TestEnsureLifecyclePreservesOtherRules",
@@ -315,19 +492,32 @@
     "tests": [
       "TestFileMutationSchemasExposeCompleteUnionArguments",
       "TestFileMutationSchemasKeepPreconditions",
-      "TestFileMutationAlternativesDeclareOnlyAcceptedArguments"
+      "TestFileMutationAlternativesDeclareOnlyAcceptedArguments",
+      "TestFileAuthFromContextRefusesUnverifiedIdentity"
     ]
   },
   {
-    "package": "./internal/mcp",
+    "package": "./internal/web/arweave/controller",
     "tests": [
-      "TestMCPRequestFailureAlert",
-      "TestMCPFailureAlertReportsSDKMethods",
-      "TestMCPFailureAlertReportsNotificationDelivery",
-      "TestMCPFailureAlertProductionWiring",
-      "TestMCPFailureTypedCauses",
-      "TestShouldDowngradeMCPErrorLog",
-      "TestShouldDowngradeMCPErrorLogFalse"
+      "TestArweaveUploadAuthenticatesBearerBeforeCharging"
+    ]
+  },
+  {
+    "package": "./internal/web/general/controller",
+    "tests": [
+      "TestValidateOneapiAPIKeyRefusesOversizedKeyBeforeHashing"
+    ]
+  },
+  {
+    "package": "./library/search/firecrawl",
+    "tests": [
+      "TestSearchEngineRefusesRedirects"
+    ]
+  },
+  {
+    "package": "./library/search/bing",
+    "tests": [
+      "TestSearchEngineRefusesRedirects"
     ]
   },
   {

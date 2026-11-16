@@ -49,22 +49,15 @@ func normalizeFilePath(path string) string {
 	return "/" + path
 }
 
-// fileAuthFromContext extracts the trusted auth context for file tools.
+// fileAuthFromContext extracts the verified caller of a file or memory tool.
+// Only a context the credential authority verified (mcpauth.FromContext)
+// yields a tenant; any other value stored on ctx is ignored.
 func fileAuthFromContext(ctx context.Context) (files.AuthContext, bool) {
-	if authCtx, ok := mcpauth.FromContext(ctx); ok {
-		return files.AuthContext{
-			APIKey:       authCtx.APIKey,
-			APIKeyHash:   authCtx.APIKeyHash,
-			UserID:       authCtx.UserID,
-			UserIdentity: authCtx.UserIdentity,
-		}, true
-	}
-
-	value, ok := ctx.Value(ctxkeys.AuthContext).(*files.AuthContext)
-	if !ok || value == nil {
+	authCtx, ok := mcpauth.FromContext(ctx)
+	if !ok {
 		return files.AuthContext{}, false
 	}
-	return *value, true
+	return files.AuthFromVerified(authCtx)
 }
 
 // fileToolLoggerFromContext returns a request-scoped logger.

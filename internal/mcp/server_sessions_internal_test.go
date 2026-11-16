@@ -9,14 +9,18 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 )
 
 // TestMCPReviewSessionManager rejects tampering, cross-credential use and anonymous deletion.
 func TestMCPReviewSessionManager(t *testing.T) {
 	t.Parallel()
 	resolver := requestSessionIDResolver{}
+	// The bearer gate stores the verified credential before the SDK resolves sessions.
 	request := httptest.NewRequest(http.MethodPost, "/mcp/", nil)
 	request.Header.Set("Authorization", reviewAlpha)
+	request = request.WithContext(authtest.WithVerified(request.Context(), reviewAlpha))
 	owner := resolver.ResolveSessionIdManager(request)
 	session := owner.Generate()
 	require.NotEqual(t, session, owner.Generate())
@@ -26,12 +30,15 @@ func TestMCPReviewSessionManager(t *testing.T) {
 	_, err = owner.Terminate(session)
 	require.NoError(t, err)
 
-	otherRequest := request.Clone(request.Context())
+	otherRequest := request.Clone(authtest.WithVerified(context.Background(), reviewBeta))
 	otherRequest.Header.Set("Authorization", reviewBeta)
+	// A raw, unverified header never binds or authenticates a session.
+	unverified := httptest.NewRequest(http.MethodPost, "/mcp/", nil)
+	unverified.Header.Set("Authorization", reviewAlpha)
 	for _, manager := range []interface {
 		Validate(string) (bool, error)
 		Terminate(string) (bool, error)
-	}{resolver.ResolveSessionIdManager(otherRequest), resolver.ResolveSessionIdManager(nil)} {
+	}{resolver.ResolveSessionIdManager(otherRequest), resolver.ResolveSessionIdManager(nil), resolver.ResolveSessionIdManager(unverified)} {
 		_, err = manager.Validate(session)
 		require.Error(t, err)
 		_, err = manager.Terminate(session)

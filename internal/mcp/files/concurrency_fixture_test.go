@@ -19,6 +19,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 )
 
@@ -26,9 +27,11 @@ import (
 // SQLite is only used for deterministic client histories. PostgreSQL is required
 // for claims about simultaneous transactions, advisory locks, and MVCC visibility.
 type raceFixture struct {
-	ctx      context.Context
-	db       [2]*sql.DB
-	svc      [2]*files.Service
+	ctx context.Context
+	db  [2]*sql.DB
+	svc [2]*files.Service
+	// apiKey is the fixture tenant's key; auth is its verified identity.
+	apiKey   string
 	auth     files.AuthContext
 	settings files.Settings
 	postgres bool
@@ -38,7 +41,8 @@ func newRaceFixture(t *testing.T, backend string, configure func(*files.Settings
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	t.Cleanup(cancel)
-	f := &raceFixture{ctx: ctx, postgres: backend == "postgres", auth: files.AuthContext{APIKeyHash: strings.Repeat("a", 64)}}
+	f := &raceFixture{ctx: ctx, postgres: backend == "postgres"}
+	f.setTenant(t, "sk-fileio-race-fixture")
 	f.settings = files.LoadSettingsFromConfig()
 	f.settings.Search.Enabled = false // No real credentials, Redis, LLMs, or index workers.
 	f.settings.Index.FileSummary.Enabled = false
@@ -253,4 +257,19 @@ func (g *commitGate) WithProjectLock(ctx context.Context, db *sql.DB, pg bool, k
 // Release unblocks the held transaction, including during failed-test cleanup.
 func (g *commitGate) Release() {
 	g.once.Do(func() { close(g.release) })
+}
+
+// setTenant makes apiKey the fixture tenant: auth is the identity the
+// credential authority would verify for it, and toolContext carries it.
+func (f *raceFixture) setTenant(t *testing.T, apiKey string) {
+	t.Helper()
+	auth, ok := files.AuthFromVerified(authtest.Verified(apiKey))
+	require.True(t, ok)
+	f.apiKey, f.auth = apiKey, auth
+}
+
+// toolContext returns the fixture context carrying the tenant's verified
+// identity, as the MCP bearer gate installs it for a tool call.
+func (f *raceFixture) toolContext() context.Context {
+	return authtest.WithVerified(f.ctx, f.apiKey)
 }

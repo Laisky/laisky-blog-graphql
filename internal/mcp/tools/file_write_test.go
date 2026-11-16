@@ -8,7 +8,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 )
@@ -88,11 +88,7 @@ func TestFileWriteErrorMapping(t *testing.T) {
 	tool, err := NewFileWriteTool(stubFileService{writeErr: serviceErr})
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
-		APIKey:       "key",
-		APIKeyHash:   "hash",
-		UserIdentity: "user:test",
-	})
+	ctx := authtest.WithVerified(context.Background(), "key")
 
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project":     "proj",

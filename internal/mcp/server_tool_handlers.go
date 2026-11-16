@@ -40,24 +40,15 @@ func (s *Server) handleWebFetch(ctx context.Context, req mcp.CallToolRequest) (*
 	return s.executeToolHandler(ctx, req, "web_fetch", oneapi.PriceWebFetch, "web fetch is not configured", exec)
 }
 
-// extractAPIKey returns the bearer token from an Authorization header value.
-func extractAPIKey(authHeader string) string {
-	parsed, err := mcpauth.ParseAuthorizationContext(authHeader)
-	if err != nil {
-		return ""
-	}
-
-	return parsed.APIKey
-}
-
-// apiKeyFromContext returns the request API key stored by the transport.
+// apiKeyFromContext returns the API key the transport gate verified for this
+// request, or empty when the caller presented none. A raw header is never
+// trusted here: billing and audit must follow the verified credential.
 func apiKeyFromContext(ctx context.Context) string {
 	if authCtx, ok := mcpauth.FromContext(ctx); ok {
 		return authCtx.APIKey
 	}
 
-	authHeader, _ := ctx.Value(keyAuthorization).(string)
-	return extractAPIKey(authHeader)
+	return ""
 }
 
 type billingAttemptContextKey struct{}

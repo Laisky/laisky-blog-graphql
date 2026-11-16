@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"strings"
+	"syscall"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	"github.com/Laisky/laisky-blog-graphql/library/clientip"
+	"github.com/Laisky/laisky-blog-graphql/library/httpbody"
 	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -110,7 +113,14 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		startAt := time.Now()
 		body, truncated, err := readAndRestoreRequestBody(r, httpLogBodyLimit)
-		if err != nil {
+		switch {
+		case err == nil:
+		case isClientBodyReadError(err):
+			// The client ended or overran its body (an abort, a reset, a
+			// stall cut by the read deadline, a budget refusal); the handler
+			// answers what it can. A flood must not become one ERROR per request.
+			logger.Debug("request body read ended by the client", zap.Error(err))
+		default:
 			logger.Error("read request body", zap.Error(err))
 		}
 		sessionID := strings.TrimSpace(r.Header.Get(srv.HeaderKeySessionID))
@@ -219,6 +229,12 @@ func (lrw *loggingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) 
 	return nil, nil, errors.New("hijacker not supported")
 }
 
+// Unwrap exposes the underlying writer so http.ResponseController can reach
+// connection controls such as per-request read and write deadlines.
+func (lrw *loggingResponseWriter) Unwrap() http.ResponseWriter {
+	return lrw.ResponseWriter
+}
+
 func (lrw *loggingResponseWriter) Push(target string, opts *http.PushOptions) error {
 	if pusher, ok := lrw.ResponseWriter.(http.Pusher); ok {
 		return pusher.Push(target, opts)
@@ -263,4 +279,25 @@ func mcpRequestFailureDiagnostic(id any, method mcp.MCPMethod, err error) zap.Fi
 		summary.ErrorKind = appLog.MCPFailureDeadlineExceeded
 	}
 	return appLog.MCPFailureDiagnosticField(summary)
+}
+
+// isClientBodyReadError reports whether a request-body read failed because of
+// the client rather than the server: the client aborted or reset the
+// connection mid-body (unexpected EOF, ECONNRESET, EPIPE, ECONNABORTED, a
+// closed connection), stalled past the read deadline, or overran a body
+// budget (byte cap, in-flight budget). The request logger logs those at DEBUG
+// so a client-side flood cannot become an ERROR flood; anything else stays an
+// ERROR.
+func isClientBodyReadError(err error) bool {
+	if err == nil {
+		return false
+	}
+	switch {
+	case httpbody.IsTooLarge(err), httpbody.IsTimeout(err), httpbody.IsInflightExhausted(err),
+		errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, net.ErrClosed), errors.Is(err, http.ErrBodyReadAfterClose),
+		errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE), errors.Is(err, syscall.ECONNABORTED):
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }

@@ -7,6 +7,7 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	srv "github.com/mark3labs/mcp-go/server"
 
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
@@ -17,8 +18,18 @@ import (
 type ServerOption func(*sharedServerServices)
 
 type sharedServerServices struct {
-	history files.HistoryReader
-	holds   *userrequests.HoldManager
+	history       files.HistoryReader
+	holds         *userrequests.HoldManager
+	authenticator *mcpauth.Authenticator
+	bodyBudget    RequestBodyBudget
+	// resourceMetadataURL is the RFC 9728 document advertised in Bearer
+	// challenges; empty uses mcpauth.DefaultResourceMetadataURL.
+	resourceMetadataURL string
+	// consume replaces the one-api consume call and consumeBaseURL names its
+	// authority. Production leaves both unset: oneapi.ConsumeAt against
+	// oneapi.BillingAPI. Tests point the same call at a fixture.
+	consume        consumeCall
+	consumeBaseURL string
 }
 
 // WithFileHistoryReader enables the history tool adapters when FileIO exposure is enabled.

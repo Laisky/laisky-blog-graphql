@@ -18,9 +18,20 @@ var (
 	ErrMissingAuthorization = errors.New("authorization header required")
 	// ErrInvalidAuthorization indicates that the authorization header is malformed.
 	ErrInvalidAuthorization = errors.New("invalid authorization header")
+	// ErrCredentialRejected indicates that the credential authority refused the API key:
+	// it is unknown, revoked, expired, disabled, exhausted or not usable from this server.
+	ErrCredentialRejected = errors.New("api key rejected")
+	// ErrValidationUnavailable indicates that the API key could not be validated right now.
+	// Callers must fail closed with a retryable status, never treat the key as valid.
+	ErrValidationUnavailable = errors.New("api key validation temporarily unavailable")
 )
 
 // Context carries canonical MCP authorization metadata derived from API keys.
+//
+// Only an Authenticator produces a verified Context. FromContext ignores any
+// other value, so no request path can derive a tenant from an unvalidated
+// bearer. Verification seals the identity fields: a copy whose fields are
+// changed afterwards (pointed at another tenant) is no longer verified.
 type Context struct {
 	RawHeader    string
 	APIKey       string
@@ -29,13 +40,38 @@ type Context struct {
 	UserID       string
 	UserIdentity string
 	AIIdentity   string
+	// verified and sealed are set only by Authenticator.Authenticate; sealed
+	// is the identity the authority accepted.
+	verified bool
+	sealed   contextIdentity
 }
 
-// ParseAuthorizationContext parses an Authorization header and derives tenant identifiers.
-func ParseAuthorizationContext(header string) (*Context, error) {
+// contextIdentity is the comparable identity of a Context.
+type contextIdentity struct {
+	rawHeader, apiKey, apiKeyHash, keySuffix, userID, userIdentity, aiIdentity string
+}
+
+// identity returns the current identity fields of a.
+func (a *Context) identity() contextIdentity {
+	return contextIdentity{a.RawHeader, a.APIKey, a.APIKeyHash, a.KeySuffix, a.UserID, a.UserIdentity, a.AIIdentity}
+}
+
+// Verified reports whether the credential authority accepted this context's
+// API key and its identity fields are still the ones it accepted.
+func (a *Context) Verified() bool {
+	return a != nil && a.verified && a.sealed == a.identity()
+}
+
+// parseAuthorizationHeader parses an Authorization header and derives the
+// tenant identifiers of the presented key. It is syntax only: the result is
+// unverified until an Authenticator validates the key.
+func parseAuthorizationHeader(header string) (*Context, error) {
 	trimmedHeader := strings.TrimSpace(header)
 	if trimmedHeader == "" {
-		return nil, ErrMissingAuthorization
+		return nil, errors.WithStack(ErrMissingAuthorization)
+	}
+	if len(trimmedHeader) > MaxAuthorizationHeaderLength {
+		return nil, errors.Wrap(ErrInvalidAuthorization, "authorization header exceeds the maximum length")
 	}
 
 	raw := library.StripBearerPrefix(trimmedHeader)
@@ -52,6 +88,7 @@ func ParseAuthorizationContext(header string) (*Context, error) {
 		return nil, ErrInvalidAuthorization
 	}
 
+	// DeriveFromAPIKey refuses an oversized key before hashing it.
 	apiKey := normalizeAuthorizationToken(tokenFields[0])
 
 	derived, err := DeriveFromAPIKey(apiKey)
@@ -117,11 +154,22 @@ func looksLikeAPIKey(token string) bool {
 	return false
 }
 
-// DeriveFromAPIKey builds a canonical authorization context from a raw API key.
+// MaxAuthorizationHeaderLength bounds a whole Authorization header (or a
+// query key) before it is split: the scheme, a legacy identity, a key of
+// MaxAPIKeyLength and some whitespace fit easily. Transports refuse a longer
+// header before any other work on it.
+const MaxAuthorizationHeaderLength = 2048
+
+// DeriveFromAPIKey builds the canonical, unverified tenant identifiers of a raw API key.
+// The result is never honored by FromContext; use an Authenticator to authenticate a caller.
+// A key longer than MaxAPIKeyLength is refused before it is hashed.
 func DeriveFromAPIKey(apiKey string) (*Context, error) {
 	token := strings.TrimSpace(apiKey)
 	if token == "" {
-		return nil, ErrInvalidAuthorization
+		return nil, errors.WithStack(ErrInvalidAuthorization)
+	}
+	if len(token) > MaxAPIKeyLength {
+		return nil, errors.Wrap(ErrInvalidAuthorization, "api key exceeds the maximum length")
 	}
 
 	hashed := sha256.Sum256([]byte(token))
@@ -147,32 +195,37 @@ func WithContext(ctx context.Context, auth *Context) context.Context {
 	return context.WithValue(ctx, ctxkeys.AuthContext, auth)
 }
 
-// FromContext retrieves authorization context from a request context.
+// FromContext retrieves the verified authorization context of a request.
+// Unverified contexts are ignored, so a caller can only obtain a tenant that
+// the credential authority accepted.
 func FromContext(ctx context.Context) (*Context, bool) {
 	if ctx == nil {
 		return nil, false
 	}
 
 	auth, ok := ctx.Value(ctxkeys.AuthContext).(*Context)
-	if !ok || auth == nil {
+	if !ok || !auth.Verified() {
 		return nil, false
 	}
 
 	return auth, true
 }
 
-// FromContextOrHeader returns auth context from request context, falling back to parsing a header.
+// FromContextOrHeader returns the verified auth context of a request, or
+// authenticates the header with the installed Authenticator.
 func FromContextOrHeader(ctx context.Context, header string) (*Context, error) {
 	if auth, ok := FromContext(ctx); ok {
 		return auth, nil
 	}
 
-	parsed, err := ParseAuthorizationContext(header)
+	// The client source of the validation budget comes from clientip.FromContext,
+	// which also reads the gin context GraphQL resolvers run in.
+	authenticated, err := Authenticate(ctx, header)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	return parsed, nil
+	return authenticated, nil
 }
 
 // MaskedKey returns a non-sensitive key suffix suitable for logs.

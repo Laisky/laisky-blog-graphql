@@ -10,8 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
-	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
@@ -46,13 +45,7 @@ func behaviorReq(args map[string]any) mcp.CallToolRequest {
 }
 
 func behaviorAuthCtx() context.Context {
-	auth, _ := mcpauth.DeriveFromAPIKey("sk-behavior-test-key")
-	ctx := mcpauth.WithContext(context.Background(), auth)
-	return context.WithValue(ctx, ctxkeys.AuthContext, &files.AuthContext{
-		APIKey:       "sk-behavior-test-key",
-		APIKeyHash:   auth.APIKeyHash,
-		UserIdentity: auth.UserIdentity,
-	})
+	return authtest.WithVerified(context.Background(), "sk-behavior-test-key")
 }
 
 func behaviorTextContent(t *testing.T, result *mcp.CallToolResult) string {

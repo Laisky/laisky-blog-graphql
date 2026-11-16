@@ -11,7 +11,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
@@ -25,11 +25,7 @@ func TestMemoryBeforeTurnHandleRequiresCurrentInput(t *testing.T) {
 	tool, err := NewMemoryBeforeTurnTool(memoryService)
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
-		APIKey:       "sk-test",
-		APIKeyHash:   "hash-test",
-		UserIdentity: "user:test",
-	})
+	ctx := authtest.WithVerified(context.Background(), "sk-test")
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project":           "bot",
 		"session_id":        "task-2026-02-27-0012",
@@ -54,11 +50,7 @@ func TestMemoryBeforeTurnHandleAcceptsConversationItems(t *testing.T) {
 	tool, err := NewMemoryBeforeTurnTool(memoryService)
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
-		APIKey:       "sk-test",
-		APIKeyHash:   "hash-test",
-		UserIdentity: "user:test",
-	})
+	ctx := authtest.WithVerified(context.Background(), "sk-test")
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project":       "bot",
 		"session_id":    "task-2026-02-27-0013",
@@ -92,11 +84,7 @@ func TestMemoryBeforeTurnHandleAcceptsStringCurrentInput(t *testing.T) {
 	tool, err := NewMemoryBeforeTurnTool(memoryService)
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
-		APIKey:       "sk-test",
-		APIKeyHash:   "hash-test",
-		UserIdentity: "user:test",
-	})
+	ctx := authtest.WithVerified(context.Background(), "sk-test")
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project":           "bot",
 		"session_id":        "task-2026-02-27-0014",
@@ -122,11 +110,7 @@ func TestMemoryBeforeTurnHandleRejectsInvalidCurrentInputType(t *testing.T) {
 	tool, err := NewMemoryBeforeTurnTool(memoryService)
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
-		APIKey:       "sk-test",
-		APIKeyHash:   "hash-test",
-		UserIdentity: "user:test",
-	})
+	ctx := authtest.WithVerified(context.Background(), "sk-test")
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project":           "bot",
 		"session_id":        "task-2026-02-27-0014",
@@ -152,11 +136,7 @@ func TestMemoryBeforeTurnHandleAcceptsCurrentInputText(t *testing.T) {
 	tool, err := NewMemoryBeforeTurnTool(memoryService)
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
-		APIKey:       "sk-test",
-		APIKeyHash:   "hash-test",
-		UserIdentity: "user:test",
-	})
+	ctx := authtest.WithVerified(context.Background(), "sk-test")
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project":            "bot",
 		"session_id":         "task-2026-02-27-0015",

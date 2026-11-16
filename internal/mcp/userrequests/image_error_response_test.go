@@ -12,6 +12,8 @@ import (
 
 	errs "github.com/Laisky/errors/v2"
 	"github.com/stretchr/testify/require"
+
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 )
 
 // imageErrorBody decodes an image error response.
@@ -57,6 +59,10 @@ func TestImageServerErrorsHideInternalDetails(t *testing.T) {
 
 	t.Run("limiter refuses an ended request", func(t *testing.T) {
 		h := newOrphanHarness(t, defaultImageSettings(), "")
+		// Validate the key with a live context first: the ended request then
+		// passes the API-key gate from its cache and reaches the limiter.
+		_, err := mcpauth.Authenticate(context.Background(), "Bearer sk-error-leak-busy-123456")
+		require.NoError(t, err)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		// The limiter admits nothing for an ended request: image_busy.

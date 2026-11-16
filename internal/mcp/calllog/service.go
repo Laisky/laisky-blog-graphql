@@ -2,8 +2,6 @@ package calllog
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -18,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -444,15 +443,16 @@ func mapSortField(field string) string {
 }
 
 // normalizeAPIKey derives the stored key hash and the display prefix. The raw
-// key itself is never persisted.
+// key itself is never persisted. The hash is the tenant hash of the shared
+// derivation (mcpauth.DeriveFromAPIKey), byte-identical to the APIKeyHash the
+// call-log console filters by; a key that derivation refuses (empty or longer
+// than mcpauth.MaxAPIKeyLength, which no verified caller has) records none.
 func normalizeAPIKey(apiKey string) (hash string, prefix string) {
-	trimmed := strings.TrimSpace(apiKey)
-	if trimmed == "" {
+	derived, err := mcpauth.DeriveFromAPIKey(apiKey)
+	if err != nil {
 		return "", ""
 	}
-
-	hashed := sha256.Sum256([]byte(trimmed))
-	hash = hex.EncodeToString(hashed[:])
+	hash, trimmed := derived.APIKeyHash, derived.APIKey
 
 	const prefixLength = 7
 	if len(trimmed) > prefixLength {

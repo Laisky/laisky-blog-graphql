@@ -33,7 +33,7 @@ func TestSPADevProxyRejectsCONNECT(t *testing.T) {
 	t.Cleanup(upstream.Close)
 
 	t.Setenv("VITE_DEV_URL", upstream.URL)
-	handler := newFrontendSPAHandler(glog.Shared, "/blog")
+	handler := newFrontendSPAHandler(glog.Shared, "/blog", "")
 	require.NotNil(t, handler)
 
 	// A successful GET proves that the configured development proxy reaches this peer.
@@ -67,7 +67,7 @@ func TestSPAAssetRangeLimit(t *testing.T) {
 	t.Setenv("VITE_DEV_URL", "")
 	// Exercise the patched default limit, independently of a developer's GODEBUG override.
 	t.Setenv("GODEBUG", "")
-	handler := newFrontendSPAHandler(glog.Shared, "/blog")
+	handler := newFrontendSPAHandler(glog.Shared, "/blog", "")
 	require.NotNil(t, handler)
 
 	single := httptest.NewRequest(http.MethodGet, "/blog/assets/range.txt", nil)

@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/storage"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
@@ -284,8 +285,7 @@ func TestCreateWithImagesCompensationKeepsSharedObjects(t *testing.T) {
 	h.requireNoUnreferencedObjects(t)
 
 	// The earlier request still resolves its image.
-	auth, err := askuser.ParseAuthorizationContext("Bearer " + token)
-	require.NoError(t, err)
+	auth := askuser.FromSharedContext(authtest.Verified(token))
 	pending, err := h.svc.ConsumeAllPending(context.Background(), auth, "")
 	require.NoError(t, err)
 	require.Len(t, pending, 1)

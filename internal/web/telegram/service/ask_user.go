@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -140,10 +138,10 @@ func (s *Telegram) askUserTokenHandler(ctx context.Context, us *userStat, msg *t
 		return
 	}
 
-	validatedKey, err := s.validateOneAPIToken(ctx, input)
+	verified, err := s.validateOneAPIToken(ctx, us.user.ID, input)
 	if err != nil {
 		logger.Warn("validate oneapi key", zap.Error(err), zap.String("token_mask", maskToken(input)))
-		if _, sendErr := s.bot.Send(us.user, "Invalid OneAPI API key. Please double-check and try again.", &tb.SendOptions{
+		if _, sendErr := s.bot.Send(us.user, keyRefusalReply(err), &tb.SendOptions{
 			ParseMode:             tb.ModeMarkdown,
 			DisableWebPagePreview: true,
 		}); sendErr != nil {
@@ -152,10 +150,11 @@ func (s *Telegram) askUserTokenHandler(ctx context.Context, us *userStat, msg *t
 		return
 	}
 
-	hashed := sha256.Sum256([]byte(validatedKey))
-	tokenHash := hex.EncodeToString(hashed[:])
+	// The verified context carries the canonical tenant hash, the one MCP
+	// ask_user requests of this key are stored under.
+	tokenHash := verified.APIKeyHash
 	us.lastT = gutils.Clock.GetUTCNow()
-	mask := maskToken(validatedKey)
+	mask := maskToken(verified.APIKey)
 
 	if err := s.registerTelegramUID(ctx, int(us.user.ID), tokenHash); err != nil {
 		logger.Error("register ask_user token", zap.Error(err))
@@ -239,11 +238,9 @@ func (s *Telegram) handleAskUserAnswer(ctx context.Context, c tb.Context, reqID 
 		return c.Send(fmt.Sprintf("⚠️ This question is no longer pending (Status: %s).", req.Status))
 	}
 
-	// Construct a fake auth context with the correct hash
-	auth := &askuser.AuthorizationContext{
-		APIKeyHash:   req.APIKeyHash,
-		UserIdentity: fmt.Sprintf("telegram:%d", c.Sender().ID),
-	}
+	// The sender proved the binding above; it answers as the one key-less
+	// delegated principal, which never satisfies mcpauth.FromContext.
+	auth := askuser.NewTelegramAnswerer(req.APIKeyHash, c.Sender().ID)
 
 	answer := c.Message().Text
 	if _, err := s.askUserService.AnswerRequest(ctx, auth, reqID, answer); err != nil {

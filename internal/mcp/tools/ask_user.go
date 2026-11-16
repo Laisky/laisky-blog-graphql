@@ -21,8 +21,9 @@ type AskUserService interface {
 	CancelRequest(context.Context, uuid.UUID, string) error
 }
 
-// AuthorizationParser converts an authorization header into an ask_user authorization context.
-type AuthorizationParser func(string) (*askuser.AuthorizationContext, error)
+// AuthorizationParser resolves the verified caller of a tool invocation from its
+// context (where the transport gate stored it) or by authenticating the header.
+type AuthorizationParser func(context.Context, string) (*askuser.AuthorizationContext, error)
 
 // AskUserTool implements the ask_user MCP tool.
 type AskUserTool struct {
@@ -89,7 +90,7 @@ func (t *AskUserTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	}
 
 	authHeader := t.headerProvider(ctx)
-	authCtx, err := t.parser(authHeader)
+	authCtx, err := t.parser(ctx, authHeader)
 	if err != nil {
 		t.logger.Warn("ask_user authorization failed", zap.Error(err))
 		return mcp.NewToolResultError("invalid authorization header"), nil

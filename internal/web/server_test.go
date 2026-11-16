@@ -397,7 +397,7 @@ func TestNewAgentAPIProbeHandler(t *testing.T) {
 	t.Parallel()
 
 	router := gin.New()
-	registerAgentAPIProbeRoutes(router)
+	registerAgentAPIProbeRoutes(router, "")
 
 	t.Run("GET returns JSON auth challenge", func(t *testing.T) {
 		t.Parallel()

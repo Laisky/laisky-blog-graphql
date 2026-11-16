@@ -15,13 +15,64 @@ actually measured; they are not relabelled as later-release runs.
 
 The automatic `Linter / check` runs read-only gofmt and goimports checks plus
 the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
-`library/log`, `library/throttle`, `internal/web`, `internal/library/toolpolicy`,
-`internal/library/ssoredirect`, `internal/web/blog/controller`,
+`library/log`, `library/throttle`, `library/httpbody`, `library/httpclient`,
+`library/billing/oneapi`, `internal/web`,
+`internal/library/toolpolicy`, `internal/library/fileio`, `internal/mcp`,
+`internal/mcp/auth`, `internal/mcp/askuser`, `internal/mcp/userrequests`,
+`internal/library/ssoredirect`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller`,
 `internal/web/telegram/dao`, `internal/web/telegram/service`, `library/clientip`,
 `internal/web/blog/service`, `internal/web/blog/oneapi`, `internal/web/blog/controller`,
-`internal/mcp/imageproc`, `internal/mcp/userrequests`, `internal/mcp/storage`, `library/memlimit`
-and `internal/mcp/memory/plugins/pageindex`. These exercise input validation, controlled
+`internal/mcp/imageproc`, `internal/mcp/storage`, `internal/mcp/tools`,
+`internal/web/arweave/controller`, `internal/web/general/controller`, `library/search/firecrawl`,
+`library/search/bing`, `library/memlimit` and `internal/mcp/memory/plugins/pageindex`. The MCP ingress
+selections cover API key validation at every entrypoint (transport, console APIs,
+ask_user console, GraphQL shared fields), caching, flood bounds, outage
+fail-closed behavior, production wiring, the prod-mode refusal of disabled
+validation, the configured protected-resource metadata URL, upstream budgets
+spent only by calls that hold a slot, request-body caps, slow-body and
+burst-then-stall cuts, the count of bodies whose read deadline cannot be armed, the
+in-flight body budgets of the MCP transport (bodies are classified by the
+credential gate before they are charged, so anonymous and rejected callers
+never spend the verified budget; one key cannot exceed its share; only bytes
+actually read are charged, so stalled senders reserve nothing; reads beyond
+a budget are refused; release on return and on panic; never overcharged
+under races), the cheap refusal of an oversized Authorization header, the
+DEBUG classification of client-aborted uploads, the
+startup bounds of the validation budgets, and held requests that outlive the read budget. They
+also cover the anonymous access boundary: the transport allowlist, refusal of
+anonymous tool calls before any handler, and the SDK dispatch check for every
+registered tool. They also check that no caller can cancel another caller's
+request, while legacy sessions keep their own cancellations, and that the
+isolated cancellation policy decodes bodies exactly like the SDK. Other selections
+keep credentials off redirect targets for the validator and the consume call.
+The third-review selections pin the credential inventory (`TestIngressInventory`:
+every credential reader, one-api REST call and identity construction is
+registered), the one-api window shared with consumes, gateway and named
+(Telegram) source budgets, the verbatim legacy balance endpoint, stale grace
+only for authority failures, the length bound before hashing, and the
+Telegram, ArweaveUpload, balance-proxy and `ValidateOneapiAPIKey` paths
+through the shared authenticator. The independent-review selections pin the
+outage window (stale grace for every known key through an outage, closed by
+the first verdict, never opened by a per-token failure or a local refusal),
+exact refunds of refused charges, newer rejections winning over late
+acceptances, sealed verified identities, the scanner's indirect spellings,
+and redirect refusal on credential-carrying search clients.
+They check that only one-api's success envelope on a consume refreshes an
+active key's verdict, and that the refresh never revives a rejected key. The
+request-body read-credit arithmetic runs on a fake clock. Real-socket timing
+variants stay in `make test` and are not selected:
+`TestReadDeadlineCutsSlowBodyButNotTheResponse`, `TestMinDataRate*`,
+`TestAbsoluteReadCapBoundsFastEnoughClients`, `TestBurstThenTrickle*`,
+`TestPauseWithinTheIdleBoundIsAdmitted`, `TestReadDeadlineCutsSlowBodyOverHTTP2`,
+`TestIngressSSEStreamOutlivesReadBudget`,
+`TestIngressCutsBurstThenStallWithinTheIdleBound`,
+`TestGinBodyBudgetCutsBurstThenStallThroughTheProductionChain` and
+`TestProductionEngineAdmitsSlowSteadyLargeUploads`. The capacity simulation
+`TestDefaultBudgetsCapacityForActiveKeys` is not selected either. On a Linux
+16-thread host with a warm build cache, this trimming took the selected
+PR #95 tests from about 10.8 s to about 3.3 s of test time. The full gate went
+from 78.3 s to 70.6 s. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
 logging, Telegram escaping, complete alert content, document bounds and visible
 API rejection without external services. Startup and actual-caller controls also cover

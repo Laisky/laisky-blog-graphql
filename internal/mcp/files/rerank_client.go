@@ -10,6 +10,8 @@ import (
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
+
+	"github.com/Laisky/laisky-blog-graphql/library/httpclient"
 )
 
 // CohereRerankClient calls a Cohere-compatible rerank endpoint.
@@ -20,6 +22,9 @@ type CohereRerankClient struct {
 }
 
 // NewCohereRerankClient constructs a rerank client with the configured endpoint.
+// Requests carry the caller's API key, so the client never follows a
+// redirect: the redirect answer fails like any other non-2xx status, and the
+// key is only ever sent to the configured endpoint.
 func NewCohereRerankClient(endpoint, model string, timeout time.Duration) *CohereRerankClient {
 	if timeout <= 0 {
 		timeout = 6 * time.Second
@@ -27,7 +32,7 @@ func NewCohereRerankClient(endpoint, model string, timeout time.Duration) *Coher
 	return &CohereRerankClient{
 		endpoint: endpoint,
 		model:    model,
-		client:   &http.Client{Timeout: timeout},
+		client:   httpclient.WithoutRedirects(&http.Client{Timeout: timeout}),
 	}
 }
 
