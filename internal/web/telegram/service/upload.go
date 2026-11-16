@@ -81,9 +81,10 @@ func (s *Telegram) uploadCmdHandler(ctx context.Context, msg *tb.Message) {
 }
 
 func (s *Telegram) uploadAuthHandler(ctx context.Context, us *userStat, msg *tb.Message) {
+	// The message carries the user's API key, so only its length is logged.
 	logger := gmw.GetLogger(ctx).With(
 		zap.String("user", us.user.Username),
-		zap.String("msg", msg.Text),
+		zap.Int("msg_len", len(msg.Text)),
 	)
 	logger.Debug("choose upload auth cmd")
 
@@ -101,11 +102,11 @@ func (s *Telegram) uploadAuthHandler(ctx context.Context, us *userStat, msg *tb.
 	var err error
 	switch ansers[0] {
 	case "1":
-		validatedKey, valErr := s.validateOneAPIToken(ctx, ansers[1])
+		verified, valErr := s.validateOneAPIToken(ctx, us.user.ID, ansers[1])
 		if valErr != nil {
 			logger.Warn("validate oneapi key", zap.Error(valErr), zap.String("token_mask", maskToken(ansers[1])))
 			if _, sendErr := s.bot.Send(us.user,
-				"Invalid OneAPI API key. Please double-check and try again.",
+				keyRefusalReply(valErr),
 				&tb.SendOptions{
 					ParseMode:             tb.ModeMarkdown,
 					DisableWebPagePreview: true,
@@ -115,7 +116,7 @@ func (s *Telegram) uploadAuthHandler(ctx context.Context, us *userStat, msg *tb.
 			}
 			return
 		}
-		err = s.UploadDao.SaveOneapiUser(ctx, us.user.ID, validatedKey)
+		err = s.UploadDao.SaveOneapiUser(ctx, us.user.ID, verified.APIKey)
 	default:
 		err = errors.New(errMsg)
 	}

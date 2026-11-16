@@ -72,6 +72,13 @@ func oneapiBalanceHandler() gin.HandlerFunc {
 			return
 		}
 
+		// Bound the caller's value before any work on it: no key, with an
+		// optional Bearer prefix, is longer, and Balance would refuse it anyway.
+		if len(strings.TrimSpace(req.APIKey)) > maxOneapiBalanceKeyInput {
+			logger.Debug("oneapi balance refused: api_key exceeds the maximum length", zap.Int("api_key_length", len(req.APIKey)))
+			ctx.JSON(http.StatusOK, oneapiBalanceResponse{Success: false, Message: "failed to fetch balance"})
+			return
+		}
 		apiKey := normalizeOneapiAPIKey(req.APIKey)
 		if apiKey == "" {
 			ctx.JSON(http.StatusBadRequest, oneapiBalanceResponse{Success: false, Message: "api_key required"})
@@ -97,15 +104,21 @@ func oneapiBalanceHandler() gin.HandlerFunc {
 	}
 }
 
-// normalizeOneapiAPIKey strips optional "Bearer " prefix and trims whitespace.
+// maxOneapiBalanceKeyInput bounds the balance proxy's api_key value before
+// it is normalized: a key of mcpauth.MaxAPIKeyLength, a Bearer prefix and
+// some whitespace.
+const maxOneapiBalanceKeyInput = mcpauth.MaxAPIKeyLength + 64
+
+// bearerPrefix is the scheme prefix normalizeOneapiAPIKey strips.
+const bearerPrefix = "bearer "
+
+// normalizeOneapiAPIKey strips optional "Bearer " prefixes (any case) and
+// trims whitespace, in time linear in the value: each step compares only the
+// prefix instead of lower-casing the whole remainder.
 func normalizeOneapiAPIKey(value string) string {
 	out := strings.TrimSpace(value)
-	for {
-		lower := strings.ToLower(out)
-		if !strings.HasPrefix(lower, "bearer ") {
-			break
-		}
-		out = strings.TrimSpace(out[len("bearer "):])
+	for len(out) >= len(bearerPrefix) && strings.EqualFold(out[:len(bearerPrefix)], bearerPrefix) {
+		out = strings.TrimSpace(out[len(bearerPrefix):])
 	}
 	return out
 }

@@ -131,10 +131,17 @@ func oneapiKeyFingerprint(apiKey string) string {
 // older settings.oneapi.balance_url.
 func (r *QueryResolver) ValidateOneapiAPIKey(ctx context.Context, apiKey string) (*models.OneapiQuota, error) {
 	logger := gmw.GetLogger(ctx).Named("validate_oneapi_api_key")
+	apiKey = strings.TrimSpace(apiKey)
+	// The argument is bounded only by the GraphQL body budget: refuse an
+	// oversized key, as Balance would, before hashing it for the fingerprint.
+	if len(apiKey) > mcpauth.MaxAPIKeyLength {
+		logger.Debug("ValidateOneapiAPIKey refused: api key exceeds the maximum length", zap.Int("key_length", len(apiKey)))
+		return nil, errors.Wrap(errors.Wrap(mcpauth.ErrInvalidAuthorization, "api key exceeds the maximum length"), "validate oneapi api key")
+	}
 	fingerprint := oneapiKeyFingerprint(apiKey)
 	logger.Debug("ValidateOneapiAPIKey request", zap.String("key_fingerprint", fingerprint))
 
-	balance, err := mcpauth.Installed().Balance(ctx, strings.TrimSpace(apiKey))
+	balance, err := mcpauth.Installed().Balance(ctx, apiKey)
 	if err != nil {
 		logger.Debug("ValidateOneapiAPIKey refused", zap.String("key_fingerprint", fingerprint), zap.Error(err))
 		return nil, errors.Wrap(err, "validate oneapi api key")

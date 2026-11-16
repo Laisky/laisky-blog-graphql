@@ -16,6 +16,7 @@ import (
 	tb "gopkg.in/telebot.v3"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
@@ -54,6 +55,10 @@ type Telegram struct {
 	askUserService  *askuser.Service
 	askUserRequests *sync.Map // map[int]uuid.UUID (MessageID -> RequestID)
 	askUserSessions *sync.Map // map[int64]*askUserSession (Telegram UID -> session)
+
+	// keyAuthenticator resolves the API key authenticator for keys users
+	// send to the bot; nil uses mcpauth.Installed (see authenticator).
+	keyAuthenticator func() *mcpauth.Authenticator
 }
 
 type userStat struct {
