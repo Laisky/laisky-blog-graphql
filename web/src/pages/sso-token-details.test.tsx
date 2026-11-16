@@ -1,9 +1,9 @@
 import '@testing-library/jest-dom/vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { storeSsoToken } from '@/lib/sso-session';
+import { clearSsoToken, storeSsoToken } from '@/lib/sso-session';
 import { SsoTokenDetailsPage } from './sso-token-details';
 
 // ThemeToggle depends on ThemeProvider context; stub it so the page renders standalone.
@@ -104,5 +104,42 @@ describe('SsoTokenDetailsPage', () => {
     for (const name of ['Public Key', 'Claims Schema', 'Current Token', 'Decoded Token JSON']) {
       expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
     }
+  });
+});
+
+describe('SsoTokenDetailsPage session changes it did not make', () => {
+  const currentToken = () =>
+    `${encodeJwtJSON({ alg: 'EdDSA', typ: 'JWT' })}.${encodeJwtJSON({ iss: 'laisky-sso', uid: 'u1', username: 'alice@example.com' })}.signature`;
+
+  it('hides the bearer token when restored from the back/forward cache after a sign-out', () => {
+    const token = currentToken();
+    storeSsoToken(token);
+    renderTokenPage();
+    expect(screen.getByText(token)).toBeInTheDocument();
+
+    clearSsoToken();
+    act(() => {
+      const event = new Event('pageshow');
+      Object.defineProperty(event, 'persisted', { value: true });
+      window.dispatchEvent(event);
+    });
+
+    expect(screen.queryByText(token)).toBeNull();
+    expect(screen.queryByText('Current Token')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /back to sign in/i })).toHaveAttribute('href', '/sso/login');
+  });
+
+  it('hides the bearer token when another tab signs out', () => {
+    const token = currentToken();
+    storeSsoToken(token);
+    renderTokenPage();
+
+    clearSsoToken();
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'laisky_sso_token', storageArea: window.localStorage }));
+    });
+
+    expect(screen.queryByText(token)).toBeNull();
+    expect(screen.queryByText(/"username": "alice@example.com"/)).toBeNull();
   });
 });

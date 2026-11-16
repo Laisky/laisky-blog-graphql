@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { Github, Info, KeyRound, Lock, LogOut, RefreshCcw, Save, ShieldCheck, ShieldPlus, Trash2, UserRound } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { ThemeToggle } from '@/components/theme/theme-toggle';
@@ -12,7 +12,7 @@ import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { createPasskeyCredentialJSON } from '@/lib/passkey';
-import { clearSsoToken, consumeSsoTokenFromLocation, resolveSiblingSsoPath } from '@/lib/sso-session';
+import { clearSsoToken, consumeSsoTokenFromLocation, resolveSiblingSsoPath, subscribeSsoToken } from '@/lib/sso-session';
 
 const SSO_PROFILE_FIELDS = `
   uid
@@ -201,15 +201,82 @@ interface SsoProfilePageProps {
   githubOAuthEnabled?: boolean;
 }
 
+/** ProfileSession is the SSO token the profile shows an account for, and how often it was started over. */
+interface ProfileSession {
+  token: string;
+  /** ready reports that the token was read; before that the page cannot tell signed-in from signed-out. */
+  ready: boolean;
+  /** generation changes whenever the account view must start over, which remounts it. */
+  generation: number;
+}
+
 // SsoProfilePage shows the signed-in SSO account and manages its password,
 // passkeys, TOTP and GitHub binding.
+//
+// Everything the page holds (the loaded account, a started TOTP setup, typed passwords,
+// in-flight requests) belongs to one token. The account view is remounted whenever that
+// changes without this page doing it: another tab signed out or in as someone else, or
+// the page came back from the back/forward cache, which Chrome does even for no-store
+// pages because signing out only clears local storage. A sign-out elsewhere also leaves
+// for the sign-in page, replacing this history entry.
 export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePageProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const loginPath = resolveSiblingSsoPath(location.pathname, 'login');
+  const [session, setSession] = useState<ProfileSession>({ token: '', ready: false, generation: 0 });
+  const tokenRef = useRef('');
+
+  useEffect(() => {
+    // Callback logins (GitHub, passkey, and cross-app redirects) hand the freshly
+    // minted JWT to this page via the sso_token query parameter, while a direct
+    // password sign-in stores it before navigating here. Capture whichever is
+    // present so every GraphQL call below can authenticate via the Bearer header.
+    const sessionToken = consumeSsoTokenFromLocation();
+    tokenRef.current = sessionToken;
+    setSession((current) => ({ token: sessionToken, ready: true, generation: current.generation }));
+  }, []);
+
+  useEffect(
+    () =>
+      subscribeSsoToken((current, reason) => {
+        const previous = tokenRef.current;
+        // Another tab wrote something else, or a restore found nothing to show: nothing changed here.
+        if (current === previous && (reason === 'storage' || !current)) {
+          return;
+        }
+        tokenRef.current = current;
+        // Start the account view over: drop what it loaded or was typed for the previous token,
+        // and load the current account (a restore reloads it even when the token is unchanged).
+        setSession((state) => ({ token: current, ready: true, generation: state.generation + 1 }));
+        if (previous && !current) {
+          navigate(loginPath, { replace: true });
+        }
+      }),
+    [loginPath, navigate]
+  );
+
+  return (
+    <SsoProfileAccount
+      key={session.generation}
+      token={session.token}
+      authReady={session.ready}
+      githubOAuthEnabled={githubOAuthEnabled}
+    />
+  );
+}
+
+interface SsoProfileAccountProps {
+  token: string;
+  authReady: boolean;
+  githubOAuthEnabled: boolean;
+}
+
+/** SsoProfileAccount renders the account for one SSO token; SsoProfilePage remounts it when the token changes. */
+function SsoProfileAccount({ token, authReady, githubOAuthEnabled }: SsoProfileAccountProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const loginPath = resolveSiblingSsoPath(location.pathname, 'login');
   const tokenPath = resolveSiblingSsoPath(location.pathname, 'token');
-  const [token, setToken] = useState('');
-  const [authReady, setAuthReady] = useState(false);
   const [profile, setProfile] = useState<SsoProfile | null>(null);
   const [status, setStatus] = useState<StatusState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -246,23 +313,18 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
   );
 
   useEffect(() => {
-    // Callback logins (GitHub, passkey, and cross-app redirects) hand the freshly
-    // minted JWT to this page via the sso_token query parameter, while a direct
-    // password sign-in stores it before navigating here. Capture whichever is
-    // present so every GraphQL call below can authenticate via the Bearer header.
-    const sessionToken = consumeSsoTokenFromLocation();
-    setToken(sessionToken);
-    setAuthReady(true);
-    if (sessionToken) {
-      void loadProfile(sessionToken);
+    if (!authReady) {
+      return;
+    }
+    if (token) {
+      void loadProfile(token);
     } else {
       setIsLoading(false);
     }
-  }, [loadProfile]);
+  }, [authReady, loadProfile, token]);
 
   const handleSignOut = () => {
     clearSsoToken();
-    setToken('');
     setProfile(null);
     navigate(loginPath);
   };

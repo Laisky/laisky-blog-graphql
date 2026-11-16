@@ -1,11 +1,11 @@
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchGraphQL } from '@/lib/graphql';
-import { storeSsoToken } from '@/lib/sso-session';
+import { clearSsoToken, storeSsoToken } from '@/lib/sso-session';
 import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 import { canSubmitPasskeyRename, canSubmitPasswordChange, canSubmitTotpCode, formatPasskeyCreatedAt, SsoProfilePage } from './sso-profile';
 
@@ -253,5 +253,104 @@ describe('SsoProfilePage accessibility', () => {
     const link = screen.getByRole('link', { name: /token details/i });
     expect(link.tagName).toBe('A');
     expect(link).not.toHaveAttribute('type');
+  });
+});
+
+describe('SsoProfilePage session changes it did not make', () => {
+  const profileFor = (account: string) => ({
+    UserProfile: {
+      uid: `uid-${account}`,
+      account,
+      auth_methods: ['password'],
+      password_enabled: true,
+      totp_enabled: false,
+      passkey_count: 0,
+      passkeys: [],
+      github_bound: false,
+      user: { id: `uid-${account}`, username: account },
+    },
+  });
+
+  /** renderProfile mounts the profile next to a sign-in route, so a redirect is observable. */
+  const renderProfile = () =>
+    render(
+      <MemoryRouter initialEntries={['/sso/profile']}>
+        <Routes>
+          <Route path="/sso/profile" element={<SsoProfilePage />} />
+          <Route path="/sso/login" element={<p>Sign-in page</p>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+  /** restoreFromBfcache fires the pageshow event a back/forward cache restore delivers. */
+  const restoreFromBfcache = (persisted = true) =>
+    act(() => {
+      const event = new Event('pageshow');
+      Object.defineProperty(event, 'persisted', { value: persisted });
+      window.dispatchEvent(event);
+    });
+
+  /** otherTabWrote fires the storage event another tab's write delivers to this document. */
+  const otherTabWrote = () =>
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'laisky_sso_token', storageArea: window.localStorage }));
+    });
+
+  beforeEach(() => {
+    storeSsoToken('alice.jwt.token');
+    vi.mocked(fetchGraphQL).mockImplementation(async (token: string) =>
+      token === 'alice.jwt.token' ? profileFor('alice@example.com') : profileFor('bob@example.com')
+    );
+  });
+
+  it('drops the account and returns to sign-in when restored from the back/forward cache after a sign-out', async () => {
+    renderProfile();
+    expect(await screen.findAllByText('alice@example.com')).not.toHaveLength(0);
+
+    // Sign-out elsewhere only clears local storage, which does not evict a cached page.
+    clearSsoToken();
+    restoreFromBfcache();
+
+    expect(await screen.findByText('Sign-in page')).toBeInTheDocument();
+    expect(screen.queryByText('alice@example.com')).toBeNull();
+  });
+
+  it('drops the account and returns to sign-in when another tab signs out', async () => {
+    renderProfile();
+    expect(await screen.findAllByText('alice@example.com')).not.toHaveLength(0);
+
+    clearSsoToken();
+    otherTabWrote();
+
+    expect(await screen.findByText('Sign-in page')).toBeInTheDocument();
+    expect(screen.queryByText('alice@example.com')).toBeNull();
+  });
+
+  it('replaces the account, and anything typed for it, when another tab signs in as someone else', async () => {
+    renderProfile();
+    expect(await screen.findAllByText('alice@example.com')).not.toHaveLength(0);
+    const current = screen.getByLabelText(/current password/i) as HTMLInputElement;
+    fireEvent.change(current, { target: { value: 'alice-secret' } });
+
+    storeSsoToken('bob.jwt.token');
+    otherTabWrote();
+
+    expect(await screen.findAllByText('bob@example.com')).not.toHaveLength(0);
+    expect(screen.queryByText('alice@example.com')).toBeNull();
+    expect(fetchGraphQL).toHaveBeenLastCalledWith('bob.jwt.token', expect.any(String));
+    expect((screen.getByLabelText(/current password/i) as HTMLInputElement).value).toBe('');
+  });
+
+  it('refreshes the profile when restored while still signed in, and ignores an ordinary page show', async () => {
+    renderProfile();
+    expect(await screen.findAllByText('alice@example.com')).not.toHaveLength(0);
+    expect(fetchGraphQL).toHaveBeenCalledTimes(1);
+
+    restoreFromBfcache(false);
+    expect(fetchGraphQL).toHaveBeenCalledTimes(1);
+
+    restoreFromBfcache();
+    await waitFor(() => expect(fetchGraphQL).toHaveBeenCalledTimes(2));
+    expect(await screen.findAllByText('alice@example.com')).not.toHaveLength(0);
   });
 });

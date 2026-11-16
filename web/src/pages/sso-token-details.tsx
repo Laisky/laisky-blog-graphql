@@ -1,4 +1,5 @@
 import { ArrowLeft, Info } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
 import { ThemeToggle } from '@/components/theme/theme-toggle';
@@ -6,7 +7,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner } from '@/components/ui/status-banner';
 import type { SsoJwtConfig } from '@/lib/runtime-config';
-import { loadSsoToken, resolveSiblingSsoPath } from '@/lib/sso-session';
+import { loadSsoToken, resolveSiblingSsoPath, subscribeSsoToken } from '@/lib/sso-session';
 import { formatDecodedJwtToken } from '@/pages/sso-token-decode';
 import { formatSsoJwtSchema } from '@/pages/sso-token-schema';
 
@@ -18,10 +19,14 @@ export interface SsoTokenDetailsPageProps {
 // SsoTokenDetailsPage renders the public SSO token metadata as a standalone, directly linkable page.
 // The public JWT verification metadata comes from runtime config and is shown to anonymous visitors,
 // so the page works even when no session token is present. When a session token exists in local
-// storage the page additionally reveals the current bearer token and its decoded JSON.
+// storage the page additionally reveals the current bearer token and its decoded JSON. It follows
+// the stored token, so a sign-out in another tab, or one that happened while the page sat in the
+// back/forward cache, hides the token at once instead of leaving a bearer credential on screen.
 export function SsoTokenDetailsPage({ ssoJwt = null }: SsoTokenDetailsPageProps) {
   const location = useLocation();
-  const trimmedToken = loadSsoToken().trim();
+  const [storedToken, setStoredToken] = useState(() => loadSsoToken());
+  useEffect(() => subscribeSsoToken((token) => setStoredToken(token)), []);
+  const trimmedToken = storedToken.trim();
   // Signed-in visitors head back to their profile; anonymous visitors return to sign in. Both
   // sibling paths are resolved from the current route so the link is correct whether the SSO app
   // is served standalone ("/token" -> "/login") or mounted under the console ("/sso/token" -> "/sso/login").

@@ -42,9 +42,23 @@ defined for this repository.
 - **Passkey conditional UI** (`passkey-authentication`: `autocomplete="username webauthn"` +
   `mediation: "conditional"`). This needs a server challenge on every login-page view, which
   is a backend design change.
-- **`Cache-Control: no-store` on `index.html`** blocks the back/forward cache (`performance`).
-  It is kept on purpose: the same document serves the SSO pages, and a restored page could show
-  account details after sign-out.
+- **`Cache-Control: no-store` on `index.html`** is kept, but it is **not** what protects the SSO
+  pages after a sign-out, and in Chrome it no longer blocks the back/forward cache by itself.
+  Chrome (experiment since 116, rolled out to all users in March–April 2025) restores a
+  `no-store` page unless cookies or another authentication method changed, the page made a
+  `fetch`/XHR whose response was `no-store`, or it used WebSocket/WebTransport/WebRTC; such a
+  page is kept for 3 minutes instead of 10 (developer.chrome.com/docs/web-platform/bfcache-ccns,
+  updated 2025-09-09; enterprise policy `AllowBackForwardCacheForCacheControlNoStorePageEnabled`).
+  Signing out here only clears the `localStorage` token, which none of those rules see, so a
+  restored profile could have shown the account it had loaded. The SSO pages therefore follow the
+  token themselves: `subscribeSsoToken` (`src/lib/sso-session.ts`) re-reads it on `pageshow` with
+  `event.persisted` and on every `storage` event for the key (another tab signing in or out). The
+  profile remounts its account view whenever the token changes or the page is restored (so the
+  loaded account, a started TOTP setup and typed passwords are dropped and the account is
+  reloaded), and a sign-out elsewhere replaces the entry with the sign-in page; the token page
+  hides the bearer token at once. Other browsers may still refuse `no-store` pages, which the
+  header keeps as defense in depth. Switching the entry document to `no-cache` would let console
+  pages use the bfcache in every browser; that is a separate decision.
 - **`<meta name="text-scale">`** (`respect-os-text-scale`). The header uses px-based Tailwind
   breakpoints and has no collapsed navigation, so large OS text scales would clip it. Opt in
   after switching the breakpoints to `em`.
