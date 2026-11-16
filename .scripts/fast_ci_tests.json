@@ -329,5 +329,24 @@
       "TestShouldDowngradeMCPErrorLog",
       "TestShouldDowngradeMCPErrorLogFalse"
     ]
+  },
+  {
+    "package": "./internal/mcp/memory/plugins/pageindex",
+    "tests": [
+      "TestMarkdownSummaryCallsDoNotScaleWithHeadings",
+      "TestMarkdownTokenBudgetDoesNotScaleWithRoots",
+      "TestPDFSummaryCallsDoNotScaleWithTOCEntries",
+      "TestSpendGovernorTenantAndGlobalCeilings",
+      "TestRollingBudgetIsAStrictCeilingOverEveryWindow",
+      "TestOutputTokensAreReservedBeforeDispatch",
+      "TestResponsesProviderContract",
+      "TestSlowCallSettlesAtCompletionTime",
+      "TestEveryUpstreamAttemptIsAdmitted",
+      "TestDegradedReasonPrecedence",
+      "TestIndexMarkdownStopsWhenCanceledMidParse",
+      "TestIndexMarkdownEmptyHeadingKeepsTreeValid",
+      "TestGoldmarkWorkBoundsRouteBeforeParsing",
+      "TestExtractHeadersMatchesFullGoldmarkParse"
+    ]
   }
 ]

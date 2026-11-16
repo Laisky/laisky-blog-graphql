@@ -12,7 +12,12 @@ type Progress struct {
 	TokensIn  int
 	TokensOut int
 	LLMCalls  int
-	Message   string
+	// UpstreamRequests, Retries and ChargedTokens are set on the final event:
+	// every request sent, the retries among them, and the tokens charged for them.
+	UpstreamRequests int
+	Retries          int
+	ChargedTokens    int64
+	Message          string
 }
 
 // Reporter forwards progress events to a buffered channel and a logger.
@@ -38,6 +43,9 @@ func (r *Reporter) Report(p Progress) {
 			glog.Int("tokens_in", p.TokensIn),
 			glog.Int("tokens_out", p.TokensOut),
 			glog.Int("llm_calls", p.LLMCalls),
+			glog.Int("upstream_requests", p.UpstreamRequests),
+			glog.Int("retries", p.Retries),
+			glog.Int64("charged_tokens", p.ChargedTokens),
 			glog.String("message", p.Message),
 		)
 	}

@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,17 +13,46 @@ import (
 
 	errors "github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
+	glog "github.com/Laisky/zap"
 	"golang.org/x/sync/semaphore"
 )
 
 // Stats summarizes one Index call.
 type Stats struct {
-	mu           sync.Mutex
+	mu sync.Mutex
+	// LLMCalls counts calls that returned a response, and InputTokens and
+	// OutputTokens the usage those responses reported.
 	LLMCalls     int
 	InputTokens  int
 	OutputTokens int
 	Cached       int
 	Wallclock    time.Duration
+	// UpstreamRequests counts every request sent upstream, retries and requests
+	// that got no answer included, and Retries the requests after the first of
+	// each call.
+	UpstreamRequests int
+	Retries          int
+	// ReportedTokens and EstimatedTokens are the tokens charged to the budgets for
+	// those requests: as the provider reported them, or estimated when it reported
+	// nothing (an error response, a request without an answer, an answer without
+	// usage). Their sum is the run's whole charge.
+	ReportedTokens  int64
+	EstimatedTokens int64
+	// BudgetRefusals counts calls refused by an operation or rolling budget.
+	BudgetRefusals int
+	// RollingRefusals counts the refusals of BudgetRefusals made by a rolling
+	// tenant or global budget, which a later refresh can overcome.
+	RollingRefusals int
+	// LocalSummaries counts leaves summarized locally because a call was refused.
+	LocalSummaries int
+	// IncompleteAnswers counts answers the provider did not complete for a reason
+	// other than the output ceiling (a content filter, a failure, no reason); the
+	// work they were for degrades like a refused call.
+	IncompleteAnswers int
+	// StructureTruncated reports that the node ceiling cut the tree short.
+	StructureTruncated bool
+	// DeadlineReached reports that indexer.timeout_index ended LLM work early.
+	DeadlineReached bool
 }
 
 // addLLMCall accumulates one LLM-call's accounting under the stats lock so
@@ -37,6 +65,110 @@ func (s *Stats) addLLMCall(in, out int) {
 	s.LLMCalls++
 	s.InputTokens += in
 	s.OutputTokens += out
+	s.mu.Unlock()
+}
+
+// addUpstream records one request sent upstream and what it was charged.
+func (s *Stats) addUpstream(charged int64, reported, retry bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.UpstreamRequests++
+	if retry {
+		s.Retries++
+	}
+	if reported {
+		s.ReportedTokens = satAdd(s.ReportedTokens, charged)
+	} else {
+		s.EstimatedTokens = satAdd(s.EstimatedTokens, charged)
+	}
+	s.mu.Unlock()
+}
+
+// addRefusal counts one call refused by a budget, classified by err.
+func (s *Stats) addRefusal(err error) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	switch {
+	case errors.Is(err, errIncompleteAnswer):
+		// Not a refusal: the provider answered but did not complete the answer.
+		s.IncompleteAnswers++
+	case errors.Is(err, errRollingBudgetExceeded):
+		s.BudgetRefusals++
+		s.RollingRefusals++
+	default:
+		s.BudgetRefusals++
+	}
+	s.mu.Unlock()
+}
+
+// degradedReason returns the summary error code of a run whose tree is less
+// complete than its content allows: "timeout" when indexer.timeout_index ended
+// LLM work, "budget_exhausted" when a rolling budget refused calls,
+// "provider_error" when the provider did not complete answers (the code the
+// file summaries use for provider failures, file_search_file_summaries §4.6), and
+// "document_limit" when only the document's own ceilings applied, whether they
+// refused calls or cut the structure short (StructureTruncated). "" is a complete
+// run. The three refreshable causes take precedence, so a refresh can still
+// recover the work; a refreshed tree that is still truncated then reports the
+// permanent "document_limit".
+func (s *Stats) degradedReason() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case s.DeadlineReached:
+		return degradedTimeout
+	case s.RollingRefusals > 0:
+		return degradedBudget
+	case s.IncompleteAnswers > 0:
+		return degradedProviderError
+	case s.BudgetRefusals > 0 || s.LocalSummaries > 0 || s.StructureTruncated:
+		return degradedDocumentLimit
+	}
+	return ""
+}
+
+// Degraded summary error codes (Stats.degradedReason).
+const (
+	degradedTimeout       = "timeout"
+	degradedBudget        = "budget_exhausted"
+	degradedProviderError = "provider_error"
+	degradedDocumentLimit = "document_limit"
+)
+
+// addLocalSummary counts one leaf summarized locally.
+func (s *Stats) addLocalSummary() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.LocalSummaries++
+	s.mu.Unlock()
+}
+
+// markTruncated records that the node ceiling cut the tree short.
+func (s *Stats) markTruncated() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.StructureTruncated = true
+	s.mu.Unlock()
+}
+
+// markDeadline records that the indexing deadline ended LLM work early.
+func (s *Stats) markDeadline() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.DeadlineReached = true
 	s.mu.Unlock()
 }
 
@@ -54,6 +186,8 @@ func (s *Stats) addCached() {
 type IndexOptions struct {
 	DocID            string
 	AlgorithmVersion string
+	// Tenant names the caller whose rolling LLM budget the run draws from.
+	Tenant string
 }
 
 // Deps gathers the indexer's runtime collaborators.
@@ -65,6 +199,9 @@ type Deps struct {
 	Sem       *semaphore.Weighted
 	Settings  Settings
 	Logger    logSDK.Logger
+	// Spend is the rolling tenant and global LLM budget; nil builds one from
+	// Settings.Limits. Indexing and search share one governor per plugin.
+	Spend *SpendGovernor
 }
 
 // Indexer orchestrates document → tree extraction.
@@ -76,6 +213,7 @@ type Indexer struct {
 	sem   *semaphore.Weighted
 	cfg   Settings
 	log   logSDK.Logger
+	gate  llmGate
 }
 
 // NewIndexer wires the indexer fields, supplying defaults where allowed.
@@ -107,6 +245,10 @@ func NewIndexer(deps Deps) (*Indexer, error) {
 		}
 		deps.Sem = semaphore.NewWeighted(int64(w))
 	}
+	deps.Settings.Limits = deps.Settings.Limits.WithDefaults()
+	if deps.Spend == nil {
+		deps.Spend = NewSpendGovernorWithClock(deps.Settings.Limits, time.Now, deps.Logger)
+	}
 	return &Indexer{
 		llm:   deps.LLM,
 		pdf:   deps.PDF,
@@ -115,6 +257,7 @@ func NewIndexer(deps Deps) (*Indexer, error) {
 		sem:   deps.Sem,
 		cfg:   deps.Settings,
 		log:   deps.Logger,
+		gate:  newLLMGate(deps.Tokenizer, deps.Spend, deps.Settings.Limits),
 	}, nil
 }
 
@@ -135,31 +278,58 @@ func (idx *Indexer) Index(ctx context.Context, kind DocKind, bytes []byte, opts 
 	rep.Report(Progress{Phase: "init", Percent: 0, Message: "begin"})
 	var tree *Tree
 	var err error
+	if err := ctx.Err(); err != nil {
+		return nil, nil, errors.WithStack(err)
+	}
 	switch kind {
 	case KindPDF:
-		tree, err = idx.runPDF(ctx, bytes, rep, stats)
+		tree, err = idx.runPDF(ctx, bytes, opts.Tenant, rep, stats)
 	case KindMarkdown:
-		tree, err = idx.runMarkdown(ctx, bytes, rep, stats)
+		tree, err = idx.runMarkdown(ctx, bytes, opts.Tenant, rep, stats)
 	default:
 		return nil, nil, errors.Errorf("unsupported kind %q", kind)
 	}
 	if err != nil {
-		return nil, nil, err
+		// The run's statistics are returned with its error: the requests it sent
+		// were charged even though no tree was built.
+		stats.Wallclock = time.Since(start)
+		return nil, stats, err
 	}
 	tree.DocID = docID
 	tree.Type = kind
 	tree.AlgorithmVer = algoVer
 	tree.IndexedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	stats.Wallclock = time.Since(start)
-	rep.Report(Progress{Phase: "done", Percent: 100, TokensIn: stats.InputTokens, TokensOut: stats.OutputTokens, LLMCalls: stats.LLMCalls})
+	if idx.log != nil && (stats.BudgetRefusals > 0 || stats.IncompleteAnswers > 0 || stats.StructureTruncated || stats.DeadlineReached) {
+		idx.log.Debug("pageindex.index.limited",
+			glog.String("kind", string(kind)),
+			glog.Int("llm_calls", stats.LLMCalls),
+			glog.Int("upstream_requests", stats.UpstreamRequests),
+			glog.Int("retries", stats.Retries),
+			glog.Int64("reported_tokens", stats.ReportedTokens),
+			glog.Int64("estimated_tokens", stats.EstimatedTokens),
+			glog.Int("budget_refusals", stats.BudgetRefusals),
+			glog.Int("incomplete_answers", stats.IncompleteAnswers),
+			glog.Int("rolling_refusals", stats.RollingRefusals),
+			glog.Int("local_summaries", stats.LocalSummaries),
+			glog.Bool("structure_truncated", stats.StructureTruncated),
+			glog.Bool("deadline_reached", stats.DeadlineReached),
+		)
+	}
+	rep.Report(Progress{
+		Phase: "done", Percent: 100, TokensIn: stats.InputTokens, TokensOut: stats.OutputTokens, LLMCalls: stats.LLMCalls,
+		UpstreamRequests: stats.UpstreamRequests, Retries: stats.Retries, ChargedTokens: stats.ReportedTokens + stats.EstimatedTokens,
+	})
 	return tree, stats, nil
 }
 
-// callLLM is the cache-aware, budgeted entry point used by every phase.
+// callLLM is the cache-aware, budgeted entry point used by every phase. A cached
+// response is free: it is looked up before any budget is consulted, so it is
+// returned even when every budget is spent. Any other call is sent through the
+// llmGate, which returns ErrBudgetExceeded when the operation or rolling budgets
+// cannot pay for its input and output. The concurrency slot is taken before the
+// reservation, so calls waiting for a slot hold no budget.
 func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, stats *Stats) (*Response, error) {
-	if budget != nil && budget.Remaining() <= 0 {
-		return nil, ErrBudgetExceeded
-	}
 	if req.PromptHash == [32]byte{} {
 		if req.Model == "" {
 			req.Model = idx.cfg.LLM.IndexingModel
@@ -174,24 +344,42 @@ func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, st
 		stats.addCached()
 		return cached, nil
 	}
+	if err := idx.gate.precheck(budget); err != nil {
+		stats.addRefusal(err)
+		return nil, err
+	}
 	if idx.sem != nil {
 		if err := idx.sem.Acquire(ctx, 1); err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 		defer idx.sem.Release(1)
 	}
-	resp, err := idx.llm.Respond(ctx, req)
+	resp, err := idx.gate.call(ctx, idx.llm, req, budget)
+	if resp != nil {
+		stats.addLLMCall(resp.Usage.InputTokens, resp.Usage.OutputTokens)
+	}
+	if errors.Is(err, errDeadlineAhead) {
+		stats.markDeadline()
+		return nil, errors.WithStack(errDeadlineRefusal)
+	}
 	if err != nil {
+		if errors.Is(err, ErrBudgetExceeded) {
+			// The call, a retry of it, or its truncated answer was refused.
+			stats.addRefusal(err)
+		}
 		return nil, err
 	}
-	stats.addLLMCall(resp.Usage.InputTokens, resp.Usage.OutputTokens)
-	if budget != nil {
-		budget.Take(int64(resp.Usage.TotalTokens))
-	}
 	if err := idx.cache.Put(req.PromptHash, resp); err != nil && idx.log != nil {
-		idx.log.Warn(fmt.Sprintf("pageindex.cache.put: %v", err))
+		idx.log.Warn("pageindex.cache.put", glog.Error(err))
 	}
 	return resp, nil
+}
+
+// cacheCanAnswer reports whether the response cache may hold responses. When it
+// cannot, a call the budgets refuse is not worth rendering a prompt for.
+func (idx *Indexer) cacheCanAnswer() bool {
+	_, noop := idx.cache.(*noopCache)
+	return idx.cache != nil && !noop
 }
 
 // GetPageContent resolves page ranges against the cached tree's pages.
@@ -202,10 +390,18 @@ func (idx *Indexer) GetPageContent(tree *Tree, ranges []PageRange) ([]Chunk, err
 	if len(tree.Pages) == 0 {
 		return nil, nil
 	}
-	pageMap := make(map[int]Page, len(tree.Pages))
+	// Ranges come from the planner, whose answer the document can steer, so they
+	// are resolved against the tree's own page numbers: the work is bounded by the
+	// pages in the tree, never by the width of a range.
+	byPage := make(map[int]Page, len(tree.Pages))
 	for _, p := range tree.Pages {
-		pageMap[p.Page] = p
+		byPage[p.Page] = p
 	}
+	numbers := make([]int, 0, len(byPage))
+	for n := range byPage {
+		numbers = append(numbers, n)
+	}
+	sort.Ints(numbers)
 	out := make([]Chunk, 0, 8)
 	seen := map[int]bool{}
 	for _, r := range ranges {
@@ -215,15 +411,12 @@ func (idx *Indexer) GetPageContent(tree *Tree, ranges []PageRange) ([]Chunk, err
 		if r.End <= 0 || r.End < r.Start {
 			r.End = r.Start
 		}
-		for p := r.Start; p <= r.End; p++ {
-			if seen[p] {
+		for i := sort.SearchInts(numbers, r.Start); i < len(numbers) && numbers[i] <= r.End; i++ {
+			if seen[numbers[i]] {
 				continue
 			}
-			seen[p] = true
-			page, ok := pageMap[p]
-			if !ok {
-				continue
-			}
+			seen[numbers[i]] = true
+			page := byPage[numbers[i]]
 			out = append(out, Chunk{DocID: tree.DocID, Page: page.Page, LineNum: page.LineNum, Content: page.Content})
 		}
 	}
@@ -246,9 +439,15 @@ func (idx *Indexer) GetDocumentStructure(tree *Tree) StructureView {
 	}
 }
 
-// jsonInput formats one InputItem helper used across pipelines.
+// userInput formats one InputItem helper used across pipelines.
 func userInput(content string) []InputItem {
 	return []InputItem{{Role: "user", Content: content}}
+}
+
+// tocRequest builds the request of a phase whose answer re-emits a table of
+// contents, which may be long (Request.LongOutput).
+func tocRequest(prompt string) Request {
+	return Request{Input: userInput(prompt), LongOutput: true}
 }
 
 // parseSimpleAnswer reads a free-text "yes"/"no"-style field from JSON-ish text.
