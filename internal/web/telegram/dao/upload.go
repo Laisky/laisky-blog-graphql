@@ -183,7 +183,9 @@ func (d *Upload) UploadFileWithApikey(ctx context.Context, apikey string, cnt []
 		return fileID, errors.Wrap(err, "check billing")
 	}
 
-	return d.UploadFile(ctx, cnt, contentType)
+	// The charge is single-phase and never refunded, so finish the paid upload
+	// even if the caller stops waiting. Ardrive bounds every gateway request.
+	return d.UploadFile(context.WithoutCancel(ctx), cnt, contentType)
 }
 
 // UploadFile upload file to arweave without any authentification

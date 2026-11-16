@@ -140,6 +140,11 @@ adapter over `github.com/iskorotkov/avro/v2 v2.34.0`. The adapter preserves the
 existing count-only block encoding and caps decoder allocations; it is not a
 renamed copy of the vulnerable decoder.
 
+> Superseded on 2026-11-15: goar moved to its maintained successor
+> `github.com/permadao/goar`, which no longer imports `hamba/avro`, so the
+> adapter and its `replace` directive were removed. See
+> [go_module_replacements.md](go_module_replacements.md).
+
 The gRPC pin is `v1.85.0-dev.0.20260825072537-93e31b48545e`, the patched revision
 identified by [GO-2026-6443](https://pkg.go.dev/vuln/GO-2026-6443). It is explicitly
 a development/pseudo-version, **not a stable release**. Retain compatibility and

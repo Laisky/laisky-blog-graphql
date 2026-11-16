@@ -7,10 +7,11 @@ developer machine or staging, rather than on every push or pull request.
 This changes when tests run, not their assertions or acceptance criteria.
 
 Current fast, quality, network-security and compatibility/database acceptance
-CI jobs select Go 1.27.2 explicitly, independently of the unchanged Go 1.27.0
-module and language floor. The [2026-10-08 patch release](https://go.dev/doc/devel/release#go1.27.0)
-includes security fixes. Historical timing measurements below retain the
-toolchain versions actually measured; they are not relabelled as Go 1.27.2 runs.
+CI jobs select the Go release named by the root `go.mod` (currently 1.27.3),
+either by an explicit pin or through `go-version-file: go.mod`;
+[the toolchain note](../ref/go_toolchain.md) explains the drift guard that keeps
+them equal. Historical timing measurements below retain the toolchain versions
+actually measured; they are not relabelled as later-release runs.
 
 The automatic `Linter / check` runs read-only gofmt and goimports checks plus
 the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,

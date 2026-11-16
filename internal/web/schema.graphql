@@ -160,6 +160,12 @@ type Mutation {
   # -------------------------------------
   # Arweave
   # -------------------------------------
+  # ArweaveUpload stores the file on Arweave and returns its transaction ID.
+  # The ID means the gateway accepted the signed transaction and every chunk;
+  # the transaction may not be mined yet. Canceling the request does not stop
+  # an upload that has started sending its transaction, and an API-key
+  # upload, which is charged up front and never refunded, runs to completion
+  # once charged. Either way an upload ends within 30 minutes of being sent.
   ArweaveUpload(fileB64: String!, contentType: String = "application/json"): ArweaveUploadResponse!
 
   # -------------------------------------
