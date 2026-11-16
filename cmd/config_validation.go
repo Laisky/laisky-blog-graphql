@@ -13,6 +13,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/ssoredirect"
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
@@ -282,6 +283,13 @@ func validateRAGConfig(get configGetter, errs *[]string) {
 func validateUserRequestsConfig(get configGetter, errs *[]string) {
 	validateOptionalIntMin(get, "settings.mcp.tools.user_requests.retention_days", 1, errs)
 	validateOptionalIntMin(get, "settings.mcp.tools.user_requests.retention_sweep_seconds", 1, errs)
+	validateOptionalStringOneOf(get, "settings.mcp.tools.user_requests.images.lifecycle_mode",
+		[]string{userrequests.LifecycleModeManage, userrequests.LifecycleModeVerify}, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.user_requests.images.lifecycle_check_seconds", 0, errs)
+	// Neither has a fallback: a non-positive value disables the multipart
+	// path and leaves the image memory envelope unbounded.
+	validateOptionalIntMin(get, "settings.mcp.tools.user_requests.images.max_per_request", 1, errs)
+	validateOptionalInt64Min(get, "settings.mcp.tools.user_requests.images.per_image_max_bytes", 1, errs)
 }
 
 // validateFileIOConfig validates FileIO-related configuration.

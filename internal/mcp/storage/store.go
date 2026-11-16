@@ -1,8 +1,9 @@
 // Package storage defines the object storage abstraction used by MCP image support.
 // The interface intentionally covers only the operations the image pipeline needs:
-// idempotent uploads, per-key reads, presigned downloads, and bucket-level lifecycle
-// installation. Production wires MinIO via storage.NewMinIOClient; tests use the
-// in-memory FakeStore provided in this package.
+// idempotent uploads, per-key reads and deletes, presigned downloads, and
+// bucket-level lifecycle installation and verification.
+// Production wires MinIO via storage.NewMinIOClient; tests use the in-memory
+// FakeStore provided in this package.
 package storage
 
 import (
@@ -21,10 +22,22 @@ type ObjectStore interface {
 	// Get streams an object back. The returned ReadCloser must be closed by the caller.
 	Get(ctx context.Context, key string) (io.ReadCloser, int64, error)
 
+	// Delete removes an object. Deleting a key that does not exist MUST succeed,
+	// so compensation and reconciliation can retry it safely.
+	Delete(ctx context.Context, key string) error
+
 	// PresignedGet returns a short-lived URL that third parties can use to fetch the object.
 	PresignedGet(ctx context.Context, key string, ttl time.Duration) (string, error)
 
 	// EnsureLifecycle installs a bucket-level expiry rule restricted to a prefix.
-	// The call must be idempotent; repeated invocations MUST NOT create duplicate rules.
-	EnsureLifecycle(ctx context.Context, prefix string, days int) error
+	// The call must be idempotent; repeated invocations MUST NOT create duplicate rules
+	// and SHOULD NOT write when the rule is already in place. It reports whether it
+	// had to write the rule, and returns an error wrapping ErrLifecycleRuleMissing
+	// when the rule did not stay installed.
+	EnsureLifecycle(ctx context.Context, prefix string, days int) (wrote bool, err error)
+
+	// CheckLifecycle reports, without writing, whether the bucket lifecycle
+	// expires every object under prefix within days. It returns an error
+	// wrapping ErrLifecycleRuleMissing when it does not.
+	CheckLifecycle(ctx context.Context, prefix string, days int) error
 }

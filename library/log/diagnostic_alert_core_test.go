@@ -13,6 +13,7 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/Laisky/zap/zapcore"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,6 +47,36 @@ func adoptionAlert(t *testing.T, endpoint string) *logSDK.Alert {
 		}
 	})
 	return alert
+}
+
+// alertsBefore queues a barrier behind every alert admitted so far and returns the alerts delivered
+// before it. The SDK sender is one FIFO worker, so an empty result proves the preceding synchronous
+// writes queued nothing more; Close cancels without flushing and could hide a duplicate.
+func alertsBefore(t *testing.T, alert *logSDK.Alert, messages <-chan string) []string {
+	t.Helper()
+	barrier := "alert-barrier-" + uuid.NewString()
+	require.NoError(t, alert.Send(barrier))
+	var extra []string
+	for {
+		message := receivedAlert(t, messages)
+		if strings.Contains(message, barrier) {
+			return extra
+		}
+		extra = append(extra, message)
+	}
+}
+
+// TestAlertBarrierDetectsQueuedDuplicate is the negative control proving alertsBefore sees a duplicate enqueue.
+func TestAlertBarrierDetectsQueuedDuplicate(t *testing.T) {
+	endpoint, messages := alertReceiver(t)
+	alert := adoptionAlert(t, endpoint)
+	duplicated := zap.New(zapcore.NewTee(WebDiagnosticAlertCore(alert), WebDiagnosticAlertCore(alert))).Named("graphql.laisky-graphql.other_operation")
+	duplicated.Error("one source entry")
+	require.Contains(t, receivedAlert(t, messages), "one source entry")
+	extra := alertsBefore(t, alert, messages)
+	require.Len(t, extra, 1, "the duplicate queued behind the first alert must be observed, not discarded by Close")
+	require.Contains(t, extra[0], "one source entry")
+	require.Empty(t, alertsBefore(t, alert, messages))
 }
 
 // adoptionJSONFields compares standard JSON values without losing integer precision.
@@ -108,7 +139,7 @@ func TestAlertAdoptionScopeCoreSnapshots(t *testing.T) {
 				require.NotEmpty(t, localFields, "local application logging remains complete")
 			}
 			require.EqualValues(t, 2, calls.Load(), "writes must not rerun bound serializers")
-			require.Empty(t, messages, "one source entry must not enqueue duplicate alerts")
+			require.Empty(t, alertsBefore(t, alert, messages), "one source entry must not enqueue duplicate alerts")
 		})
 	}
 }

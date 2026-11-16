@@ -1,0 +1,558 @@
+package userrequests
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"hash/fnv"
+	"path"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	errors "github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v7"
+	gutils "github.com/Laisky/go-utils/v6"
+	"github.com/Laisky/zap"
+	"github.com/google/uuid"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+)
+
+// Image object claims are rows of mcp_user_image_claims. Together with the
+// image refs they keep every object this deployment may have written
+// discoverable from the database until it has been deleted after the last
+// write that could still land (proposal §3.9, "claim lifecycle"). Each claim
+// is committed under the image scope lock before the store is touched, and no
+// transaction is held open across object-store I/O:
+//
+//   - claimUpload (live imageUploadClaimTTL) reserves quota for an upload in
+//     progress and protects its key from deletion. It records the image's
+//     sha256 and full size; the quota charges each image once however many
+//     requests reserve it (see imageUsage). Finalize consumes it in the
+//     transaction that inserts the refs; compensation releases it.
+//   - claimDelete (live imageDeleteLeaseTTL) is a lease held while a delete of
+//     the key is in flight. Reservations of the key are refused while it
+//     lives, so a delete delayed by less than the lease TTL cannot remove a
+//     later upload. A successful delete drops it; a failed one expires.
+//   - claimOrphan names a key that may have lost its last owner: a ref the GC
+//     expired, a ref finalize re-pointed at another key, or a key a failed
+//     create started uploading (due only after imageLateWriteWindow, when a
+//     late PUT has had time to land). When it is due the reconciler deletes
+//     the object unless a ref or a live claim protects it.
+//
+// Every transition that removes the last protection of a key — releasing an
+// upload claim, deleting or re-pointing a ref — commits, in the same
+// transaction, a delete lease or an orphan claim for that key. Expired upload
+// claims and delete leases (a crashed request, a failed delete) are due for
+// the reconciler like orphan claims.
+const (
+	claimUpload = "upload"
+	claimDelete = "delete"
+	claimOrphan = "orphan"
+)
+
+const (
+	// imageUploadClaimTTL bounds how long an upload reservation lives; it is
+	// far longer than a create request may run (30 s).
+	imageUploadClaimTTL = 10 * time.Minute
+	// imageDeleteLeaseTTL bounds how long a delete lease lives. It is meant to
+	// exceed the time a delete request can stay in flight after the client
+	// gave up (the per-delete timeout is imageObjectDeleteTimeout); S3 does not
+	// bound that time, so a DELETE applied later than this is the documented
+	// residual window.
+	imageDeleteLeaseTTL = 5 * time.Minute
+	// imageLateWriteWindow is how long after a failed create the store is
+	// assumed able to still apply one of its PUTs: S3 documents no bound for a
+	// request the client abandoned, and minio-go retries a PUT up to 10 times.
+	// Compensation leaves an orphan claim due after this window for every key
+	// the request started uploading, so the reconciler deletes such a late
+	// write. A PUT applied later still is the documented residual window.
+	imageLateWriteWindow = 5 * time.Minute
+	// imageDeleteConcurrency bounds how many object deletes one compensation
+	// or reconciler pass keeps in flight.
+	imageDeleteConcurrency = 4
+	// imageObjectDeleteTimeout bounds one object delete.
+	imageObjectDeleteTimeout = 10 * time.Second
+	// imageCompensationTimeout bounds the detached cleanup of a failed create.
+	// It must not depend on the request context, which is often the reason
+	// the request failed.
+	imageCompensationTimeout = 30 * time.Second
+	// imageScopeLockNamespace salts the advisory-lock keys of key scopes so
+	// they cannot collide with advisory locks other components of this
+	// database take.
+	imageScopeLockNamespace = "laisky-blog-graphql/mcp_user_request_images:"
+	// imageQuotaLockNamespace salts the advisory-lock keys of per-user quota
+	// locks, so a quota lock and a scope lock never share a name.
+	imageQuotaLockNamespace = "laisky-blog-graphql/mcp_user_image_quota:"
+)
+
+// The time budget of one image create. The request deadline
+// (createRequestTimeout) covers reading the body, normalizing, uploading and
+// finalizing. Uploads run in parallel and must end imageFinalizeReserve
+// before the deadline, so the finalize transaction keeps time to commit; a
+// create with less than imageMinUploadWindow left for its uploads once its
+// images are prepared is refused (image_busy) before anything is reserved.
+// They are variables only so tests can scale them.
+var (
+	// imageObjectPutTimeout bounds one object upload.
+	imageObjectPutTimeout = 20 * time.Second
+	// imageFinalizeReserve is the part of a create's deadline kept for the
+	// finalize transaction.
+	imageFinalizeReserve = 2 * time.Second
+	// imageMinUploadWindow is the least time a create's uploads may get.
+	imageMinUploadWindow = 3 * time.Second
+	// imageUploadConcurrency bounds how many objects one create uploads at
+	// once. The default MaxPerRequest (5) then needs two rounds.
+	imageUploadConcurrency = 4
+)
+
+// ImageObjectWriter uploads and removes the objects behind image refs.
+// Service.CreateRequestWithImages calls PutImage only after the quota admitted
+// every image, and DeleteImage only for objects that nothing references or
+// claims. PutImage and DeleteImage may run concurrently for different keys.
+// ImageManager is the production implementation.
+type ImageObjectWriter interface {
+	// PutImage stores image.PNG under image.StorageKey.
+	PutImage(ctx context.Context, auth *askuser.AuthorizationContext, image UploadedImage) error
+	// DeleteImage removes the object at key; deleting a missing key succeeds.
+	DeleteImage(ctx context.Context, key string) error
+}
+
+// imageClaimsSchema creates the claims table. It is additive: existing image
+// rows are untouched and older binaries ignore it. sha256 is set on upload
+// claims only; ensureImageClaimSHAColumn adds it to a table an earlier build
+// created without it (such rows keep NULL and are charged by key).
+var imageClaimsSchema = []string{
+	`CREATE TABLE IF NOT EXISTS mcp_user_image_claims (
+		id UUID PRIMARY KEY,
+		owner_id UUID NOT NULL,
+		user_identity VARCHAR(255) NOT NULL,
+		storage_key TEXT NOT NULL,
+		kind VARCHAR(16) NOT NULL,
+		size_bytes BIGINT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL,
+		expires_at TIMESTAMPTZ NOT NULL,
+		sha256 CHAR(64) NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_mcp_user_image_claims_key ON mcp_user_image_claims (storage_key)`,
+	`CREATE INDEX IF NOT EXISTS idx_mcp_user_image_claims_owner ON mcp_user_image_claims (owner_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_mcp_user_image_claims_user ON mcp_user_image_claims (user_identity, kind, expires_at)`,
+	`CREATE INDEX IF NOT EXISTS idx_mcp_user_image_claims_expires ON mcp_user_image_claims (expires_at)`,
+}
+
+// imageTxOptions pins every image transaction to READ COMMITTED. The scope
+// lock is taken by the transaction's first statement; under REPEATABLE READ
+// or SERIALIZABLE (a non-default database setting) the snapshot would predate
+// the lock wait and miss what the previous lock holder committed. SQLite
+// ignores the level (its write lock already serializes these transactions).
+var imageTxOptions = &sql.TxOptions{Isolation: sql.LevelReadCommitted}
+
+// beginImageTx starts a short image transaction.
+func (s *Service) beginImageTx(ctx context.Context) (*sql.Tx, error) {
+	tx, err := s.db.BeginTx(ctx, imageTxOptions)
+	if err != nil {
+		return nil, errors.Wrap(err, "begin image tx")
+	}
+	return tx, nil
+}
+
+// imageScopeLockID maps a key scope (a key's directory,
+// <prefix>/<sanitized user>) to a PostgreSQL advisory-lock key. A scope lock
+// serializes the transactions that add or remove protection of the keys in
+// it (object ownership; identities that sanitize to the same segment share
+// the directory).
+func imageScopeLockID(scope string) int64 {
+	return imageAdvisoryLockID(imageScopeLockNamespace + scope)
+}
+
+// imageQuotaLockID maps a user identity to the advisory-lock key that
+// serializes the user's quota admissions. It does not depend on the key
+// prefix, so instances with different prefixes (a rolling configuration
+// change) still serialize one user's reservations.
+func imageQuotaLockID(userIdentity string) int64 {
+	return imageAdvisoryLockID(imageQuotaLockNamespace + userIdentity)
+}
+
+// imageAdvisoryLockID hashes a namespaced lock name to an advisory-lock key.
+func imageAdvisoryLockID(name string) int64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(name))
+	return int64(h.Sum64()) //nolint:gosec // reinterpreting the hash bits as a lock key is intended
+}
+
+// imageLockIDs returns the distinct advisory-lock keys of the quota locks of
+// users and the scope locks of keys, in ascending order. Every image
+// transaction takes its locks in this one global order, so no two can
+// deadlock, and a hash collision only adds serialization.
+func imageLockIDs(users, keys []string) []int64 {
+	ids := make([]int64, 0, len(users)+1)
+	for _, user := range users {
+		ids = append(ids, imageQuotaLockID(user))
+	}
+	for _, key := range keys {
+		ids = append(ids, imageScopeLockID(path.Dir(key)))
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
+// lockImageScopes takes, for the rest of tx, the scope locks of keys. A
+// transaction that only releases protection (compensation, the reconciler)
+// takes these; one that admits quota takes lockImageQuotaAndScopes.
+func (s *Service) lockImageScopes(ctx context.Context, tx *sql.Tx, keys []string) error {
+	return errors.WithStack(s.takeImageLocks(ctx, tx, imageLockIDs(nil, keys)))
+}
+
+// lockImageQuotaAndScopes takes, for the rest of tx, the quota lock of
+// userIdentity and the scope locks of keys: the locks of a transaction that
+// reserves or finalizes images (it admits quota and adds protection).
+func (s *Service) lockImageQuotaAndScopes(ctx context.Context, tx *sql.Tx, userIdentity string, keys []string) error {
+	return errors.WithStack(s.takeImageLocks(ctx, tx, imageLockIDs([]string{userIdentity}, keys)))
+}
+
+// takeImageLocks takes the advisory locks ids (ascending) for the rest of tx.
+// All image transactions are short and never wait on the object store.
+//
+// PostgreSQL uses transaction-scoped advisory locks (released at commit or
+// rollback). SQLite, which is used only in tests and local development, has
+// no advisory locks; a no-op write takes its database-wide write lock
+// instead.
+func (s *Service) takeImageLocks(ctx context.Context, tx *sql.Tx, ids []int64) error {
+	if !s.useDollar {
+		if _, err := tx.ExecContext(ctx, `UPDATE mcp_user_image_refs SET id = id WHERE 1 = 0`); err != nil {
+			return errors.Wrap(err, "take sqlite write lock for image scope")
+		}
+		return nil
+	}
+	for _, id := range ids {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, id); err != nil {
+			return errors.Wrap(err, "take image advisory lock")
+		}
+	}
+	return nil
+}
+
+// sqlQueryer is satisfied by both *sql.DB and *sql.Tx.
+type sqlQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// inPlaceholders returns "?,?,..." and the args for values.
+func inPlaceholders(values []string) (string, []any) {
+	placeholders := make([]string, len(values))
+	args := make([]any, len(values))
+	for i, v := range values {
+		placeholders[i] = "?"
+		args[i] = v
+	}
+	return strings.Join(placeholders, ","), args
+}
+
+// queryKeySet runs query (which selects one storage_key column) and returns
+// the keys it yields.
+func (s *Service) queryKeySet(ctx context.Context, q sqlQueryer, query string, args ...any) (map[string]bool, error) {
+	rows, err := q.QueryContext(ctx, rebindQuery(query, s.useDollar), args...)
+	if err != nil {
+		return nil, errors.Wrap(err, "query image keys")
+	}
+	defer func() { _ = rows.Close() }()
+	out := make(map[string]bool)
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, errors.Wrap(err, "scan image key")
+		}
+		out[key] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate image keys")
+	}
+	return out, nil
+}
+
+// protectedImageKeys returns which of keys must not be deleted: any image ref
+// owns them (expired or not, to stay conservative) or a live upload or delete
+// claim of another owner holds them.
+func (s *Service) protectedImageKeys(ctx context.Context, q sqlQueryer, keys []string, exceptOwner uuid.UUID, now time.Time) (map[string]bool, error) {
+	if len(keys) == 0 {
+		return map[string]bool{}, nil
+	}
+	in, args := inPlaceholders(keys)
+	referenced, err := s.queryKeySet(ctx, q, fmt.Sprintf(`SELECT DISTINCT storage_key FROM mcp_user_image_refs WHERE storage_key IN (%s)`, in), args...)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	claimArgs := append(append([]any(nil), args...), claimUpload, claimDelete, now, exceptOwner.String())
+	claimed, err := s.queryKeySet(ctx, q, fmt.Sprintf(`SELECT DISTINCT storage_key FROM mcp_user_image_claims
+		WHERE storage_key IN (%s) AND kind IN (?, ?) AND expires_at > ? AND owner_id <> ?`, in), claimArgs...)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	for key := range claimed {
+		referenced[key] = true
+	}
+	return referenced, nil
+}
+
+// insertImageClaim records one claim that charges nothing (a delete lease or
+// an orphan claim) inside tx; such claims name just the key.
+func (s *Service) insertImageClaim(ctx context.Context, tx *sql.Tx, owner uuid.UUID, userIdentity, key, kind string, now, expires time.Time) error {
+	return s.insertImageClaimFor(ctx, tx, owner, userIdentity, key, kind, "", 0, now, expires)
+}
+
+// insertImageClaimFor records one claim inside tx together with the image it
+// charges: upload claims carry the image's sha256 and full size, which
+// imageUsage charges once per image (sha256 empty charges nothing).
+func (s *Service) insertImageClaimFor(ctx context.Context, tx *sql.Tx, owner uuid.UUID, userIdentity, key, kind, sha256 string, size int64, now, expires time.Time) error {
+	if _, err := tx.ExecContext(ctx,
+		rebindQuery(`INSERT INTO mcp_user_image_claims (id, owner_id, user_identity, storage_key, kind, size_bytes, created_at, expires_at, sha256)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.useDollar),
+		gutils.UUID7Bytes().String(), owner.String(), userIdentity, key, kind, size, now, expires, nullableString(sha256),
+	); err != nil {
+		return errors.Wrap(err, "insert image claim")
+	}
+	return nil
+}
+
+// distinctImageKeys returns the storage keys of images in first-seen order.
+func distinctImageKeys(images []UploadedImage) []string {
+	seen := make(map[string]struct{}, len(images))
+	keys := make([]string, 0, len(images))
+	for _, img := range images {
+		if _, ok := seen[img.StorageKey]; ok {
+			continue
+		}
+		seen[img.StorageKey] = struct{}{}
+		keys = append(keys, img.StorageKey)
+	}
+	return keys
+}
+
+// reserveImageUploads is step 1 of a create: in one short transaction under
+// the user's quota lock and the scope locks of its keys it refuses keys whose
+// delete is in flight, records one upload claim per key (with the image's
+// sha256 and full size), and then verifies the user's usage — computed by
+// imageUsage, which charges each image once whether it is held by a live ref
+// or by any number of upload claims — stays within the quota.
+func (s *Service) reserveImageUploads(ctx context.Context, auth *askuser.AuthorizationContext, owner uuid.UUID, images []UploadedImage) error {
+	tx, err := s.beginImageTx(ctx)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	keys := distinctImageKeys(images)
+	if err := s.lockImageQuotaAndScopes(ctx, tx, auth.UserIdentity, keys); err != nil {
+		return errors.WithStack(err)
+	}
+	now := s.clock()
+
+	in, args := inPlaceholders(keys)
+	deleting, err := s.queryKeySet(ctx, tx, fmt.Sprintf(`SELECT DISTINCT storage_key FROM mcp_user_image_claims
+		WHERE storage_key IN (%s) AND kind = ? AND expires_at > ?`, in), append(args, claimDelete, now)...)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	if len(deleting) > 0 {
+		return errors.Wrap(ErrImageBusy, "a previous copy of this image is being deleted")
+	}
+
+	reserved := make(map[string]bool, len(keys))
+	for _, img := range images {
+		if reserved[img.StorageKey] {
+			continue
+		}
+		reserved[img.StorageKey] = true
+		if err := s.insertImageClaimFor(ctx, tx, owner, auth.UserIdentity, img.StorageKey, claimUpload,
+			img.SHA256, img.SizeBytes, now, now.Add(imageUploadClaimTTL)); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+	if err := s.verifyImageQuota(ctx, tx, auth.UserIdentity, now); err != nil {
+		return errors.WithStack(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return errors.Wrap(err, "commit image reservation")
+	}
+	return nil
+}
+
+// consumeUploadClaims deletes owner's live upload claims inside tx (the
+// finalize step) and fails when any of the expected claims is gone, which
+// means the reservation expired and its objects may already be released.
+func (s *Service) consumeUploadClaims(ctx context.Context, tx *sql.Tx, owner uuid.UUID, expected int, now time.Time) error {
+	res, err := tx.ExecContext(ctx,
+		rebindQuery(`DELETE FROM mcp_user_image_claims WHERE owner_id = ? AND kind = ? AND expires_at > ?`, s.useDollar),
+		owner.String(), claimUpload, now,
+	)
+	if err != nil {
+		return errors.Wrap(err, "consume image upload claims")
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return errors.Wrap(err, "read consumed image claims")
+	}
+	if n != int64(expected) {
+		return errors.Wrapf(ErrStorageUnavailable, "image upload reservation expired (%d of %d claims left)", n, expected)
+	}
+	return nil
+}
+
+// leaseUnprotectedImageKeys runs in one short transaction under the scope
+// locks of lockKeys: release drops the claims the caller is giving up, then a
+// delete lease is recorded for every candidate key that nothing references or
+// claims, and those keys are returned. The caller deletes the objects after
+// the commit, outside any transaction.
+func (s *Service) leaseUnprotectedImageKeys(
+	ctx context.Context,
+	owner uuid.UUID,
+	userIdentity string,
+	lockKeys, candidates []string,
+	release func(ctx context.Context, tx *sql.Tx, now time.Time) error,
+) ([]string, error) {
+	tx, err := s.beginImageTx(ctx)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := s.lockImageScopes(ctx, tx, lockKeys); err != nil {
+		return nil, errors.WithStack(err)
+	}
+	now := s.clock()
+	if err := release(ctx, tx, now); err != nil {
+		return nil, errors.WithStack(err)
+	}
+	protected, err := s.protectedImageKeys(ctx, tx, candidates, owner, now)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	leased := make([]string, 0, len(candidates))
+	for _, key := range candidates {
+		if protected[key] {
+			continue
+		}
+		if err := s.insertImageClaim(ctx, tx, owner, userIdentity, key, claimDelete, now, now.Add(imageDeleteLeaseTTL)); err != nil {
+			return nil, errors.WithStack(err)
+		}
+		leased = append(leased, key)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, errors.Wrap(err, "commit image delete leases")
+	}
+	return leased, nil
+}
+
+// deleteLeasedImageObjects deletes the leased keys outside any transaction,
+// at most imageDeleteConcurrency at a time and each bounded by
+// imageObjectDeleteTimeout, then drops the lease of every successful delete.
+// A failed (possibly still in-flight) delete keeps its lease until it
+// expires, so no upload of that key can race it; the reconciler retries it
+// afterwards. The leases are dropped one after another once every delete
+// returned, so the database sees no concurrent writes from here. path labels
+// the delete metrics (compensation or reconciler).
+func (s *Service) deleteLeasedImageObjects(ctx context.Context, objects ImageObjectWriter, owner uuid.UUID, keys []string, path string) ([]string, error) {
+	results := make([]error, len(keys))
+	slots := make(chan struct{}, imageDeleteConcurrency)
+	var wg sync.WaitGroup
+	for i, key := range keys {
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			results[i] = errors.Wrap(ctx.Err(), "delete not started")
+			continue
+		}
+		wg.Go(func() {
+			defer func() { <-slots }()
+			defer func() {
+				if r := recover(); r != nil { // a panic would end the process; the lease keeps the key safe
+					results[i] = errors.Errorf("delete panicked: %v", r)
+				}
+			}()
+			deleteCtx, cancel := context.WithTimeout(ctx, imageObjectDeleteTimeout)
+			defer cancel()
+			results[i] = objects.DeleteImage(deleteCtx, key)
+		})
+	}
+	wg.Wait()
+
+	var (
+		deleted []string
+		failed  []error
+	)
+	for i, key := range keys {
+		if results[i] != nil {
+			imageMetrics.objectDeletes.WithLabelValues(path, deleteResultFailed).Inc()
+			failed = append(failed, errors.Wrapf(results[i], "delete %q", key))
+			continue
+		}
+		imageMetrics.objectDeletes.WithLabelValues(path, deleteResultDeleted).Inc()
+		deleted = append(deleted, key)
+		if _, err := s.execContext(ctx,
+			`DELETE FROM mcp_user_image_claims WHERE owner_id = ? AND storage_key = ? AND kind = ?`,
+			owner.String(), key, claimDelete,
+		); err != nil {
+			failed = append(failed, errors.Wrapf(err, "drop delete lease of %q", key))
+		}
+	}
+	if len(failed) > 0 {
+		return deleted, errors.Join(failed...)
+	}
+	return deleted, nil
+}
+
+// releaseImageUploads is the compensation of a failed create. It runs
+// detached from ctx with a bounded timeout. In one short transaction under
+// the scope locks of every key the request reserved, it releases the
+// request's upload claims, records for every key whose upload started an
+// orphan claim due after imageLateWriteWindow (the store may still apply that
+// PUT later), and leases every reserved key that nothing else references or
+// claims — whether or not this request uploaded it, because releasing its
+// claim may have removed the last protection of an object another failed
+// request left for it. It then deletes the leased objects. Failures are
+// logged, not returned: the caller already returns the original error, and
+// leftover claims are retried by the reconciler once they are due.
+func (s *Service) releaseImageUploads(ctx context.Context, objects ImageObjectWriter, auth *askuser.AuthorizationContext, owner uuid.UUID, images []UploadedImage, attempted []string) {
+	logger := gmw.GetLogger(ctx).Named("user_requests_images")
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), imageCompensationTimeout) //nolint:contextcheck // cleanup must outlive the failed request
+	defer cancel()
+
+	keys := distinctImageKeys(images)
+	recheck := make([]string, 0, len(attempted))
+	seen := make(map[string]bool, len(attempted))
+	for _, key := range attempted {
+		if !seen[key] {
+			seen[key] = true
+			recheck = append(recheck, key)
+		}
+	}
+	leased, err := s.leaseUnprotectedImageKeys(cleanupCtx, owner, auth.UserIdentity, keys, keys,
+		func(ctx context.Context, tx *sql.Tx, now time.Time) error {
+			if _, err := tx.ExecContext(ctx,
+				rebindQuery(`DELETE FROM mcp_user_image_claims WHERE owner_id = ? AND kind = ?`, s.useDollar),
+				owner.String(), claimUpload,
+			); err != nil {
+				return errors.Wrap(err, "release image upload claims")
+			}
+			for _, key := range recheck {
+				if err := s.insertImageClaim(ctx, tx, owner, auth.UserIdentity, key, claimOrphan, now, now.Add(imageLateWriteWindow)); err != nil {
+					return errors.Wrap(err, "record late-write re-check")
+				}
+			}
+			return nil
+		})
+	if err != nil {
+		logger.Error("release image reservation of failed request; the reconciler will retry after it expires",
+			zap.Int("attempted", len(attempted)), zap.Error(err))
+		return
+	}
+	deleted, err := s.deleteLeasedImageObjects(cleanupCtx, objects, owner, leased, deletePathCompensation)
+	if err != nil {
+		logger.Error("delete objects of failed image request; the reconciler will retry after the lease expires",
+			zap.Int("attempted", len(attempted)), zap.Int("deleted", len(deleted)), zap.Error(err))
+		return
+	}
+	logger.Debug("released objects of failed image request",
+		zap.Int("reserved", len(keys)), zap.Int("attempted", len(attempted)), zap.Int("deleted", len(deleted)))
+}
