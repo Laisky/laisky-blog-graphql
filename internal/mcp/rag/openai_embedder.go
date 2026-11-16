@@ -12,6 +12,8 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	pgvector "github.com/pgvector/pgvector-go"
+
+	"github.com/Laisky/laisky-blog-graphql/library/httpclient"
 )
 
 // Embedder converts text into vector representations.
@@ -134,7 +136,11 @@ func (e *OpenAIEmbedder) createEmbeddings(ctx context.Context, apiKey string, ba
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	httpResp, err := e.httpClient.Do(httpReq)
+	// The request carries the caller's key, so a redirect answer is returned
+	// as is (and fails as a non-2xx status) instead of being followed: Go's
+	// policy would keep Authorization on a subdomain, another port or an
+	// https→http downgrade. The copy keeps the configured client's transport.
+	httpResp, err := httpclient.WithoutRedirects(e.httpClient).Do(httpReq)
 	if err != nil {
 		return nil, errors.Wrap(err, "call embeddings endpoint")
 	}

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
+
+	"github.com/Laisky/laisky-blog-graphql/library/httpclient"
 )
 
 const (
@@ -32,6 +34,9 @@ type ResponseRequest struct {
 }
 
 // NewResponsesHelper creates a Responses API helper with safe defaults.
+// Requests carry the caller's API key, so the helper works on a copy of
+// httpClient that never follows a redirect: the redirect answer fails like
+// any other non-2xx status. The caller's client is not modified.
 func NewResponsesHelper(apiBase string, timeout time.Duration, httpClient *http.Client) *ResponsesHelper {
 	trimmedBase := strings.TrimSpace(apiBase)
 	if trimmedBase == "" {
@@ -46,7 +51,7 @@ func NewResponsesHelper(apiBase string, timeout time.Duration, httpClient *http.
 
 	return &ResponsesHelper{
 		apiBase:    strings.TrimRight(trimmedBase, "/"),
-		httpClient: httpClient,
+		httpClient: httpclient.WithoutRedirects(httpClient),
 	}
 }
 

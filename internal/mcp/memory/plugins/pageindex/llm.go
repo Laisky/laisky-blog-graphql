@@ -20,6 +20,8 @@ import (
 	"github.com/openai/openai-go/responses"
 	"github.com/openai/openai-go/shared/constant"
 	"golang.org/x/time/rate"
+
+	"github.com/Laisky/laisky-blog-graphql/library/httpclient"
 )
 
 // LLM is the §2.6.5 contract used by the indexer and the search loop.
@@ -96,9 +98,15 @@ func NewOpenAILLM(cfg LLMConfig) (LLM, error) {
 	if cfg.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(cfg.BaseURL))
 	}
-	if cfg.HTTPClient != nil {
-		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
+	// Requests carry the platform's API key: never follow a redirect (Go's
+	// policy would keep Authorization on a subdomain, another port or an
+	// https→http downgrade), and fail a redirect answer, which the SDK would
+	// otherwise decode as a success. The copy keeps the client's transport.
+	baseClient := cfg.HTTPClient
+	if baseClient == nil {
+		baseClient = http.DefaultClient
 	}
+	opts = append(opts, option.WithHTTPClient(httpclient.WithoutRedirects(baseClient)), option.WithMiddleware(refuseRedirectAnswers))
 	// We drive retries with retry-go so the SDK does not double-retry on top of us.
 	opts = append(opts, option.WithMaxRetries(0))
 	client := openai.NewClient(opts...)
@@ -112,6 +120,17 @@ func NewOpenAILLM(cfg LLMConfig) (LLM, error) {
 		tok:        tk,
 		keyHashHex: hex.EncodeToString(keyHash[:8]),
 	}, nil
+}
+
+// refuseRedirectAnswers turns a 3xx answer, which the no-redirect client
+// returns as is, into an error instead of letting the SDK decode it.
+func refuseRedirectAnswers(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+	resp, err := next(req)
+	if err != nil || resp == nil || resp.StatusCode < http.StatusMultipleChoices || resp.StatusCode >= http.StatusBadRequest {
+		return resp, err
+	}
+	_ = resp.Body.Close()
+	return nil, errors.Errorf("llm endpoint answered redirect status %d; redirects are not followed", resp.StatusCode)
 }
 
 type openaiLLM struct {
