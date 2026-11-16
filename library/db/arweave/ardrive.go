@@ -2,17 +2,31 @@ package arweave
 
 import (
 	"context"
+	"strconv"
+	"time"
 
 	"github.com/Laisky/errors/v2"
-	"github.com/everFinance/goar"
-	"github.com/everFinance/goar/types"
+	gmw "github.com/Laisky/gin-middlewares/v7"
+	"github.com/Laisky/zap"
+	"github.com/permadao/goar"
+	"github.com/permadao/goar/schema"
+	"github.com/permadao/goar/utils"
 )
 
-const arweaveGateway = "https://arweave.net"
+const (
+	arweaveGateway = "https://arweave.net"
+	// committedUploadTimeout bounds an upload from the moment it starts
+	// sending its signed transaction, including the retries of its chunks.
+	// A node drops a pending data root 30 minutes after it first sees it, so
+	// chunks that are still unsent by then may no longer be accepted.
+	committedUploadTimeout = 30 * time.Minute
+)
 
-// Ardrive uploads data to Arweave using the goar SDK.
+// Ardrive uploads data to Arweave as signed format-2 data transactions.
 type Ardrive struct {
-	wallet *goar.Wallet
+	signer        *goar.Signer
+	gateway       *gatewayClient
+	commitTimeout time.Duration
 }
 
 // NewArdrive creates a new Ardrive uploader.
@@ -22,18 +36,41 @@ type Ardrive struct {
 // because we upload raw data transactions directly instead of
 // going through the ArFS folder abstraction.
 func NewArdrive(walletPath string, folder string) *Ardrive {
-	w, err := goar.NewWalletFromPath(walletPath, arweaveGateway)
+	return newArdrive(walletPath, arweaveGateway)
+}
+
+// newArdrive binds the wallet to gatewayURL so tests can exercise the real
+// upload path against a local gateway.
+func newArdrive(walletPath, gatewayURL string) *Ardrive {
+	signer, err := goar.NewSignerFromPath(walletPath)
 	if err != nil {
 		// Defer the error — Upload will fail with a clear message.
 		return &Ardrive{}
 	}
-	return &Ardrive{wallet: w}
+	return &Ardrive{
+		signer:        signer,
+		gateway:       newGatewayClient(gatewayURL),
+		commitTimeout: committedUploadTimeout,
+	}
 }
 
 // Upload uploads data to Arweave and returns the transaction ID.
+//
+// The ID means the gateway accepted the transaction and every chunk, not
+// that the transaction is confirmed on chain.
+//
+// Canceling ctx stops the upload only until Upload starts sending its signed
+// transaction. The gateway may accept that header even if its reply is lost,
+// and an accepted header commits the reward, which is spent once the
+// transaction is mined whether or not its data arrives. So from the first
+// POST /tx on, Upload ignores ctx's cancellation and deadline and is bounded
+// by committedUploadTimeout instead. Each gateway request has its own
+// timeout. Transient failures are retried a few times, except that a chunk
+// is retried until committedUploadTimeout, because a node may not know the
+// transaction yet.
 func (a *Ardrive) Upload(ctx context.Context,
 	data []byte, opts ...UploadOption) (fileID string, err error) {
-	if a.wallet == nil {
+	if a.signer == nil {
 		return "", errors.New("arweave wallet not initialized")
 	}
 
@@ -49,18 +86,86 @@ func (a *Ardrive) Upload(ctx context.Context,
 		}
 	}
 
-	tags := []types.Tag{
+	fileID, err = a.send(ctx, data, []schema.Tag{
 		{Name: "Content-Type", Value: opt.contentType},
-	}
-
-	tx, err := a.wallet.SendData(data, tags)
+	})
 	if err != nil {
 		return "", errors.Wrap(err, "send data to arweave")
 	}
+	return fileID, nil
+}
 
-	if tx.ID == "" {
-		return "", errors.New("arweave returned empty transaction ID")
+// send signs data as a transaction, posts it and then posts its chunks.
+func (a *Ardrive) send(ctx context.Context, data []byte, tags []schema.Tag) (string, error) {
+	logger := gmw.GetLogger(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", errors.Wrap(err, "upload canceled before it started")
 	}
 
+	tx, err := a.signTransaction(ctx, data, tags)
+	if err != nil {
+		return "", errors.WithStack(err)
+	}
+	if err = ctx.Err(); err != nil {
+		return "", errors.Wrap(err, "upload canceled before the transaction was sent")
+	}
+
+	// From the first POST /tx on, the reward may be committed: finish the
+	// upload even if the caller stops waiting, within its own bound.
+	commitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.commitTimeout)
+	defer cancel()
+
+	if err = a.gateway.postTransaction(commitCtx, tx); err != nil {
+		return "", errors.Wrapf(err, "send transaction %s", tx.ID)
+	}
+	total := len(tx.Chunks.Chunks)
+	for i := range total {
+		chunk, err := utils.GetChunk(*tx, i, data)
+		if err != nil {
+			return "", errors.Wrapf(err, "prepare chunk %d/%d of transaction %s", i+1, total, tx.ID)
+		}
+		if err = a.gateway.postChunk(commitCtx, chunk); err != nil {
+			return "", errors.Wrapf(err, "upload chunk %d/%d of transaction %s", i+1, total, tx.ID)
+		}
+	}
+
+	if ctx.Err() != nil {
+		logger.Info("finished committed arweave upload after the caller stopped waiting",
+			zap.String("tx_id", tx.ID), zap.Int("chunks", total))
+	}
+	logger.Debug("uploaded arweave transaction",
+		zap.String("tx_id", tx.ID), zap.Int("data_size", len(data)), zap.Int("chunks", total))
 	return tx.ID, nil
+}
+
+// signTransaction quotes, anchors and signs a format-2 data transaction.
+// Its chunks and data root are computed from data, which is not embedded:
+// the header is posted without data and the chunks follow it.
+func (a *Ardrive) signTransaction(ctx context.Context, data []byte, tags []schema.Tag) (*schema.Transaction, error) {
+	reward, err := a.gateway.price(ctx, len(data))
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	anchor, err := a.gateway.anchor(ctx)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	tx := &schema.Transaction{
+		Format:   2,
+		LastTx:   anchor,
+		Owner:    a.signer.Owner(),
+		Tags:     utils.TagsEncode(tags),
+		Target:   "",
+		Quantity: "0",
+		DataSize: strconv.Itoa(len(data)),
+		Reward:   reward,
+	}
+	if err = utils.PrepareChunks(tx, data, len(data)); err != nil {
+		return nil, errors.Wrap(err, "prepare chunks")
+	}
+	if err = a.signer.SignTx(tx); err != nil {
+		return nil, errors.Wrap(err, "sign transaction")
+	}
+	return tx, nil
 }

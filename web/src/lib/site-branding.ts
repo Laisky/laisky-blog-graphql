@@ -44,6 +44,9 @@ function setFaviconHref(url: string): void {
   const existing = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (existing) {
     existing.href = url;
+    // The static tag declares the default icon's MIME type; a configured icon may be any
+    // format, so drop the hint rather than let the browser skip a mismatched icon.
+    existing.removeAttribute('type');
     return;
   }
 

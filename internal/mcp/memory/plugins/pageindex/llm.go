@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +47,50 @@ type Request struct {
 	MaxOutTokens int
 	Temperature  float32
 	PromptHash   [32]byte
+	// LongOutput marks a request whose answer re-emits a table of contents; the
+	// llmGate grants it limits.max_toc_output_tokens_per_call instead of
+	// limits.max_output_tokens_per_call. The gate sets MaxOutTokens after the
+	// cache key is computed, so neither changes the key of an ordinary request:
+	// a ceiling never changes a complete answer, and a truncated one is never cached.
+	LongOutput bool
+	// AdmitRetry, when set, is called before every retry of the call (attempt 2
+	// onwards) with the error the previous request failed with. An error stops
+	// retrying and is returned, so each upstream request is admitted by the
+	// budgets before it is sent. It is not part of the cache key.
+	AdmitRetry func(attempt int, prev error) error
+}
+
+// errRequestNotSent marks a failure that happened before the request left the
+// process (the client-side rate limiter), so the request costs nothing upstream.
+var errRequestNotSent = errors.New("llm request not sent")
+
+// errDeadlineAhead is the errRequestNotSent of a request the client-side rate
+// limiter could not send before its context's deadline: it anticipates the
+// deadline, so the work it was for degrades like the deadline itself.
+var errDeadlineAhead = errors.Wrap(errRequestNotSent, "llm request would outlive its deadline")
+
+// DefaultLLMRetryAttempts is the default number of upstream requests one call may
+// make, including the first (settings indexer.retry.max_attempts).
+const DefaultLLMRetryAttempts = 3
+
+// isRetryableLLMError reports whether a failed upstream request may be retried:
+// timeouts, connection failures, 408, 409, 429 and 5xx. Any other provider
+// response (an invalid request, authentication, a missing model) fails the same
+// way again, and a canceled or expired caller context ends the call.
+func isRetryableLLMError(ctx context.Context, err error) bool {
+	if err == nil || ctx.Err() != nil {
+		return false
+	}
+	var apiErr *openai.Error
+	if errors.As(err, &apiErr) {
+		switch apiErr.StatusCode {
+		case http.StatusRequestTimeout, http.StatusConflict, http.StatusTooManyRequests:
+			return true
+		default:
+			return apiErr.StatusCode >= http.StatusInternalServerError
+		}
+	}
+	return true
 }
 
 // Response is the raw output and accounting from one Respond call.
@@ -53,6 +99,13 @@ type Response struct {
 	Text     string
 	Usage    Usage
 	CacheHit bool
+	// Truncated reports that the provider stopped at the request's output ceiling
+	// (max_output_tokens), so Text is incomplete. It is never cached.
+	Truncated bool
+	// Incomplete reports that the provider did not complete the answer for
+	// another reason (a content filter, a failure, or no reason given), so Text
+	// is not usable either. It is never cached.
+	Incomplete bool
 }
 
 // Usage tracks token billing.
@@ -83,8 +136,14 @@ func NewOpenAILLM(cfg LLMConfig) (LLM, error) {
 	if cfg.Model == "" {
 		cfg.Model = "gpt-5.4-mini"
 	}
-	if cfg.Retry.MaxAttempts == 0 {
-		cfg.Retry = RetrySettings{MaxAttempts: 10, InitialBackoff: 250 * time.Millisecond, MaxBackoff: 8 * time.Second}
+	if cfg.Retry.MaxAttempts <= 0 {
+		cfg.Retry.MaxAttempts = DefaultLLMRetryAttempts
+	}
+	if cfg.Retry.InitialBackoff <= 0 {
+		cfg.Retry.InitialBackoff = 250 * time.Millisecond
+	}
+	if cfg.Retry.MaxBackoff <= 0 {
+		cfg.Retry.MaxBackoff = 8 * time.Second
 	}
 	tk := cfg.Tokenizer
 	if tk == nil {
@@ -95,8 +154,8 @@ func NewOpenAILLM(cfg LLMConfig) (LLM, error) {
 		tk = t
 	}
 	opts := []option.RequestOption{option.WithAPIKey(cfg.APIKey)}
-	if cfg.BaseURL != "" {
-		opts = append(opts, option.WithBaseURL(cfg.BaseURL))
+	if base := responsesBaseURL(cfg.BaseURL); base != "" {
+		opts = append(opts, option.WithBaseURL(base))
 	}
 	// Requests carry the platform's API key: never follow a redirect (Go's
 	// policy would keep Authorization on a subdomain, another port or an
@@ -112,13 +171,14 @@ func NewOpenAILLM(cfg LLMConfig) (LLM, error) {
 	client := openai.NewClient(opts...)
 	keyHash := sha256.Sum256([]byte(cfg.APIKey))
 	return &openaiLLM{
-		client:     &client,
-		model:      cfg.Model,
-		limiter:    cfg.Limiter,
-		retry:      cfg.Retry,
-		log:        cfg.Logger,
-		tok:        tk,
-		keyHashHex: hex.EncodeToString(keyHash[:8]),
+		client:      &client,
+		model:       cfg.Model,
+		limiter:     cfg.Limiter,
+		retry:       cfg.Retry,
+		log:         cfg.Logger,
+		tok:         tk,
+		keyHashHex:  hex.EncodeToString(keyHash[:8]),
+		ceilingWarn: rate.Sometimes{First: 1, Interval: time.Minute},
 	}, nil
 }
 
@@ -133,6 +193,40 @@ func refuseRedirectAnswers(req *http.Request, next option.MiddlewareNext) (*http
 	return nil, errors.Errorf("llm endpoint answered redirect status %d; redirects are not followed", resp.StatusCode)
 }
 
+// responsesBaseURL returns the API root the SDK appends "responses" to. The
+// service's other OpenAI-compatible settings name a gateway by its origin, with
+// "/v1" optional, so an origin selects its /v1 root; a base URL with a path of
+// its own (an Azure or a proxy prefix) is kept, without a trailing "/responses".
+func responsesBaseURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return raw
+	}
+	path := strings.TrimSuffix(strings.TrimRight(u.Path, "/"), "/responses")
+	if path = strings.TrimRight(path, "/"); path == "" {
+		path = "/v1"
+	}
+	u.Path, u.RawPath = path+"/", ""
+	return u.String()
+}
+
+// NewOpenAILLMFromSettings builds the plugin's Responses-API client from its
+// settings, including the documented indexer.retry.* policy.
+func NewOpenAILLMFromSettings(settings Settings, tok Tokenizer, logger logSDK.Logger) (LLM, error) {
+	return NewOpenAILLM(LLMConfig{
+		APIKey:    settings.LLM.APIKey,
+		BaseURL:   settings.LLM.BaseURL,
+		Model:     settings.LLM.IndexingModel,
+		Retry:     settings.Indexer.Retry,
+		Tokenizer: tok,
+		Logger:    logger,
+	})
+}
+
 type openaiLLM struct {
 	client     *openai.Client
 	model      string
@@ -141,6 +235,9 @@ type openaiLLM struct {
 	log        logSDK.Logger
 	tok        Tokenizer
 	keyHashHex string
+	// ceilingWarn rate-limits the warning that the provider generated more than
+	// max_output_tokens.
+	ceilingWarn rate.Sometimes
 }
 
 // Respond performs a single Responses-API call, retrying transient errors.
@@ -149,61 +246,15 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 	if model == "" {
 		model = l.model
 	}
-	params := responses.ResponseNewParams{
-		Model: model,
-		Input: responses.ResponseNewParamsInputUnion{
-			OfInputItemList: buildInput(req.Input),
-		},
+	if err := ctx.Err(); err != nil {
+		return nil, errors.Wrapf(errRequestNotSent, "context ended: %v", err)
 	}
-	if req.Temperature != 0 {
-		params.Temperature = param.NewOpt(float64(req.Temperature))
+	params, err := responseParams(model, req)
+	if err != nil {
+		return nil, err
 	}
-	if req.MaxOutTokens > 0 {
-		params.MaxOutputTokens = param.NewOpt(int64(req.MaxOutTokens))
-	}
-	if len(req.Schema) > 0 {
-		var schema map[string]any
-		if err := json.Unmarshal(req.Schema, &schema); err != nil {
-			return nil, errors.Wrap(err, "decode schema")
-		}
-		name := req.SchemaName
-		if name == "" {
-			name = "structured_output"
-		}
-		params.Text = responses.ResponseTextConfigParam{
-			Format: responses.ResponseFormatTextConfigUnionParam{
-				OfJSONSchema: &responses.ResponseFormatTextJSONSchemaConfigParam{
-					Name:   name,
-					Schema: schema,
-					Strict: param.NewOpt(true),
-					Type:   constant.JSONSchema("json_schema"),
-				},
-			},
-		}
-	}
-
-	var resp *responses.Response
 	start := time.Now()
-	err := retry.Do(func() error {
-		if l.limiter != nil {
-			if waitErr := l.limiter.Wait(ctx); waitErr != nil {
-				return waitErr
-			}
-		}
-		out, callErr := l.client.Responses.New(ctx, params)
-		if callErr != nil {
-			return callErr
-		}
-		resp = out
-		return nil
-	},
-		retry.Context(ctx),
-		retry.Attempts(uint(l.retry.MaxAttempts)),
-		retry.Delay(l.retry.InitialBackoff),
-		retry.MaxDelay(l.retry.MaxBackoff),
-		retry.DelayType(retry.BackOffDelay),
-		retry.LastErrorOnly(true),
-	)
+	resp, err := l.send(ctx, req, params)
 	if err != nil {
 		if l.log != nil {
 			l.log.Warn("pageindex.llm.respond failed",
@@ -219,8 +270,23 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 		OutputTokens: int(resp.Usage.OutputTokens),
 		TotalTokens:  int(resp.Usage.TotalTokens),
 	}
+	if usage.TotalTokens == 0 {
+		// Some gateways report input and output but no total.
+		usage.TotalTokens = int(satAdd(resp.Usage.InputTokens, resp.Usage.OutputTokens))
+	}
 	text := resp.OutputText()
-	out := &Response{Text: text, Usage: usage}
+	truncated, incomplete := answerState(resp, req.MaxOutTokens)
+	out := &Response{Text: text, Usage: usage, Truncated: truncated, Incomplete: incomplete}
+	if req.MaxOutTokens > 0 && usage.OutputTokens > req.MaxOutTokens && l.log != nil {
+		l.ceilingWarn.Do(func() {
+			// The reservation assumed the ceiling holds; the excess is settled as debt.
+			l.log.Warn("pageindex.llm.output_ceiling_ignored",
+				glog.String("model", model),
+				glog.Int("max_output_tokens", req.MaxOutTokens),
+				glog.Int("output_tokens", usage.OutputTokens),
+			)
+		})
+	}
 	if len(req.Schema) > 0 {
 		out.Output = json.RawMessage(text)
 	}
@@ -231,10 +297,131 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 			glog.String("prompt_hash", hex.EncodeToString(req.PromptHash[:4])),
 			glog.Int("tokens_in", usage.InputTokens),
 			glog.Int("tokens_out", usage.OutputTokens),
+			glog.Bool("truncated", out.Truncated),
+			glog.Bool("incomplete", out.Incomplete),
+			glog.String("status", string(resp.Status)),
 			glog.Duration("latency", time.Since(start)),
 		)
 	}
 	return out, nil
+}
+
+// responseParams builds the Responses API request of req for model. A schema
+// that does not decode fails before anything is sent (errRequestNotSent).
+func responseParams(model string, req Request) (responses.ResponseNewParams, error) {
+	params := responses.ResponseNewParams{
+		Model: model,
+		Input: responses.ResponseNewParamsInputUnion{
+			OfInputItemList: buildInput(req.Input),
+		},
+	}
+	if req.Temperature != 0 {
+		params.Temperature = param.NewOpt(float64(req.Temperature))
+	}
+	if req.MaxOutTokens > 0 {
+		params.MaxOutputTokens = param.NewOpt(int64(req.MaxOutTokens))
+	}
+	if len(req.Schema) == 0 {
+		return params, nil
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(req.Schema, &schema); err != nil {
+		return params, errors.Wrapf(errRequestNotSent, "decode schema: %v", err)
+	}
+	name := req.SchemaName
+	if name == "" {
+		name = "structured_output"
+	}
+	params.Text = responses.ResponseTextConfigParam{
+		Format: responses.ResponseFormatTextConfigUnionParam{
+			OfJSONSchema: &responses.ResponseFormatTextJSONSchemaConfigParam{
+				Name:   name,
+				Schema: schema,
+				Strict: param.NewOpt(true),
+				Type:   constant.JSONSchema("json_schema"),
+			},
+		},
+	}
+	return params, nil
+}
+
+// send sends params with the configured retry policy, admitting every retry
+// through req.AdmitRetry first. Its error is the last request's own outcome,
+// which decides what that request is charged.
+func (l *openaiLLM) send(ctx context.Context, req Request, params responses.ResponseNewParams) (*responses.Response, error) {
+	var resp *responses.Response
+	attempt := 0
+	var lastErr error
+	err := retry.Do(func() error {
+		attempt++
+		if attempt > 1 && req.AdmitRetry != nil {
+			if admitErr := req.AdmitRetry(attempt, lastErr); admitErr != nil {
+				return retry.Unrecoverable(admitErr)
+			}
+		}
+		if l.limiter != nil {
+			if waitErr := l.limiter.Wait(ctx); waitErr != nil {
+				// A wait that fails would fail again, so it is not retried.
+				cause := errRequestNotSent
+				if ctx.Err() == nil {
+					cause = errDeadlineAhead
+				}
+				lastErr = errors.Wrapf(cause, "rate limiter: %v", waitErr)
+				return retry.Unrecoverable(lastErr)
+			}
+		}
+		out, callErr := l.client.Responses.New(ctx, params)
+		if callErr != nil {
+			lastErr = callErr
+			return callErr
+		}
+		resp = out
+		return nil
+	},
+		retry.Context(ctx),
+		retry.Attempts(uint(l.retry.MaxAttempts)),
+		retry.Delay(l.retry.InitialBackoff),
+		retry.MaxDelay(l.retry.MaxBackoff),
+		retry.DelayType(retry.BackOffDelay),
+		retry.LastErrorOnly(true),
+		retry.RetryIf(func(err error) bool { return isRetryableLLMError(ctx, err) }),
+	)
+	if err != nil && lastErr != nil && ctx.Err() != nil {
+		// The context ended while waiting to retry: retry-go reports the context's
+		// error, but the request still pending settlement is the last one sent,
+		// whose own outcome decides its charge.
+		return nil, lastErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// answerState classifies resp, sent with the output ceiling maxOut. It is
+// truncated when it stopped at the ceiling: the API marks it incomplete for
+// max_output_tokens, or it used the whole ceiling, which also covers responses
+// cut without a mark, a server that lowered the ceiling and echoes the lower
+// value (vLLM clamps it to the context left), and an upstream that ignored it.
+// Reasoning tokens count toward the ceiling, so a truncated answer's text may be
+// empty. It is incomplete when it did not complete for another reason: any
+// status other than completed (gateways that omit the status are taken as
+// complete), such as a content filter, a failure, or incomplete with no reason.
+// Neither kind of answer is usable.
+func answerState(resp *responses.Response, maxOut int) (truncated, incomplete bool) {
+	ceiling := int64(maxOut)
+	if echoed := resp.MaxOutputTokens; echoed > 0 && (ceiling <= 0 || echoed < ceiling) {
+		ceiling = echoed
+	}
+	switch {
+	case resp.Status == responses.ResponseStatusIncomplete && resp.IncompleteDetails.Reason == "max_output_tokens":
+		return true, false
+	case ceiling > 0 && resp.Usage.OutputTokens >= ceiling:
+		return true, false
+	case resp.Status != "" && resp.Status != responses.ResponseStatusCompleted:
+		return false, true
+	}
+	return false, false
 }
 
 // CountTokens estimates the prompt cost using the embedded BPE tokenizer.

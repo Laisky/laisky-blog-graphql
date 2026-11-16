@@ -1,4 +1,5 @@
 import { useApiKey } from '@/lib/api-key-context';
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiKeyInput } from './api-key-input';
@@ -88,5 +89,82 @@ describe('ApiKeyInput', () => {
 
     expect(screen.getAllByText(/key1/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/key2/i).length).toBeGreaterThan(0);
+    expect(findDanglingIdRefs()).toEqual([]);
+  });
+
+  it('labels the API key field programmatically and keeps password managers out', () => {
+    vi.mocked(useApiKey).mockReturnValue({
+      apiKey: '',
+      status: 'none',
+      history: [],
+      setApiKey: vi.fn(),
+      disconnect: vi.fn(),
+    });
+
+    render(<ApiKeyInput />);
+    const input = screen.getByLabelText('API key');
+    expect(input.tagName).toBe('INPUT');
+    expect(input.getAttribute('id')).toBeTruthy();
+    expect(input.getAttribute('name')).toBe('apiKey');
+    // The key has its own history UI; it is not a password-manager credential.
+    expect(input.getAttribute('autocomplete')).toBe('off');
+  });
+
+  it('keeps a fixed toggle name and exposes the reveal state through aria-pressed', () => {
+    vi.mocked(useApiKey).mockReturnValue({
+      apiKey: '',
+      status: 'none',
+      history: [],
+      setApiKey: vi.fn(),
+      disconnect: vi.fn(),
+    });
+
+    render(<ApiKeyInput />);
+    const toggle = screen.getByRole('button', { name: 'Show API key' });
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByLabelText('API key').getAttribute('type')).toBe('password');
+
+    fireEvent.click(toggle);
+
+    // The name stays stable; only the pressed state changes.
+    const pressed = screen.getByRole('button', { name: 'Show API key' });
+    expect(pressed).toBe(toggle);
+    expect(pressed.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByRole('button', { name: /hide api key/i })).toBeNull();
+    expect(screen.getByLabelText('API key').getAttribute('type')).toBe('text');
+    expect(findDanglingIdRefs()).toEqual([]);
+  });
+
+  it('selects a history entry through a real button that keyboard users can reach', () => {
+    const setApiKey = vi.fn();
+    const removeFromHistory = vi.fn();
+    vi.mocked(useApiKey).mockReturnValue({
+      apiKey: '',
+      status: 'none',
+      history: ['sk-history-key-0001'],
+      keyEntries: [{ key: 'sk-history-key-0001', alias: 'Work key' }],
+      setApiKey,
+      removeFromHistory,
+      disconnect: vi.fn(),
+    });
+
+    render(<ApiKeyInput />);
+    fireEvent.click(screen.getByRole('button', { name: /select from history/i }));
+
+    const selectButton = screen.getByRole('button', { name: /^work key/i });
+    expect(selectButton.tagName).toBe('BUTTON');
+    expect(selectButton.getAttribute('type')).toBe('button');
+
+    // The delete control is a sibling, never nested inside the select button.
+    // Its name carries the entry alias so several delete buttons stay distinguishable.
+    const deleteButton = screen.getByRole('button', { name: 'Remove Work key from history' });
+    expect(selectButton.contains(deleteButton)).toBe(false);
+
+    fireEvent.click(deleteButton);
+    expect(removeFromHistory).toHaveBeenCalledWith('sk-history-key-0001');
+    expect(setApiKey).not.toHaveBeenCalled();
+
+    fireEvent.click(selectButton);
+    expect(setApiKey).toHaveBeenCalledWith('sk-history-key-0001');
   });
 });

@@ -263,6 +263,13 @@ func newLocalPageIndex(ctx context.Context, fileService *files.Service) (mcpplug
 		},
 		TreeQuery: pageindexplugin.TreeQuerySettings{MaxSteps: 16, MaxTokens: 20_000, CandidateDocs: 16},
 		PDF:       pageindexplugin.PDFSettings{TextParser: "pdfcpu", OutlineParser: "pdfcpu"},
+		// The benchmark's deterministic stub costs nothing, so the rolling spend
+		// budgets are raised far above any dataset: a refusal would change the
+		// retrieval being measured and make results depend on dataset size.
+		Limits: pageindexplugin.LimitsSettings{
+			TenantLLMCallsPerWindow: 1 << 40, TenantTokensPerWindow: 1 << 50,
+			GlobalLLMCallsPerWindow: 1 << 40, GlobalTokensPerWindow: 1 << 50,
+		},
 	}
 	tokenizer, err := pageindexplugin.NewTokenizer(settings.LLM.IndexingModel)
 	if err != nil {

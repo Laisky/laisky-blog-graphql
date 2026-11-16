@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { useApiKey } from '@/lib/api-key-context';
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 
 import { fetchCallLogs } from '../call-log/api';
 import { WebSearchPage } from './page';
@@ -94,5 +95,23 @@ describe('WebSearchPage tool console gating', () => {
     await waitFor(() => {
       expect(fetchCallLogs).toHaveBeenCalled();
     });
+  });
+});
+
+describe('WebSearchPage accessibility', () => {
+  it('makes the usage history table a named, keyboard-focusable scroll region', async () => {
+    vi.mocked(fetchCallLogs).mockResolvedValue({
+      data: [],
+      meta: { quotes_per_usd: 1 },
+      pagination: { has_next: false, has_prev: false, page: 1, page_size: 10, total_items: 0, total_pages: 0 },
+    });
+    mockApiKeyState('insufficient');
+
+    render(<WebSearchPage />);
+
+    expect(screen.getByRole('region', { name: 'Web search usage history' })).toHaveAttribute('tabindex', '0');
+    expect(screen.getByRole('table', { name: 'Web search usage history' })).toBeInTheDocument();
+    await waitFor(() => expect(fetchCallLogs).toHaveBeenCalled());
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 });

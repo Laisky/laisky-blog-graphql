@@ -213,6 +213,7 @@ export function SettingsPage() {
               {apiKey && (
                 <div className="flex flex-col gap-3">
                   <div
+                    role="status"
                     className={cn(
                       'flex items-center gap-2 rounded-md px-3 py-2 text-sm',
                       status === 'valid'
@@ -285,6 +286,7 @@ export function SettingsPage() {
                                     }))
                                   }
                                   placeholder="Alias"
+                                  aria-label={`Alias for API key ending in ${entry.key.slice(-4)}`}
                                   maxLength={60}
                                   className={cn(
                                     'h-8 w-full text-sm font-medium transition-colors border-transparent hover:border-border focus:border-primary',
@@ -377,7 +379,9 @@ export function SettingsPage() {
           )}
 
           {apiKey && !isToolsLoading && toolsError && (
-            <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">{toolsError}</div>
+            <div role="alert" className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {toolsError}
+            </div>
           )}
 
           {apiKey && !isToolsLoading && !toolsError && availableTools.length === 0 && (
@@ -413,6 +417,10 @@ export function SettingsPage() {
                           </span>
                           <Button
                             type="button"
+                            role="switch"
+                            aria-checked={!isDisabled}
+                            aria-label={toolName}
+                            aria-busy={isSaving}
                             size="sm"
                             variant="ghost"
                             className={cn(

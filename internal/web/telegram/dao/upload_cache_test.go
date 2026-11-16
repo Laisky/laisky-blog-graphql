@@ -27,10 +27,13 @@ type fakeArweaveUploader struct {
 	fileID string
 	err    error
 	calls  int
+	// ctxErrs records the caller context's state at each call.
+	ctxErrs []error
 }
 
-func (f *fakeArweaveUploader) Upload(context.Context, []byte, ...arweave.UploadOption) (string, error) {
+func (f *fakeArweaveUploader) Upload(ctx context.Context, _ []byte, _ ...arweave.UploadOption) (string, error) {
 	f.calls++
+	f.ctxErrs = append(f.ctxErrs, ctx.Err())
 	return f.fileID, f.err
 }
 

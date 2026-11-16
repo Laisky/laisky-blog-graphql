@@ -95,13 +95,20 @@
   --ring: 258 84% 72%;
 }
 
+/*
+ * Clip horizontal overflow without creating a scroll container: `overflow-x: hidden`
+ * turns html/body into scrollers that never scroll, which silently disables every
+ * `position: sticky` element (the console header) below them.
+ */
 html {
-  overflow-x: hidden;
+  overflow-x: clip;
+  accent-color: hsl(var(--primary));
 }
 
 body {
-  overflow-x: hidden;
-  min-height: 100vh;
+  overflow-x: clip;
+  /* Dynamic viewport height follows mobile browser toolbars instead of overshooting them. */
+  min-height: 100dvh;
   font-family:
     'Inter',
     system-ui,
@@ -120,8 +127,32 @@ body {
   * {
     border-color: hsl(var(--border));
   }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
 }
 
 #root {
-  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/*
+ * Reduced motion: slow spinners down instead of stopping them, so they still signal
+ * activity, and drop the persistent pulse. Applied per animation, never globally.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin {
+    animation-duration: 6s;
+  }
+
+  .animate-pulse {
+    animation: none;
+  }
 }

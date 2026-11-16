@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { Github, Info, KeyRound, Lock, LogOut, RefreshCcw, Save, ShieldCheck, ShieldPlus, Trash2, UserRound } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { ThemeToggle } from '@/components/theme/theme-toggle';
@@ -12,7 +12,7 @@ import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { createPasskeyCredentialJSON } from '@/lib/passkey';
-import { clearSsoToken, consumeSsoTokenFromLocation, resolveSiblingSsoPath } from '@/lib/sso-session';
+import { clearSsoToken, consumeSsoTokenFromLocation, resolveSiblingSsoPath, subscribeSsoToken } from '@/lib/sso-session';
 
 const SSO_PROFILE_FIELDS = `
   uid
@@ -201,13 +201,82 @@ interface SsoProfilePageProps {
   githubOAuthEnabled?: boolean;
 }
 
+/** ProfileSession is the SSO token the profile shows an account for, and how often it was started over. */
+interface ProfileSession {
+  token: string;
+  /** ready reports that the token was read; before that the page cannot tell signed-in from signed-out. */
+  ready: boolean;
+  /** generation changes whenever the account view must start over, which remounts it. */
+  generation: number;
+}
+
+// SsoProfilePage shows the signed-in SSO account and manages its password,
+// passkeys, TOTP and GitHub binding.
+//
+// Everything the page holds (the loaded account, a started TOTP setup, typed passwords,
+// in-flight requests) belongs to one token. The account view is remounted whenever that
+// changes without this page doing it: another tab signed out or in as someone else, or
+// the page came back from the back/forward cache, which Chrome does even for no-store
+// pages because signing out only clears local storage. A sign-out elsewhere also leaves
+// for the sign-in page, replacing this history entry.
 export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePageProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const loginPath = resolveSiblingSsoPath(location.pathname, 'login');
+  const [session, setSession] = useState<ProfileSession>({ token: '', ready: false, generation: 0 });
+  const tokenRef = useRef('');
+
+  useEffect(() => {
+    // Callback logins (GitHub, passkey, and cross-app redirects) hand the freshly
+    // minted JWT to this page via the sso_token query parameter, while a direct
+    // password sign-in stores it before navigating here. Capture whichever is
+    // present so every GraphQL call below can authenticate via the Bearer header.
+    const sessionToken = consumeSsoTokenFromLocation();
+    tokenRef.current = sessionToken;
+    setSession((current) => ({ token: sessionToken, ready: true, generation: current.generation }));
+  }, []);
+
+  useEffect(
+    () =>
+      subscribeSsoToken((current, reason) => {
+        const previous = tokenRef.current;
+        // Another tab wrote something else, or a restore found nothing to show: nothing changed here.
+        if (current === previous && (reason === 'storage' || !current)) {
+          return;
+        }
+        tokenRef.current = current;
+        // Start the account view over: drop what it loaded or was typed for the previous token,
+        // and load the current account (a restore reloads it even when the token is unchanged).
+        setSession((state) => ({ token: current, ready: true, generation: state.generation + 1 }));
+        if (previous && !current) {
+          navigate(loginPath, { replace: true });
+        }
+      }),
+    [loginPath, navigate]
+  );
+
+  return (
+    <SsoProfileAccount
+      key={session.generation}
+      token={session.token}
+      authReady={session.ready}
+      githubOAuthEnabled={githubOAuthEnabled}
+    />
+  );
+}
+
+interface SsoProfileAccountProps {
+  token: string;
+  authReady: boolean;
+  githubOAuthEnabled: boolean;
+}
+
+/** SsoProfileAccount renders the account for one SSO token; SsoProfilePage remounts it when the token changes. */
+function SsoProfileAccount({ token, authReady, githubOAuthEnabled }: SsoProfileAccountProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const loginPath = resolveSiblingSsoPath(location.pathname, 'login');
   const tokenPath = resolveSiblingSsoPath(location.pathname, 'token');
-  const [token, setToken] = useState('');
-  const [authReady, setAuthReady] = useState(false);
   const [profile, setProfile] = useState<SsoProfile | null>(null);
   const [status, setStatus] = useState<StatusState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -244,23 +313,18 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
   );
 
   useEffect(() => {
-    // Callback logins (GitHub, passkey, and cross-app redirects) hand the freshly
-    // minted JWT to this page via the sso_token query parameter, while a direct
-    // password sign-in stores it before navigating here. Capture whichever is
-    // present so every GraphQL call below can authenticate via the Bearer header.
-    const sessionToken = consumeSsoTokenFromLocation();
-    setToken(sessionToken);
-    setAuthReady(true);
-    if (sessionToken) {
-      void loadProfile(sessionToken);
+    if (!authReady) {
+      return;
+    }
+    if (token) {
+      void loadProfile(token);
     } else {
       setIsLoading(false);
     }
-  }, [loadProfile]);
+  }, [authReady, loadProfile, token]);
 
   const handleSignOut = () => {
     clearSsoToken();
-    setToken('');
     setProfile(null);
     navigate(loginPath);
   };
@@ -450,13 +514,14 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
 
       {authReady && !token ? (
         <main className="mx-auto flex max-w-md flex-col gap-6 px-4 py-16">
+          <h1 className="sr-only">SSO profile</h1>
           {status && <StatusBanner status={status} />}
           <Card>
             <CardHeader className="border-b border-border/50">
-              <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 <UserRound className="h-4 w-4" />
                 Profile
-              </div>
+              </h2>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
               <StatusBanner status={{ tone: 'info', message: 'Please sign in to view and manage your account.' }} />
@@ -468,14 +533,15 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
         </main>
       ) : (
         <main className="mx-auto grid max-w-5xl gap-6 px-4 py-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <h1 className="sr-only">SSO profile</h1>
           <section className="space-y-6">
             {status && <StatusBanner status={status} />}
             <Card>
               <CardHeader className="border-b border-border/50">
-                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                <h2 id="sso-profile-heading" className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   <UserRound className="h-4 w-4" />
                   Profile
-                </div>
+                </h2>
               </CardHeader>
               <CardContent className="space-y-4 pt-6">
                 {isLoading ? (
@@ -488,7 +554,7 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
                     <ProfileRow label="Methods" value={authMethods} />
                     <ProfileRow label="Passkeys" value={String(profile.passkey_count)} />
                     <ProfileRow label="GitHub OIDC" value={profile.github_bound ? 'Bound' : 'Not bound'} />
-                    <Button asChild type="button" variant="outline" className="w-full gap-2">
+                    <Button asChild variant="outline" className="w-full gap-2">
                       <Link to={tokenPath}>
                         <Info className="h-4 w-4" />
                         Token details
@@ -521,27 +587,39 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
           <section className="space-y-6">
             <Card>
               <CardHeader className="border-b border-border/50">
-                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                <h2 id="sso-password-heading" className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   <KeyRound className="h-4 w-4" />
                   Password
-                </div>
+                </h2>
               </CardHeader>
               <CardContent className="pt-6">
-                <form className="space-y-4" onSubmit={handlePasswordChange}>
-                  <Input
-                    type="password"
-                    autoComplete="current-password"
-                    placeholder="Current password"
-                    value={currentPassword}
-                    onChange={(event) => setCurrentPassword(event.target.value)}
-                  />
-                  <Input
-                    type="password"
-                    autoComplete="new-password"
-                    placeholder="New password"
-                    value={newPassword}
-                    onChange={(event) => setNewPassword(event.target.value)}
-                  />
+                <form className="space-y-4" aria-labelledby="sso-password-heading" onSubmit={handlePasswordChange}>
+                  <div className="space-y-2">
+                    <label htmlFor="sso-profile-current-password" className="block text-sm font-medium text-muted-foreground">
+                      Current password
+                    </label>
+                    <Input
+                      id="sso-profile-current-password"
+                      name="currentPassword"
+                      type="password"
+                      autoComplete="current-password"
+                      value={currentPassword}
+                      onChange={(event) => setCurrentPassword(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="sso-profile-new-password" className="block text-sm font-medium text-muted-foreground">
+                      New password
+                    </label>
+                    <Input
+                      id="sso-profile-new-password"
+                      name="newPassword"
+                      type="password"
+                      autoComplete="new-password"
+                      value={newPassword}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                    />
+                  </div>
                   <Button type="submit" className="w-full" disabled={!canSubmitPasswordChange(currentPassword, newPassword)}>
                     Update Password
                   </Button>
@@ -551,10 +629,10 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
 
             <Card>
               <CardHeader className="border-b border-border/50">
-                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                <h2 id="sso-passkeys-heading" className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   <KeyRound className="h-4 w-4" />
                   Passkeys
-                </div>
+                </h2>
               </CardHeader>
               <CardContent className="space-y-5 pt-6">
                 {profile && profile.passkeys.length > 0 && (
@@ -570,6 +648,7 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
                         >
                           <div className="flex flex-col gap-2 sm:flex-row">
                             <Input
+                              name="passkeyName"
                               autoComplete="off"
                               value={draftName}
                               onChange={(event) => handlePasskeyNameChange(passkey.id, event.target.value)}
@@ -610,13 +689,19 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
                     })}
                   </div>
                 )}
-                <form className="space-y-4" onSubmit={handleRegisterPasskey}>
-                  <Input
-                    autoComplete="off"
-                    placeholder="Passkey label"
-                    value={passkeyLabel}
-                    onChange={(event) => setPasskeyLabel(event.target.value)}
-                  />
+                <form className="space-y-4" aria-labelledby="sso-passkeys-heading" onSubmit={handleRegisterPasskey}>
+                  <div className="space-y-2">
+                    <label htmlFor="sso-profile-passkey-label" className="block text-sm font-medium text-muted-foreground">
+                      Passkey label
+                    </label>
+                    <Input
+                      id="sso-profile-passkey-label"
+                      name="passkeyLabel"
+                      autoComplete="off"
+                      value={passkeyLabel}
+                      onChange={(event) => setPasskeyLabel(event.target.value)}
+                    />
+                  </div>
                   <Button
                     type="submit"
                     variant="outline"
@@ -631,22 +716,28 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
 
             <Card>
               <CardHeader className="border-b border-border/50">
-                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                <h2 id="sso-totp-heading" className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   <ShieldCheck className="h-4 w-4" />
                   TOTP
-                </div>
+                </h2>
               </CardHeader>
               <CardContent className="space-y-4 pt-6">
                 {profile?.totp_enabled ? (
-                  <form className="space-y-4" onSubmit={handleDisableTotp}>
+                  <form className="space-y-4" aria-labelledby="sso-totp-heading" onSubmit={handleDisableTotp}>
                     <StatusBanner status={{ tone: 'success', message: 'TOTP enabled.' }} />
-                    <Input
-                      type="password"
-                      autoComplete="current-password"
-                      placeholder="Current password"
-                      value={disablePassword}
-                      onChange={(event) => setDisablePassword(event.target.value)}
-                    />
+                    <div className="space-y-2">
+                      <label htmlFor="sso-profile-totp-password" className="block text-sm font-medium text-muted-foreground">
+                        Current password
+                      </label>
+                      <Input
+                        id="sso-profile-totp-password"
+                        name="currentPassword"
+                        type="password"
+                        autoComplete="current-password"
+                        value={disablePassword}
+                        onChange={(event) => setDisablePassword(event.target.value)}
+                      />
+                    </div>
                     <Button type="submit" variant="outline" className="w-full">
                       Disable TOTP
                     </Button>
@@ -658,7 +749,7 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
                       Start TOTP Setup
                     </Button>
                     {totpSetup && (
-                      <form className="space-y-4" onSubmit={handleConfirmTotp}>
+                      <form className="space-y-4" aria-labelledby="sso-totp-heading" onSubmit={handleConfirmTotp}>
                         <div className="grid gap-4 rounded-md border border-border bg-muted p-3 sm:grid-cols-[180px_minmax(0,1fr)]">
                           <div className="flex justify-center rounded-md bg-white p-3">
                             <QRCodeSVG
@@ -676,13 +767,24 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
                             <div className="break-all">{totpSetup.provisioning_uri}</div>
                           </div>
                         </div>
-                        <Input
-                          inputMode="numeric"
-                          autoComplete="one-time-code"
-                          placeholder="000000"
-                          value={totpCode}
-                          onChange={(event) => setTotpCode(event.target.value)}
-                        />
+                        <div className="space-y-2">
+                          <label htmlFor="sso-profile-totp-code" className="block text-sm font-medium text-muted-foreground">
+                            Verification code
+                          </label>
+                          <p id="sso-profile-totp-hint" className="text-xs text-muted-foreground">
+                            Enter the 6-digit code from your authenticator app.
+                          </p>
+                          <Input
+                            id="sso-profile-totp-code"
+                            name="totpCode"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            placeholder="000000"
+                            aria-describedby="sso-profile-totp-hint"
+                            value={totpCode}
+                            onChange={(event) => setTotpCode(event.target.value)}
+                          />
+                        </div>
                         <Button type="submit" className="w-full" disabled={!canSubmitTotpCode(totpCode)}>
                           Enable TOTP
                         </Button>

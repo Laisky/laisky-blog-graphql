@@ -7,10 +7,11 @@ developer machine or staging, rather than on every push or pull request.
 This changes when tests run, not their assertions or acceptance criteria.
 
 Current fast, quality, network-security and compatibility/database acceptance
-CI jobs select Go 1.27.2 explicitly, independently of the unchanged Go 1.27.0
-module and language floor. The [2026-10-08 patch release](https://go.dev/doc/devel/release#go1.27.0)
-includes security fixes. Historical timing measurements below retain the
-toolchain versions actually measured; they are not relabelled as Go 1.27.2 runs.
+CI jobs select the Go release named by the root `go.mod` (currently 1.27.3),
+either by an explicit pin or through `go-version-file: go.mod`;
+[the toolchain note](../ref/go_toolchain.md) explains the drift guard that keeps
+them equal. Historical timing measurements below retain the toolchain versions
+actually measured; they are not relabelled as later-release runs.
 
 The automatic `Linter / check` runs read-only gofmt and goimports checks plus
 the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
@@ -24,7 +25,7 @@ the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
 `internal/web/blog/service`, `internal/web/blog/oneapi`, `internal/web/blog/controller`,
 `internal/mcp/imageproc`, `internal/mcp/storage`, `internal/mcp/tools`,
 `internal/web/arweave/controller`, `internal/web/general/controller`, `library/search/firecrawl`,
-`library/search/bing` and `library/memlimit`. The MCP ingress
+`library/search/bing`, `library/memlimit` and `internal/mcp/memory/plugins/pageindex`. The MCP ingress
 selections cover API key validation at every entrypoint (transport, console APIs,
 ask_user console, GraphQL shared fields), caching, flood bounds, outage
 fail-closed behavior, production wiring, the prod-mode refusal of disabled
@@ -88,6 +89,40 @@ is `.scripts/fast_ci_tests.json`. The runner rejects missing discovery, skipped
 or failed tests, unsuccessful processes and missing package completion. Its
 JSON receipt records source, toolchain, command exits and elapsed time. Counts
 and selected tests must be deliberately reviewed when changing the manifest.
+
+The PageIndex selection (issues #85 and #91) is fourteen unit tests, one per
+guarantee, against fake models, fake clocks and one synthetic loopback Responses
+server, so no external network, database or wall-clock budget is involved:
+
+- per-document call and token ceilings that do not grow with the heading, root or
+  table-of-contents count;
+- the tenant and global rolling ceilings, strict over every window-long interval
+  (random admissions, refunds and late settlements over eight windows);
+- output tokens reserved before dispatch, so provider-reported spend stays within
+  the per-document and tenant ceilings;
+- the provider contract: the request every gateway receives, and how each answer
+  shape of OpenAI and of OpenAI-compatible gateways is classified and charged;
+- settlement at completion time, so a slow call's charge is not refilled away;
+- every retry admitted by the budgets;
+- the degraded-reason classification, including structural truncation;
+- cancellation polled while Markdown is parsed, and the empty-heading crash;
+- goldmark's work bounds decided before parsing;
+- heading extraction identical to the previous parser on the repository's
+  documents.
+
+They take about 0.3 s together (1.1 s for the whole package's selected and review
+tests, measured on 2026-11-15). Persistence and refresh through SQLite, fairness
+across tenants, cache reuse, truncated answers, fallback-scanner parity, retry
+classification, node accounting, the search fallback and the timing and allocation
+ratios are deliberate acceptance, as is the live provider contract
+(`TestLiveResponsesProviderContract`, which needs `PAGEINDEX_CONTRACT_BASE_URL` and
+`PAGEINDEX_CONTRACT_API_KEY` and spends a few hundred tokens).
+The race run also skips the timing assertions:
+
+```sh
+go test -count=1 ./internal/mcp/memory/plugins/pageindex
+go test -race -count=3 ./internal/mcp/memory/plugins/pageindex
+```
 
 The user-request image selections (issues #83 and #87) cover first-frame-only
 GIF decoding with frame-count-independent allocation, the decode memory

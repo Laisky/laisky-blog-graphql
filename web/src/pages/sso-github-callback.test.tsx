@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -41,5 +41,28 @@ describe('GitHub callback hand-off', () => {
     renderCallback();
     await waitFor(() => expect(assign).toHaveBeenCalledWith('https://sso.laisky.com/profile'));
     expect(loadSsoToken()).toBe('jwt-token');
+  });
+});
+
+describe('GitHub callback page structure', () => {
+  it('names the page with a level-one heading describing the sign-in', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValue({ UserGithubOAuthLogin: { token: 'jwt-token', redirect_to: '' } });
+    renderCallback();
+
+    const headings = screen.getAllByRole('heading', { level: 1 });
+    expect(headings).toHaveLength(1);
+    expect(headings[0]).toHaveAccessibleName('Signing in with GitHub');
+    await waitFor(() => expect(assign).toHaveBeenCalled());
+  });
+
+  it('announces a failed callback as an alert', async () => {
+    render(
+      <MemoryRouter initialEntries={['/github/callback']}>
+        <SsoGithubCallbackPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('GitHub callback is missing required parameters.');
+    expect(fetchGraphQL).not.toHaveBeenCalled();
   });
 });

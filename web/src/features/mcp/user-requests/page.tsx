@@ -12,8 +12,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { normalizeApiKey, useApiKey } from '@/lib/api-key-context';
+import { readStorage, writeStorage } from '@/lib/safe-storage';
 import { cn } from '@/lib/utils';
+import { createFailureBackoff } from '@/lib/backoff';
+import { createVisibilityPoller } from '@/lib/visibility-poller';
 
+import { isImeComposingKeyDown } from '../shared/ime';
 import {
   createUserRequest,
   deleteAllPendingRequests,
@@ -21,7 +25,6 @@ import {
   deleteUserRequest,
   getDescriptionCollapsed,
   getHoldState,
-  getPreferencesFromServer,
   getReturnMode,
   type HoldState,
   type ImageSubmissionError,
@@ -35,18 +38,38 @@ import {
   setDescriptionCollapsed,
   setHold,
   setReturnModeOnServer,
+  type UserPreferencesResponse,
   type UserRequest,
 } from './api';
 import { AttachmentStrip, type ComposeAttachment } from './AttachmentStrip';
 import { HoldButton } from './hold-button';
-import { IMAGE_ACCEPTED_MIME_TYPES, IMAGE_MAX_BYTES, isAcceptedImage, preshrinkImage } from './image-utils';
+import { IMAGE_ACCEPTED_MIME_TYPES, IMAGE_MAX_BYTES, isAcceptedImage, preshrinkImages } from './image-utils';
 import { ConsumedCard, EmptyState, PendingRequestCard } from './request-cards';
 import { SavedCommands } from './saved-commands';
 import { TaskIdSelector, useTaskIdHistory } from './task-id-selector';
 import { UrlAttachmentDialog } from './UrlAttachmentDialog';
+import { describePreferenceRefusal, resolveRestoredReturnMode, usePreferenceRestore } from './usePreferenceRestore';
 import { useQuota } from './useQuota';
 
 const MAX_ATTACHMENTS = 5;
+
+/** LIST_POLL_INTERVAL_MS is the background refresh cadence for the request lists. */
+const LIST_POLL_INTERVAL_MS = 5000;
+/**
+ * LIST_POLL_FAILURE_BACKOFF spaces list refreshes while they keep failing: 8 s after the
+ * first failure, doubling to one a minute, jittered so tabs do not retry in step after an outage.
+ */
+const LIST_POLL_FAILURE_BACKOFF = { baseMs: 8000, maxMs: 60_000, jitter: true } as const;
+/** HOLD_POLL_INTERVAL_MS keeps the hold countdown accurate to the second. */
+const HOLD_POLL_INTERVAL_MS = 1000;
+/**
+ * HOLD_POLL_FAILURE_BACKOFF spaces hold-state polls while they keep failing (2 s doubling to
+ * 30 s, jittered). A failed poll cannot move the countdown anyway, so polling it every second
+ * during an outage would only add load.
+ */
+const HOLD_POLL_FAILURE_BACKOFF = { baseMs: 2000, maxMs: 30_000, jitter: true } as const;
+/** SEARCH_DEBOUNCE_MS waits for typing to pause before querying history. */
+const SEARCH_DEBOUNCE_MS = 250;
 
 const COMMAND_TEMPLATE_PLACEHOLDER = '{{content}}';
 const DEFAULT_COMMAND_TEMPLATE = '{{content}}';
@@ -85,7 +108,32 @@ const DELETE_OPTIONS: DeleteOption[] = [
   { label: 'Keep last 30 days', keepDays: 30 },
 ];
 
+// DELETE_OPTION_STORAGE_KEY remembers the last chosen consumed-history cleanup option.
+const DELETE_OPTION_STORAGE_KEY = 'mcp_delete_consumed_option';
+
+/**
+ * loadDeleteOptionIndex restores the remembered cleanup option. A missing, non-numeric
+ * or out-of-range value (for example after the option list changed) selects the first option.
+ */
+function loadDeleteOptionIndex(): number {
+  const index = Number(readStorage(DELETE_OPTION_STORAGE_KEY) ?? 0);
+  return Number.isInteger(index) && index >= 0 && index < DELETE_OPTIONS.length ? index : 0;
+}
+
+/**
+ * UserRequestsPage scopes the console to one API-key session. Every list, search, hold,
+ * load-more and preference request in the page belongs to the key it was started for, so
+ * the page body remounts whenever the key (or its session) changes: a timer, request or
+ * response left over from the previous key can then only reach an unmounted component,
+ * and its in-flight requests are aborted by the body's own cleanup.
+ */
 export function UserRequestsPage() {
+  const { apiKey, sessionId } = useApiKey();
+  return <UserRequestsSession key={`${apiKey}:${sessionId}`} />;
+}
+
+/** UserRequestsSession is the user-requests console for the current API-key session. */
+function UserRequestsSession() {
   const { apiKey, isToolConsoleLocked } = useApiKey();
   const [pending, setPending] = useState<UserRequest[]>([]);
   const [consumed, setConsumed] = useState<UserRequest[]>([]);
@@ -106,10 +154,7 @@ export function UserRequestsPage() {
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [returnMode, setReturnModeState] = useState<ReturnMode>(() => getReturnMode());
   const [isDescriptionCollapsed, setIsDescriptionCollapsed] = useState(() => getDescriptionCollapsed());
-  const [selectedDeleteOptionIdx, setSelectedDeleteOptionIdx] = useState(() => {
-    const saved = localStorage.getItem('mcp_delete_consumed_option');
-    return saved ? parseInt(saved, 10) : 0;
-  });
+  const [selectedDeleteOptionIdx, setSelectedDeleteOptionIdx] = useState(() => loadDeleteOptionIndex());
   const [showDeleteConsumedConfirm, setShowDeleteConsumedConfirm] = useState(false);
   const [isDeletingConsumed, setIsDeletingConsumed] = useState(false);
   const [visibleConsumedCount, setVisibleConsumedCount] = useState(10);
@@ -133,7 +178,6 @@ export function UserRequestsPage() {
   // Command template state
   const [commandTemplate, setCommandTemplate] = useState<string>(DEFAULT_COMMAND_TEMPLATE);
   const [savedCommandTemplate, setSavedCommandTemplate] = useState<string>('');
-  const [isTemplateLoading, setIsTemplateLoading] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [isTemplateExpanded, setIsTemplateExpanded] = useState(false);
@@ -151,12 +195,11 @@ export function UserRequestsPage() {
 
   const { recordUsage: recordTaskIdUsage } = useTaskIdHistory();
 
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const holdPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollControlsRef = useRef<{
-    schedule: (delay: number) => void;
     refresh: () => void;
   } | null>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   const visibleCountRef = useRef(visibleConsumedCount);
   useEffect(() => {
@@ -176,158 +219,152 @@ export function UserRequestsPage() {
         remaining_secs: 0,
       });
       setIsLoading(false);
-      setCommandTemplate(DEFAULT_COMMAND_TEMPLATE);
-      setSavedCommandTemplate('');
-      setTemplateError(null);
-      setIsTemplateLoading(false);
-      setIsTemplateExpanded(false);
       return;
     }
 
     let disposed = false;
-    let inFlight: AbortController | null = null;
+    const failures = createFailureBackoff(LIST_POLL_FAILURE_BACKOFF);
 
-    async function fetchData(initial: boolean) {
-      if (disposed) return;
-
+    // The poller chains each refresh after the previous one settles, skips ticks
+    // while the tab is hidden, and refreshes once when the tab becomes visible.
+    const poller = createVisibilityPoller(async ({ signal, reason, priority }) => {
+      // Preferences load separately (usePreferenceRestore), so a failed list refresh
+      // never discards them and a failed preference load never blocks the list.
+      const initial = reason === 'initial';
       if (initial) {
         setIsLoading(true);
-        setIsTemplateLoading(true);
       }
-
-      if (inFlight) {
-        inFlight.abort();
-      }
-      const controller = new AbortController();
-      inFlight = controller;
 
       try {
-        // Fetch both requests and preferences in parallel
-        const [data, prefs] = await Promise.all([
-          listUserRequests(apiKey, {
-            limit: visibleCountRef.current,
-            signal: controller.signal,
-          }),
-          initial ? getPreferencesFromServer(apiKey, controller.signal).catch(() => null) : Promise.resolve(null),
-        ]);
-        if (disposed) return;
+        const data = await listUserRequests(apiKey, {
+          limit: visibleCountRef.current,
+          signal,
+          priority,
+        });
+        if (disposed || signal.aborted) return null;
 
         setPending(data.pending ?? []);
         setConsumed(data.consumed ?? []);
         setTotalConsumed(data.total_consumed ?? 0);
         setHasMoreConsumed((data.consumed?.length ?? 0) >= visibleCountRef.current);
 
-        // Update return mode from server preference only if localStorage has no value
-        // This prevents overwriting user's local choice with server default
-        if (prefs && prefs.return_mode) {
-          const localMode = getReturnMode();
-          // Only update if localStorage is empty or has default value AND server has non-default
-          if (localMode === 'all' && prefs.return_mode !== 'all') {
-            setReturnModeState(prefs.return_mode);
-            persistReturnModeLocal(prefs.return_mode);
-          } else {
-            // Keep localStorage value as source of truth for UI
-            setReturnModeState(localMode);
-          }
-        }
-
-        if (initial && prefs) {
-          const template = prefs.command_template ?? '';
-          setCommandTemplate(normalizeTemplate(template));
-          setSavedCommandTemplate(template);
-          setTemplateError(null);
-          // Auto-expand the template editor when a non-default template is saved,
-          // so active customizations are immediately visible.
-          const hasCustomTemplate = template !== '' && template !== DEFAULT_COMMAND_TEMPLATE;
-          setIsTemplateExpanded(hasCustomTemplate);
-        }
-
-        schedule(5000);
+        failures.reset();
+        return LIST_POLL_INTERVAL_MS;
       } catch {
-        if (disposed || controller.signal.aborted) return;
-        schedule(8000);
+        if (disposed || signal.aborted) return null;
+        return failures.fail();
       } finally {
         if (initial && !disposed) {
           setIsLoading(false);
-          setIsTemplateLoading(false);
         }
       }
-    }
+    });
 
-    function schedule(delay: number) {
-      if (disposed) return;
-      if (pollTimerRef.current) {
-        clearTimeout(pollTimerRef.current);
-      }
-      pollTimerRef.current = setTimeout(() => fetchData(false), delay);
-    }
-
-    pollControlsRef.current = {
-      schedule,
-      refresh: () => fetchData(false),
-    };
-
-    fetchData(true);
+    pollControlsRef.current = poller;
+    poller.start();
 
     return () => {
       disposed = true;
-      if (pollTimerRef.current) {
-        clearTimeout(pollTimerRef.current);
-        pollTimerRef.current = null;
-      }
-      if (inFlight) {
-        inFlight.abort();
-      }
+      poller.dispose();
       pollControlsRef.current = null;
     };
   }, [apiKey, isToolConsoleLocked]);
 
-  // Poll hold state when hold is active
+  // returnModeEditedRef records that the user picked a return mode during the current
+  // preference session. That pick is newer than any preference read already in flight.
+  const returnModeEditedRef = useRef(false);
+
+  // Each API key (and each unlock) starts a new preference session: forget the previous
+  // session's template and edits so they can never be shown or saved under another key.
+  useEffect(() => {
+    returnModeEditedRef.current = false;
+    setCommandTemplate(DEFAULT_COMMAND_TEMPLATE);
+    setSavedCommandTemplate('');
+    setTemplateError(null);
+    setIsTemplateExpanded(false);
+  }, [apiKey, isToolConsoleLocked]);
+
+  const applyRestoredPreferences = useCallback((prefs: UserPreferencesResponse) => {
+    if (prefs.return_mode && !returnModeEditedRef.current) {
+      const localMode = getReturnMode();
+      const mode = resolveRestoredReturnMode(localMode, prefs.return_mode);
+      setReturnModeState(mode);
+      if (mode !== localMode) {
+        persistReturnModeLocal(mode);
+      }
+    }
+
+    const template = prefs.command_template ?? '';
+    setCommandTemplate(normalizeTemplate(template));
+    setSavedCommandTemplate(template);
+    setTemplateError(null);
+    // Auto-expand the template editor when a non-default template is saved, so active
+    // customizations are immediately visible; never collapse an editor the user opened.
+    const hasCustomTemplate = template !== '' && template !== DEFAULT_COMMAND_TEMPLATE;
+    setIsTemplateExpanded((expanded) => expanded || hasCustomTemplate);
+  }, []);
+
+  const preferenceRestore = usePreferenceRestore(apiKey, !isToolConsoleLocked, applyRestoredPreferences);
+  const preferenceStatus = preferenceRestore.status;
+  // The template editor stays read-only until the saved template is known, so a save can
+  // never replace a server template the user has not seen. That includes a final refusal:
+  // the template is still unknown, so only a successful (manual) retry unlocks it.
+  const isTemplateLoading = Boolean(apiKey) && preferenceStatus !== 'restored';
+
+  // Poll hold state when hold is active. Each poll is scheduled only after the
+  // previous response settles, so a slow response can never overlap the next one.
   useEffect(() => {
     if (!apiKey || isToolConsoleLocked || !holdState.active) {
-      if (holdPollRef.current) {
-        clearInterval(holdPollRef.current);
-        holdPollRef.current = null;
-      }
       return;
     }
 
-    const fetchHoldState = async () => {
+    const failures = createFailureBackoff(HOLD_POLL_FAILURE_BACKOFF);
+    const poller = createVisibilityPoller(async ({ signal, priority }) => {
+      const key = normalizeApiKey(apiKey);
+      if (!key) return HOLD_POLL_INTERVAL_MS;
       try {
-        const key = normalizeApiKey(apiKey);
-        if (!key) return;
-        const state = await getHoldState(key, normalizedTaskId);
+        const state = await getHoldState(key, normalizedTaskId, signal, priority);
+        if (signal.aborted) return null;
         setHoldState(state);
+        failures.reset();
         // If hold is no longer active, stop polling
-        if (!state.active && holdPollRef.current) {
-          clearInterval(holdPollRef.current);
-          holdPollRef.current = null;
-        }
+        return state.active ? HOLD_POLL_INTERVAL_MS : null;
       } catch {
-        // Ignore errors during hold state polling
+        // Keep the hold and its countdown, and try again after a growing pause.
+        return signal.aborted ? null : failures.fail();
       }
-    };
+    });
 
     // Poll every second for accurate countdown
-    holdPollRef.current = setInterval(fetchHoldState, 1000);
+    poller.schedule(HOLD_POLL_INTERVAL_MS);
 
     return () => {
-      if (holdPollRef.current) {
-        clearInterval(holdPollRef.current);
-        holdPollRef.current = null;
-      }
+      poller.dispose();
     };
   }, [apiKey, holdState.active, isToolConsoleLocked, normalizedTaskId]);
 
+  // cancelPendingSearch drops a debounced search that has not started and aborts one in flight.
+  const cancelPendingSearch = useCallback(() => {
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = null;
+  }, []);
+
+  useEffect(() => cancelPendingSearch, [cancelPendingSearch]);
+
   useEffect(() => {
     if (!apiKey || isToolConsoleLocked) {
+      cancelPendingSearch();
       setIsSearchOpen(false);
       setShowDeleteAllConfirm(false);
       setShowDeleteConsumedConfirm(false);
       setSearchResults([]);
       setIsSearching(false);
     }
-  }, [apiKey, isToolConsoleLocked]);
+  }, [apiKey, cancelPendingSearch, isToolConsoleLocked]);
 
   const handleLoadMore = useCallback(async () => {
     if (isToolConsoleLocked) {
@@ -529,12 +566,7 @@ export function UserRequestsPage() {
       if (taskId.trim()) {
         recordTaskIdUsage(taskId.trim());
       }
-      const files: File[] = [];
-      for (const attachment of readyAttachments) {
-        if (attachment.kind === 'file' && attachment.file) {
-          files.push(await preshrinkImage(attachment.file));
-        }
-      }
+      const files = await preshrinkImages(readyAttachments.flatMap((a) => (a.kind === 'file' && a.file ? [a.file] : [])));
       const urls = readyAttachments.filter((a) => a.kind === 'url' && a.url).map((a) => a.url!) as string[];
 
       const createdRequest = await createUserRequest(key, {
@@ -556,7 +588,7 @@ export function UserRequestsPage() {
       if (createdRequest.status === 'consumed') {
         setHoldState({ active: false, waiting: false, remaining_secs: 0 });
       }
-      pollControlsRef.current?.schedule(0);
+      pollControlsRef.current?.refresh();
     } catch (error) {
       const imgError = error as ImageSubmissionError;
       if (imgError && imgError.code) {
@@ -619,6 +651,7 @@ export function UserRequestsPage() {
         return;
       }
 
+      returnModeEditedRef.current = true;
       setReturnModeState(mode);
       // Persist to localStorage as fallback
       persistReturnModeLocal(mode);
@@ -647,7 +680,7 @@ export function UserRequestsPage() {
       ? `Template is too long (${templateRuneCount} / ${COMMAND_TEMPLATE_MAX_RUNES} characters).`
       : null;
   const templateDirty = normalizeTemplate(commandTemplate) !== normalizeTemplate(savedCommandTemplate);
-  const canSaveTemplate = Boolean(apiKey) && templateDirty && !templateValidationMessage && !isSavingTemplate;
+  const canSaveTemplate = Boolean(apiKey) && !isTemplateLoading && templateDirty && !templateValidationMessage && !isSavingTemplate;
 
   const handleSaveCommandTemplate = useCallback(async () => {
     const key = normalizeApiKey(apiKey);
@@ -697,7 +730,7 @@ export function UserRequestsPage() {
           setPickedRequestId(null);
           setEditorBackup(null);
         }
-        pollControlsRef.current?.schedule(0);
+        pollControlsRef.current?.refresh();
       } catch {
         // Silently ignore delete failure
       } finally {
@@ -776,7 +809,7 @@ export function UserRequestsPage() {
       await deleteAllPendingRequests(key, {
         allTasks: true,
       });
-      pollControlsRef.current?.schedule(0);
+      pollControlsRef.current?.refresh();
     } catch {
       // Silently ignore bulk delete failure
     } finally {
@@ -812,7 +845,7 @@ export function UserRequestsPage() {
         keepDays: option.keepDays,
         allTasks: true,
       });
-      pollControlsRef.current?.schedule(0);
+      pollControlsRef.current?.refresh();
     } catch {
       // Silently ignore consumed-delete failure
     } finally {
@@ -822,34 +855,53 @@ export function UserRequestsPage() {
 
   const handleSelectDeleteOption = useCallback((idx: number) => {
     setSelectedDeleteOptionIdx(idx);
-    localStorage.setItem('mcp_delete_consumed_option', idx.toString());
+    writeStorage(DELETE_OPTION_STORAGE_KEY, idx.toString());
   }, []);
 
+  /**
+   * handleSearch updates the query immediately and runs the history search once
+   * typing pauses. Each new query aborts the previous request, so a slow stale
+   * response can never overwrite the results of a newer query.
+   */
   const handleSearch = useCallback(
-    async (q: string) => {
+    (q: string) => {
       setSearchQuery(q);
+      cancelPendingSearch();
       if (isToolConsoleLocked) {
         setSearchResults([]);
+        setIsSearching(false);
         return;
       }
 
       const key = normalizeApiKey(apiKey);
-      if (!key || !q.trim()) {
+      const trimmed = q.trim();
+      if (!key || !trimmed) {
         setSearchResults([]);
+        setIsSearching(false);
         return;
       }
 
       setIsSearching(true);
-      try {
-        const data = await searchUserRequests(key, q.trim(), { limit: 50 });
-        setSearchResults(data.results ?? []);
-      } catch (error) {
-        console.error('Search failed:', error);
-      } finally {
-        setIsSearching(false);
-      }
+      searchTimerRef.current = setTimeout(async () => {
+        searchTimerRef.current = null;
+        const controller = new AbortController();
+        searchAbortRef.current = controller;
+        try {
+          const data = await searchUserRequests(key, trimmed, { limit: 50, signal: controller.signal });
+          if (controller.signal.aborted) return;
+          setSearchResults(data.results ?? []);
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          console.error('Search failed:', error);
+        } finally {
+          if (searchAbortRef.current === controller) {
+            searchAbortRef.current = null;
+            setIsSearching(false);
+          }
+        }
+      }, SEARCH_DEBOUNCE_MS);
     },
-    [apiKey, isToolConsoleLocked]
+    [apiKey, cancelPendingSearch, isToolConsoleLocked]
   );
 
   const handleSelectSavedCommand = useCallback((content: string) => {
@@ -950,7 +1002,7 @@ export function UserRequestsPage() {
       setIsSubmitting(true);
       try {
         await createUserRequest(key, request.content, request.task_id || undefined);
-        pollControlsRef.current?.schedule(0);
+        pollControlsRef.current?.refresh();
       } catch {
         // Silently ignore re-queue failure
       } finally {
@@ -976,6 +1028,9 @@ export function UserRequestsPage() {
             }}
             className="flex items-center gap-1 rounded px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             title={isDescriptionCollapsed ? 'Show description' : 'Hide description'}
+            aria-expanded={!isDescriptionCollapsed}
+            // The description is not rendered while collapsed, so only reference it when shown.
+            aria-controls={isDescriptionCollapsed ? undefined : 'user-requests-description'}
           >
             {isDescriptionCollapsed ? (
               <>
@@ -991,7 +1046,7 @@ export function UserRequestsPage() {
           </button>
         </div>
         {!isDescriptionCollapsed && (
-          <>
+          <div id="user-requests-description" className="space-y-4">
             <p className="max-w-2xl text-lg text-muted-foreground">
               Queue new directives for your AI Agents. This page manages the <code className="text-sm">get_user_request</code> MCP tool
               inputs tied to your API Key.
@@ -1011,22 +1066,31 @@ export function UserRequestsPage() {
                 countdown begins to prevent the agent connection from timing out.
               </p>
             </div>
-          </>
+          </div>
         )}
       </section>
 
       <Card className="border-2 border-primary/40 bg-primary/5 shadow-md dark:bg-primary/10">
         <CardHeader>
-          <CardTitle className="text-lg font-semibold text-foreground">Create user directive</CardTitle>
+          <CardTitle id="user-requests-composer-title" className="text-lg font-semibold text-foreground">
+            Create user directive
+          </CardTitle>
           <p className="text-sm text-muted-foreground">
             Draft a new instruction for your AI agent. Requests are delivered in FIFO order (oldest first) when they call{' '}
             <code>get_user_request</code>.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            <span className="text-sm text-muted-foreground">Return mode:</span>
-            <div className="inline-flex rounded-md border border-border bg-background shadow-sm">
+            <span id="user-requests-return-mode-label" className="text-sm text-muted-foreground">
+              Return mode:
+            </span>
+            <div
+              role="group"
+              aria-labelledby="user-requests-return-mode-label"
+              className="inline-flex rounded-md border border-border bg-background shadow-sm"
+            >
               <button
                 type="button"
+                aria-pressed={returnMode === 'all'}
                 onClick={() => handleReturnModeChange('all')}
                 className={cn(
                   'rounded-l-md px-3 py-1.5 text-sm font-medium transition-colors',
@@ -1037,6 +1101,7 @@ export function UserRequestsPage() {
               </button>
               <button
                 type="button"
+                aria-pressed={returnMode === 'first'}
                 onClick={() => handleReturnModeChange('first')}
                 className={cn(
                   'rounded-r-md border-l border-border px-3 py-1.5 text-sm font-medium transition-colors',
@@ -1070,6 +1135,7 @@ export function UserRequestsPage() {
                   return;
                 }
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  if (isImeComposingKeyDown(e)) return;
                   e.preventDefault();
                   if (!isEditorDisabled && (newContent.trim() || readyAttachments.length > 0)) {
                     handleCreateRequest();
@@ -1077,6 +1143,7 @@ export function UserRequestsPage() {
                 }
               }}
               placeholder="Describe the feedback or task for your AI assistant… (Ctrl + Enter to queue)"
+              aria-labelledby="user-requests-composer-title"
               disabled={isEditorDisabled}
               className="border-primary/20 bg-background focus-visible:ring-primary/30"
             />
@@ -1095,7 +1162,11 @@ export function UserRequestsPage() {
             onChange={handleFileInputChange}
           />
           <AttachmentStrip attachments={attachments} onRemove={removeAttachment} disabled={isEditorDisabled} />
-          {imageError && <p className="text-sm text-destructive">{imageError}</p>}
+          {imageError && (
+            <p role="alert" className="text-sm text-destructive">
+              {imageError}
+            </p>
+          )}
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <TaskIdSelector
               value={taskId}
@@ -1165,13 +1236,37 @@ export function UserRequestsPage() {
           size="sm"
           onClick={() => setIsTemplateExpanded((prev) => !prev)}
           aria-expanded={isTemplateExpanded}
-          aria-controls="command-template-editor"
+          aria-controls={isTemplateExpanded ? 'command-template-editor' : undefined}
           className="h-auto gap-1.5 px-2 py-1 text-sm font-normal text-muted-foreground hover:text-foreground"
         >
           <Settings2 className="h-4 w-4" />
           <span>{isTemplateExpanded ? 'Hide command template' : 'Customize command template'}</span>
           {isTemplateExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </Button>
+
+        {preferenceStatus === 'retrying' && (
+          <div role="status" className="flex flex-wrap items-center gap-2 px-2 text-xs text-muted-foreground">
+            <span>Could not load your saved preferences. Retrying… The command template can be edited once they load.</span>
+            <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={preferenceRestore.retry}>
+              Retry now
+            </Button>
+          </div>
+        )}
+
+        {preferenceStatus === 'failed' && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            <span>
+              Could not load your saved preferences: {describePreferenceRefusal(preferenceRestore.httpStatus)} The command template stays
+              read-only until they load, so a save cannot replace a template you have not seen.
+            </span>
+            <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={preferenceRestore.retry}>
+              Retry
+            </Button>
+          </div>
+        )}
 
         {isTemplateExpanded && (
           <Card id="command-template-editor" className="border border-border/60 bg-card shadow-sm">
@@ -1200,6 +1295,7 @@ export function UserRequestsPage() {
                     rows={6}
                     spellCheck={false}
                     placeholder={`Example:\n<user_command>\n${COMMAND_TEMPLATE_PLACEHOLDER}\n</user_command>`}
+                    aria-label="Command template"
                     disabled={isInteractionDisabled || isTemplateLoading || isSavingTemplate}
                     className="w-full resize-y font-mono text-sm"
                     style={{ resize: 'vertical' }}
@@ -1224,7 +1320,7 @@ export function UserRequestsPage() {
                   )}
 
                   {templateError && (
-                    <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    <div role="alert" className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                       {templateError}
                     </div>
                   )}
@@ -1239,7 +1335,7 @@ export function UserRequestsPage() {
                       size="sm"
                       variant="ghost"
                       onClick={handleResetCommandTemplateDraft}
-                      disabled={isSavingTemplate || commandTemplate === DEFAULT_COMMAND_TEMPLATE}
+                      disabled={isTemplateLoading || isSavingTemplate || commandTemplate === DEFAULT_COMMAND_TEMPLATE}
                     >
                       Reset to default
                     </Button>
@@ -1318,6 +1414,7 @@ export function UserRequestsPage() {
                 size="icon"
                 onClick={() => setIsSearchOpen(true)}
                 title="Search history"
+                aria-label="Search history"
                 disabled={isInteractionDisabled}
               >
                 <Search className="h-4 w-4" />
@@ -1344,6 +1441,8 @@ export function UserRequestsPage() {
                       size="sm"
                       className="rounded-l-none px-2"
                       disabled={isInteractionDisabled || isDeletingConsumed}
+                      aria-label="Choose what to delete"
+                      title="Choose what to delete"
                     >
                       <ChevronDown className="h-4 w-4" />
                     </Button>
@@ -1433,6 +1532,7 @@ export function UserRequestsPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground transition-colors group-focus-within:text-primary" />
                 <Input
                   autoFocus
+                  aria-label="Search directive history"
                   placeholder="Type to search..."
                   value={searchQuery}
                   onChange={(e) => handleSearch(e.target.value)}
@@ -1441,7 +1541,10 @@ export function UserRequestsPage() {
                 />
                 {searchQuery && (
                   <button
+                    type="button"
                     onClick={() => handleSearch('')}
+                    aria-label="Clear search"
+                    title="Clear search"
                     disabled={isInteractionDisabled}
                     className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-muted rounded-lg text-muted-foreground transition-all hover:text-foreground"
                   >
@@ -1502,7 +1605,7 @@ export function UserRequestsPage() {
           </div>
 
           <div className="px-6 py-4 border-t bg-background/50 backdrop-blur-sm flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+            <div role="status" aria-label="Search result count" className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
               <Badge variant="outline" className="px-1.5 py-0 rounded-sm font-bold bg-muted/10">
                 {searchResults.length}
               </Badge>
