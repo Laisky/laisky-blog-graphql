@@ -234,10 +234,15 @@ func validateMCPToolsConfig(get configGetter, errs *[]string) {
 }
 
 // validateMCPIngressConfig refuses disabled API key validation in prod mode
-// and checks the public origin that Bearer challenges advertise.
+// and validation budgets that would defeat themselves, and checks the public
+// origin that Bearer challenges advertise.
 func validateMCPIngressConfig(get configGetter, errs *[]string) {
 	debug, _ := parseStrictBool(get("debug"))
-	if err := mcpauth.CheckValidationMode(mcpauth.LoadValidationSettings(get), debug); err != nil {
+	validation := mcpauth.LoadValidationSettings(get)
+	if err := mcpauth.CheckValidationMode(validation, debug); err != nil {
+		appendValidationErrorf(errs, "%s", err.Error())
+	}
+	if err := mcpauth.CheckValidationBounds(validation); err != nil {
 		appendValidationErrorf(errs, "%s", err.Error())
 	}
 	if _, err := mcpauth.LoadPublicOrigin(get); err != nil {

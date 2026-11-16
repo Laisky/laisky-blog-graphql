@@ -504,10 +504,14 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 // configureMCPAuthentication builds the API key authenticator from
 // settings.mcp.auth.validation.* (one-api validation enabled by default) and
 // installs it process-wide for the console APIs and GraphQL shared fields.
-// Disabled validation is refused unless the server runs with --debug.
+// Disabled validation is refused unless the server runs with --debug, and
+// budgets outside CheckValidationBounds are refused.
 func configureMCPAuthentication(logger glog.Logger) (*mcpauth.Authenticator, error) {
 	settings := mcpauth.LoadValidationSettingsFromConfig()
 	if err := mcpauth.CheckValidationMode(settings, gconfig.Shared.GetBool("debug")); err != nil {
+		return nil, errors.WithStack(err)
+	}
+	if err := mcpauth.CheckValidationBounds(settings); err != nil {
 		return nil, errors.WithStack(err)
 	}
 	authenticator, err := mcpauth.NewAuthenticatorFromSettings(settings, logger)

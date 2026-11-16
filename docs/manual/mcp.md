@@ -202,9 +202,9 @@ Each such key revalidates once per `positive_ttl`. With the defaults, revalidati
 
 To support more keys:
 
-- raise `revalidation_rate_per_second`, staying within one-api's per-IP limit (`GLOBAL_API_RATE_LIMIT`, default 480 per 3 minutes, about 2.67/s, shared with billing calls); or
+- raise `revalidation_rate_per_second`, staying within one-api's per-IP limit (`GLOBAL_API_RATE_LIMIT`, default 480 per 3 minutes, about 2.67/s, shared with billing calls; startup refuses a gate above `oneapi_rate_limit`); or
 - raise `positive_ttl`, which lengthens the revocation lag; or
-- exempt this server's egress address from one-api's per-IP limit.
+- exempt this server's egress address from one-api's per-IP limit (or raise one-api's limit) and set `oneapi_rate_limit` to match (`0` when exempt).
 
 Before treating the defaults as safe for a deployment, compare its real number of simultaneously active keys with these limits:
 
@@ -252,15 +252,18 @@ Settings (`settings.mcp.auth.validation.*`). For `stale_grace` and `revalidation
 | `positive_ttl`             | `5m` (1s–1h)               | Trust period for an accepted key (revocation lag).           |
 | `negative_ttl`             | `30s` (1s–5m)              | Refusal period for a rejected key.                           |
 | `stale_grace`              | `30m` (0–24h, `0` disables) | Extra period during which an accepted key survives a genuine one-api failure. |
-| `max_entries`              | `10000`                    | Cardinality bound of each key cache.                         |
-| `max_concurrent`           | `8`                        | Concurrent upstream calls.                                   |
+| `max_entries`              | `10000` (at most 1,000,000) | Cardinality bound of each key cache.                        |
+| `max_concurrent`           | `8` (at most 256)          | Concurrent upstream calls.                                   |
 | `upstream_rate_per_second` | `1`                        | Global rate of new-key and balance calls.                    |
 | `upstream_burst`           | `30`                       | Global burst of new-key and balance calls.                   |
 | `per_source_rate_per_second` | `0.1`                    | Refill rate of each client source's budget.                  |
 | `per_source_burst`         | `5`                        | Calls one client source (IPv4 address or IPv6 /64) may start at once. |
-| `max_sources`              | `10000`                    | Client sources tracked (least recently used evicted).        |
+| `max_sources`              | `10000` (at most 1,000,000) | Client sources tracked (least recently used evicted).       |
 | `revalidation_rate_per_second` | `0.2` (`0` disables)   | Reserved rate for revalidating known keys.                   |
 | `revalidation_burst`       | `20`                       | Reserved burst for revalidating known keys.                  |
+| `oneapi_rate_limit`        | `480` (`0` = egress exempt) | one-api's per-IP `GLOBAL_API_RATE_LIMIT` for this server's egress, in calls per 3 minutes. Startup refuses a gate that may start more calls than this (the per-3-minute total under **Rate limits** above), since paid-tool consumes share the limit. |
+
+Startup also refuses budgets that would defeat themselves: any rate that is not finite or exceeds 1000/s, any burst above 100,000, `per_source_rate_per_second` above `upstream_rate_per_second`, and `per_source_burst` above `upstream_burst` (one source could otherwise spend the whole global budget). These checks apply while validation is enabled.
 
 `settings.mcp.public_origin` (default `https://mcp.laisky.com`) is the public origin whose `/.well-known/oauth-protected-resource` every Bearer challenge advertises.
 

@@ -30,6 +30,26 @@ const (
 	maxTimeout     = 30 * time.Second
 )
 
+// Upper bounds CheckValidationBounds enforces. They are sanity ceilings far
+// above any deployment's need: a value beyond one is a typo that would
+// disable the control it configures, so startup refuses it.
+const (
+	// maxValidationEntries bounds MaxEntries and MaxSources. Both maps grow
+	// with keys and sources an attacker chooses; a million entries is a few
+	// hundred MiB at most.
+	maxValidationEntries = 1_000_000
+	// maxValidationConcurrent bounds simultaneous upstream calls.
+	maxValidationConcurrent = 256
+	// maxValidationRate bounds every rate, in calls per second.
+	maxValidationRate = 1000
+	// maxValidationBurst bounds every burst.
+	maxValidationBurst = 100_000
+)
+
+// DefaultOneAPIRateLimit is one-api's default GLOBAL_API_RATE_LIMIT: calls
+// per OneAPIRateLimitWindow from one client address.
+const DefaultOneAPIRateLimit = 480
+
 // ValidationSettings configures how MCP entrypoints validate API keys.
 type ValidationSettings struct {
 	// Enabled selects the one-api authority. Disabling it is a development-only opt-out.
@@ -62,6 +82,11 @@ type ValidationSettings struct {
 	// for keys one-api accepted before; 0 disables the reserve.
 	RevalidationRatePerSecond float64
 	RevalidationBurst         int
+	// OneAPIRateLimit is one-api's per-IP REST limit for this server's egress
+	// address, in calls per OneAPIRateLimitWindow (GLOBAL_API_RATE_LIMIT);
+	// 0 means the egress is exempt. The gate may not be configured to start
+	// more calls than this, because paid-tool consumes share the limit.
+	OneAPIRateLimit int
 }
 
 // DefaultValidationSettings returns the production defaults: one-api validation enabled.
@@ -83,6 +108,7 @@ func DefaultValidationSettings() ValidationSettings {
 		// global budget this stays at most 266 calls per 3 minutes.
 		RevalidationRatePerSecond: 0.2,
 		RevalidationBurst:         20,
+		OneAPIRateLimit:           DefaultOneAPIRateLimit,
 	}
 }
 
@@ -130,7 +156,73 @@ func LoadValidationSettings(get func(string) any) ValidationSettings {
 	// An explicit 0 disables the reserve; unset keeps the default.
 	settings.RevalidationRatePerSecond = max(0, floatValue(value("revalidation_rate_per_second"), settings.RevalidationRatePerSecond))
 	settings.RevalidationBurst = max(1, intValue(value("revalidation_burst"), settings.RevalidationBurst))
+	settings.OneAPIRateLimit = intValue(value("oneapi_rate_limit"), settings.OneAPIRateLimit)
 	return settings
+}
+
+// CheckValidationBounds refuses settings that would defeat the controls they
+// configure (maintainer review of PR #95): an oversized verdict cache or
+// source map, which grow with attacker-chosen keys and sources; unbounded
+// concurrency, rates or bursts; a per-source budget above the global one,
+// which then no longer keeps one source from spending it all; and a gate that
+// may start more one-api calls per window than one-api's per-IP limit, which
+// would leave nothing for the paid-tool consumes sharing it. Disabled
+// validation (a --debug opt-out) is unmetered and not checked.
+func CheckValidationBounds(s ValidationSettings) error {
+	if !s.Enabled {
+		return nil
+	}
+	var errs []error
+	refuse := func(format string, args ...any) {
+		errs = append(errs, errors.Errorf(validationConfigPrefix+format, args...))
+	}
+	for _, bound := range []struct {
+		key   string
+		value int
+		limit int
+	}{
+		{"max_entries", s.MaxEntries, maxValidationEntries},
+		{"max_sources", s.MaxSources, maxValidationEntries},
+		{"max_concurrent", s.MaxConcurrent, maxValidationConcurrent},
+		{"upstream_burst", s.UpstreamBurst, maxValidationBurst},
+		{"per_source_burst", s.PerSourceBurst, maxValidationBurst},
+		{"revalidation_burst", s.RevalidationBurst, maxValidationBurst},
+	} {
+		if bound.value > bound.limit {
+			refuse("%s=%d exceeds the maximum %d", bound.key, bound.value, bound.limit)
+		}
+	}
+	for _, rate := range []struct {
+		key   string
+		value float64
+	}{
+		{"upstream_rate_per_second", s.UpstreamRatePerSecond},
+		{"per_source_rate_per_second", s.PerSourceRatePerSecond},
+		{"revalidation_rate_per_second", s.RevalidationRatePerSecond},
+	} {
+		if math.IsNaN(rate.value) || math.IsInf(rate.value, 0) || rate.value > maxValidationRate {
+			refuse("%s=%v must be a finite rate of at most %d per second", rate.key, rate.value, maxValidationRate)
+		}
+	}
+	if s.PerSourceRatePerSecond > s.UpstreamRatePerSecond {
+		refuse("per_source_rate_per_second=%v exceeds upstream_rate_per_second=%v; one source could then spend the whole global budget",
+			s.PerSourceRatePerSecond, s.UpstreamRatePerSecond)
+	}
+	if s.PerSourceBurst > s.UpstreamBurst {
+		refuse("per_source_burst=%d exceeds upstream_burst=%d; one source could then spend the whole global burst",
+			s.PerSourceBurst, s.UpstreamBurst)
+	}
+	switch calls := s.Capacity().MaxCallsPerWindow; {
+	case s.OneAPIRateLimit < 0:
+		refuse("oneapi_rate_limit=%d must be one-api's per-IP limit per %s, or 0 when this server's egress is exempt",
+			s.OneAPIRateLimit, OneAPIRateLimitWindow)
+	case s.OneAPIRateLimit > 0 && calls > s.OneAPIRateLimit:
+		refuse("oneapi_rate_limit=%d is below the %d calls per %s the validation gate may start "+
+			"(upstream rate and burst plus the revalidation reserve), which would leave no room for paid-tool consumes; "+
+			"lower those settings, or raise oneapi_rate_limit to match one-api's GLOBAL_API_RATE_LIMIT (0 when exempt)",
+			s.OneAPIRateLimit, calls, OneAPIRateLimitWindow)
+	}
+	return errors.Join(errs...)
 }
 
 // OneAPIRateLimitWindow is the window of one-api's per-IP REST rate limit

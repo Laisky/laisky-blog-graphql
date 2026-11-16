@@ -42,3 +42,27 @@ func TestValidateStartupConfigChecksMCPPublicOrigin(t *testing.T) {
 		require.ErrorContains(t, validateStartupConfigWithGetter(newMapConfigGetter(withOrigin(origin))), "settings.mcp.public_origin", origin)
 	}
 }
+
+// TestValidateStartupConfigRefusesUnsafeValidationBounds: startup refuses
+// validation budgets that would defeat themselves (maintainer review of PR
+// #95, P3 E), such as an oversized verdict cache or a gate allowed more
+// one-api calls than one-api's per-IP limit; the defaults still start, and
+// the debug-only disabled mode is unmetered and not checked.
+func TestValidateStartupConfigRefusesUnsafeValidationBounds(t *testing.T) {
+	withValidation := func(validation map[string]any) map[string]any {
+		return map[string]any{"settings": map[string]any{"mcp": map[string]any{"auth": map[string]any{"validation": validation}}}}
+	}
+	require.NoError(t, validateStartupConfigWithGetter(newMapConfigGetter(withValidation(map[string]any{"enabled": true}))))
+
+	err := validateStartupConfigWithGetter(newMapConfigGetter(withValidation(map[string]any{"max_entries": 50_000_000})))
+	require.ErrorContains(t, err, "settings.mcp.auth.validation.max_entries")
+	err = validateStartupConfigWithGetter(newMapConfigGetter(withValidation(map[string]any{"upstream_rate_per_second": 3})))
+	require.ErrorContains(t, err, "settings.mcp.auth.validation.oneapi_rate_limit")
+	require.NoError(t, validateStartupConfigWithGetter(newMapConfigGetter(withValidation(map[string]any{
+		"upstream_rate_per_second": 3, "oneapi_rate_limit": 0,
+	}))), "an exempt egress may scale the gate")
+
+	disabled := withValidation(map[string]any{"enabled": false, "max_entries": 50_000_000})
+	disabled["debug"] = true
+	require.NoError(t, validateStartupConfigWithGetter(newMapConfigGetter(disabled)))
+}

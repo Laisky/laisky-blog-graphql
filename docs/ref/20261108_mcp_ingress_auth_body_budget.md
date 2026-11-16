@@ -333,3 +333,36 @@ Research checked on 2026-11-15 against the primary sources linked below.
   fallback is the usual hybrid. None is built in: the primary deployment is
   one process, and the manual documents the division.
   <https://pkg.go.dev/github.com/go-redis/redis_rate/v10>
+
+### Unarmed read deadlines (finding D, P3)
+
+- **Gap.** `httpbody.Enforce` keeps serving a request whose read deadline
+  `http.ResponseController` cannot arm (a writer chain without `Unwrap`), with
+  only the byte cap. Both callers logged that at DEBUG, so the slow-body
+  guarantee could silently disappear on an entry.
+- **Change.** `httpbody.UnarmedReporter` counts every such request in
+  `http_request_body_read_deadline_unarmed_total{entry}` (`mcp` for the
+  transport, the route class for gin) and admits one WARN per entry and
+  minute with a suppressed count. Failing the request instead was not chosen:
+  an unarmable writer is a deployment property, and refusing every body on it
+  would turn a lost protection into an outage.
+- **HTTP/2.** Go's HTTP/2 server implements `SetReadDeadline` per stream, so
+  the same contract holds over h2; `TestReadDeadlineCutsSlowBodyOverHTTP2`
+  runs it over TLS next to the HTTP/1.1 real-socket tests.
+
+### Validation budget bounds (finding E, P3)
+
+- **Gap.** `LoadValidationSettings` clamped TTLs but accepted any cache size,
+  source count, concurrency, rate or burst.
+- **Change.** `CheckValidationBounds` runs in startup validation and again in
+  `configureMCPAuthentication`. It refuses sanity ceilings (1,000,000 cache
+  entries or sources, 256 concurrent calls, 1000/s, burst 100,000), non-finite
+  rates, a per-source budget above the global one, and a gate whose
+  `ValidationCapacity.MaxCallsPerWindow` exceeds the new
+  `oneapi_rate_limit` (default 480, one-api's `GLOBAL_API_RATE_LIMIT`; `0`
+  for an exempt egress). The defaults (266 calls per window) and the example
+  settings pass; `TestExampleSettingsPassValidationBounds` reads the example
+  through the production config loader.
+- **Why refuse, not clamp.** Clamping silently runs a different configuration
+  from the one written; every other refused value in this namespace (disabled
+  validation in prod mode, a bad public origin) also fails startup.
