@@ -89,7 +89,10 @@ func logInvalidArrayItemSchemas(logger logSDK.Logger, definition mcp.Tool) {
 
 // Server wraps the MCP server state for the HTTP transport.
 type Server struct {
-	handler                   http.Handler
+	handler http.Handler
+	// sdk is the MCP SDK server behind the transport wrappers; dispatch-level
+	// checks (such as the verified-caller tool middleware) are tested on it.
+	sdk                       *srv.MCPServer
 	logger                    logSDK.Logger
 	billingReporter           externalBillingReporter
 	webSearch                 *tools.WebSearchTool
@@ -165,10 +168,26 @@ func NewServer(
 		srv.WithInstructions("Use web_search for Google Programmable Search queries and web_fetch to retrieve dynamic web pages."),
 		srv.WithRecovery(),
 		srv.WithHooks(hooks),
+		// No tool runs for a caller the bearer gate did not verify, whichever
+		// transport path delivered the call (see server_ingress_anonymous.go).
+		srv.WithToolHandlerMiddleware(requireVerifiedToolCaller),
 	)
 
 	serverLogger := logger.Named("mcp")
-	billingReporter := externalBillingReporter(oneapi.CheckUserExternalBilling)
+	resolveAuthenticator := func() *mcpauth.Authenticator {
+		if shared.authenticator != nil {
+			return shared.authenticator
+		}
+		return mcpauth.Installed()
+	}
+	consumeBaseURL := oneapi.BillingAPI
+	consume := consumeAt(consumeBaseURL)
+	if shared.consume != nil {
+		consume, consumeBaseURL = shared.consume, shared.consumeBaseURL
+	}
+	// Accepted consumes refresh the caller's API key verdict, so active keys
+	// revalidate through the calls they already make.
+	billingReporter := observeAuthorityAcceptance(consume, consumeBaseURL, resolveAuthenticator)
 	// Every paid tool shares this reporter, so the classification happens once
 	// instead of each tool remembering to record it.
 	trackedBillingReporter := trackBillingOutcome(billingReporter)
@@ -205,12 +224,6 @@ func NewServer(
 		}),
 	)
 
-	resolveAuthenticator := func() *mcpauth.Authenticator {
-		if shared.authenticator != nil {
-			return shared.authenticator
-		}
-		return mcpauth.Installed()
-	}
 	bodyBudget := shared.bodyBudget.normalized()
 	// Order matters: the body budget precedes every body reader (the logger
 	// previews it), the credential gate precedes sessions, preference lookups
@@ -222,6 +235,7 @@ func NewServer(
 	handler = withRequestBodyBudget(handler, bodyBudget, serverLogger.Named("body_budget"))
 	s := &Server{
 		handler:         handler,
+		sdk:             mcpServer,
 		logger:          serverLogger,
 		billingReporter: billingReporter,
 		callLogger:      callLogger,

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"math"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -16,10 +17,21 @@ import (
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/library"
+	"github.com/Laisky/laisky-blog-graphql/library/httpclient"
 )
 
 // BillingAPI is the external billing api endpoint
 var BillingAPI = "https://oneapi.laisky.com"
+
+// consumeClient returns the client for consume calls, which carry the
+// caller's one-api key. It is http.DefaultClient as configured at call time
+// (its Transport and Timeout keep applying), except that it never follows
+// redirects, like the API key validator: the key and the charge are only ever
+// sent to BillingAPI, and a redirect answer is classified like any other
+// unexpected status.
+func consumeClient() *http.Client {
+	return httpclient.WithoutRedirects(http.DefaultClient)
+}
 
 // Price how many quotes for 1 usd
 type Price int
@@ -53,14 +65,36 @@ var (
 	PriceFindTool = USD(0.002)
 )
 
-// checkUserExternalBilling save and check billing for text-to-image models
-//
-// # Steps
-//  1. get user's current quota from external billing api
-//  2. check if user has enough quota
-//  3. update user's quota
+// CheckUserExternalBilling charges cost to apikey at BillingAPI through
+// one-api's /api/token/consume, which also checks the user's quota. It returns
+// nil once one-api answered 200, and a *BillingError describing the outcome
+// otherwise.
 func CheckUserExternalBilling(ctx context.Context,
-	apikey string, cost Price, costReason string) (err error) {
+	apikey string, cost Price, costReason string) error {
+	_, err := ConsumeAt(ctx, BillingAPI, apikey, cost, costReason)
+	return err
+}
+
+// ConsumeReceipt describes what one-api's answer to a consume call proves
+// beyond the billing outcome.
+type ConsumeReceipt struct {
+	// TokenAccepted reports a 200 application/json answer whose envelope says
+	// "success": true. one-api serves /api/token/consume behind TokenAuth, so
+	// only such an answer proves that one-api accepted the key when the call
+	// ran; a 200 HTML page (a proxy or maintenance page) or a non-success
+	// envelope proves nothing, as for API key validation.
+	TokenAccepted bool
+}
+
+// maxConsumeReceiptBytes bounds how much of a 200 consume answer is read to
+// recognize one-api's success envelope.
+const maxConsumeReceiptBytes = 64 << 10
+
+// ConsumeAt is CheckUserExternalBilling against the one-api origin baseURL,
+// also reporting what the answer proves about the key. The billing outcome
+// and error are exactly CheckUserExternalBilling's: any 200 counts as an
+// accepted charge.
+func ConsumeAt(ctx context.Context, baseURL, apikey string, cost Price, costReason string) (receipt ConsumeReceipt, err error) {
 	logger := gmw.GetLogger(ctx)
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -74,13 +108,13 @@ func CheckUserExternalBilling(ctx context.Context,
 			"add_reason":     costReason,
 		}); err != nil {
 		// Nothing left this process, so nothing can have been charged.
-		return errors.Wrap(&BillingError{Outcome: BillingNotAttempted,
+		return receipt, errors.Wrap(&BillingError{Outcome: BillingNotAttempted,
 			Reason: "encode consume request"}, "marshal request body")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		BillingAPI+"/api/token/consume", &reqBody)
+		strings.TrimSuffix(baseURL, "/")+"/api/token/consume", &reqBody)
 	if err != nil {
-		return errors.Wrap(&BillingError{Outcome: BillingNotAttempted,
+		return receipt, errors.Wrap(&BillingError{Outcome: BillingNotAttempted,
 			Reason: "build consume request"}, "push cost to external billing api")
 	}
 	if token := library.StripBearerPrefix(apikey); token != "" {
@@ -88,12 +122,12 @@ func CheckUserExternalBilling(ctx context.Context,
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req) //nolint: bodyclose
+	resp, err := consumeClient().Do(req) //nolint: bodyclose
 	if err != nil {
 		// A transport failure or timeout cannot distinguish "never delivered"
 		// from "applied but the response was lost", so the outcome is
 		// undetermined. Never infer that nothing was charged.
-		return errors.Wrap(&BillingError{Outcome: BillingUnknown,
+		return receipt, errors.Wrap(&BillingError{Outcome: BillingUnknown,
 			Reason: "consume request did not complete"}, "do request")
 	}
 	defer gutils.LogErr(resp.Body.Close, logger)
@@ -104,15 +138,33 @@ func CheckUserExternalBilling(ctx context.Context,
 		if readErr != nil {
 			// The status already classified the outcome; an unreadable body
 			// must not downgrade a denial into an unknown state.
-			return errors.Wrap(&BillingError{Outcome: outcome, Status: resp.StatusCode,
+			return receipt, errors.Wrap(&BillingError{Outcome: outcome, Status: resp.StatusCode,
 				Reason: "consume rejected; response body unreadable"}, "read body")
 		}
-		return errors.WithStack(&BillingError{Outcome: outcome, Status: resp.StatusCode,
+		return receipt, errors.WithStack(&BillingError{Outcome: outcome, Status: resp.StatusCode,
 			Reason: boundedBillingReason(string(respBody))})
 	}
+	receipt.TokenAccepted = isOneAPISuccessEnvelope(resp.Header.Get("Content-Type"), resp.Body)
 	logger.Info("push cost to external billing api success",
-		zap.Int("cost", cost.Int()))
-	return nil
+		zap.Int("cost", cost.Int()), zap.Bool("token_accepted", receipt.TokenAccepted))
+	return receipt, nil
+}
+
+// isOneAPISuccessEnvelope reports whether a bounded body is one-api's JSON
+// envelope with "success": true, the same proof API key validation requires.
+func isOneAPISuccessEnvelope(contentType string, body io.Reader) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil || mediaType != "application/json" {
+		return false
+	}
+	data, err := io.ReadAll(io.LimitReader(body, maxConsumeReceiptBytes+1))
+	if err != nil || len(data) > maxConsumeReceiptBytes {
+		return false
+	}
+	var envelope struct {
+		Success bool `json:"success"`
+	}
+	return json.Unmarshal(data, &envelope) == nil && envelope.Success
 }
 
 // maxBillingErrorBodyBytes bounds how much of a remote error body is retained,

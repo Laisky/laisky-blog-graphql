@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -120,12 +121,18 @@ type positiveEntry struct {
 type Authenticator struct {
 	validator Validator
 	opts      AuthenticatorOptions
-	positive  *ttlCache[positiveEntry]
-	negative  *ttlCache[struct{}]
-	balances  *ttlCache[Balance]
-	flights   singleflight.Group
-	gate      *UpstreamGate
-	staleLog  *LogSampler
+	// authority is the canonical base URL of the validator's authority, or
+	// "" for validators that consult none (see BeginAuthorityCall).
+	authority string
+	// verdicts serializes verdict updates across the key caches, so an
+	// observed acceptance can never undo a concurrently recorded rejection.
+	verdicts sync.Mutex
+	positive *ttlCache[positiveEntry]
+	negative *ttlCache[struct{}]
+	balances *ttlCache[Balance]
+	flights  singleflight.Group
+	gate     *UpstreamGate
+	staleLog *LogSampler
 }
 
 // NewAuthenticator builds an Authenticator around an authoritative validator.
@@ -134,9 +141,14 @@ func NewAuthenticator(validator Validator, opts AuthenticatorOptions) (*Authenti
 		return nil, errors.New("api key validator is required")
 	}
 	opts = normalizeOptions(opts)
+	authority := ""
+	if reporter, ok := validator.(authorityBaseURLReporter); ok {
+		authority = canonicalBaseURL(reporter.AuthorityBaseURL())
+	}
 	return &Authenticator{
 		validator: validator,
 		opts:      opts,
+		authority: authority,
 		positive:  newTTLCache[positiveEntry](opts.MaxEntries),
 		negative:  newTTLCache[struct{}](opts.MaxEntries),
 		balances:  newTTLCache[Balance](opts.MaxEntries),
@@ -224,7 +236,8 @@ func (a *Authenticator) Authenticate(ctx context.Context, header string) (*Conte
 	}
 	if known && now.Before(entry.retryAt) {
 		// one-api failed for this key moments ago; do not ask again yet.
-		return a.staleOr(ctx, candidate, entry, now, errors.Wrap(ErrValidationUnavailable, "one-api was unavailable moments ago"))
+		return a.staleOr(ctx, candidate, entry, now,
+			errors.Wrap(errors.Join(ErrValidationUnavailable, errAuthorityNoVerdict), "one-api was unavailable moments ago"))
 	}
 
 	class := callNewKey
@@ -311,10 +324,12 @@ func (a *Authenticator) upstream(parent context.Context, key string, class callC
 	err = call(ctx)
 	a.recordVerdict(key, err)
 	switch {
-	case err == nil, errors.Is(err, ErrCredentialRejected), errors.Is(err, ErrValidationUnavailable):
+	case err == nil, errors.Is(err, ErrCredentialRejected):
 		return errors.WithStack(err)
 	default:
-		return errors.Wrap(errors.Join(ErrValidationUnavailable, err), "call the api key authority")
+		// The call started, so whatever went wrong happened at or on the way
+		// to the authority: it gave no verdict.
+		return errors.Wrap(errors.Join(ErrValidationUnavailable, errAuthorityNoVerdict, err), "call the api key authority")
 	}
 }
 
@@ -338,6 +353,9 @@ func (a *Authenticator) validateUpstream(parent context.Context, candidate *Cont
 
 // recordVerdict stores the outcome of one upstream call for key.
 func (a *Authenticator) recordVerdict(key string, err error) {
+	a.verdicts.Lock()
+	defer a.verdicts.Unlock()
+
 	now := a.opts.Now()
 	switch {
 	case err == nil:

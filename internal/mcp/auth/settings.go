@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -132,6 +133,41 @@ func LoadValidationSettings(get func(string) any) ValidationSettings {
 	return settings
 }
 
+// OneAPIRateLimitWindow is the window of one-api's per-IP REST rate limit
+// (GLOBAL_API_RATE_LIMIT, by default 480 calls per 3 minutes).
+const OneAPIRateLimitWindow = 3 * time.Minute
+
+// ValidationCapacity is what the upstream budgets of one process sustain.
+// Keys whose tool calls keep being accepted by one-api's consume need no
+// revalidation (Authenticator.BeginAuthorityCall) and do not count here.
+type ValidationCapacity struct {
+	// ActiveKeys is how many keys can each revalidate once per PositiveTTL
+	// through the reserve and the global budget together.
+	ActiveKeys int
+	// ActiveKeysUnderFlood is the same through the reserve alone, while a
+	// flood from many sources spends the global budget.
+	ActiveKeysUnderFlood int
+	// MaxCallsPerWindow bounds the new-key, balance and revalidation calls
+	// the gate can start per OneAPIRateLimitWindow; consumes come on top.
+	MaxCallsPerWindow int
+}
+
+// Capacity derives the capacity of these settings for one process. Budgets
+// are process-local: replicas sharing one egress address add up at one-api.
+func (s ValidationSettings) Capacity() ValidationCapacity {
+	ttl, window := s.PositiveTTL.Seconds(), OneAPIRateLimitWindow.Seconds()
+	reserveRate, reserveBurst := 0.0, 0
+	if s.RevalidationRatePerSecond > 0 {
+		reserveRate, reserveBurst = s.RevalidationRatePerSecond, s.RevalidationBurst
+	}
+	return ValidationCapacity{
+		ActiveKeys:           int(math.Round((reserveRate + s.UpstreamRatePerSecond) * ttl)),
+		ActiveKeysUnderFlood: int(math.Round(reserveRate * ttl)),
+		MaxCallsPerWindow: int(math.Round(s.UpstreamRatePerSecond*window)) + s.UpstreamBurst +
+			int(math.Round(reserveRate*window)) + reserveBurst,
+	}
+}
+
 // CheckValidationMode refuses the accept-all opt-out outside debug mode: in
 // the server's prod mode (no --debug) a disabled validation would let any
 // non-empty bearer become a tenant, which reopens issue #86. Development
@@ -185,12 +221,19 @@ func NewAuthenticatorFromSettings(settings ValidationSettings, logger logSDK.Log
 		return nil, errors.WithStack(err)
 	}
 	if logger != nil {
+		capacity := settings.Capacity()
 		logger.Info("MCP API key validation enabled",
 			zap.String("validator", options.Name),
 			zap.String("endpoint", validator.Endpoint()),
 			zap.Duration("positive_ttl", settings.PositiveTTL),
 			zap.Duration("negative_ttl", settings.NegativeTTL),
 			zap.Duration("stale_grace", settings.StaleGrace),
+			// Per-process capacity; compare it with the deployment's peak of
+			// simultaneously active keys (docs/manual/mcp.md, Capacity and scaling).
+			zap.Int("active_key_capacity", capacity.ActiveKeys),
+			zap.Int("active_key_capacity_under_flood", capacity.ActiveKeysUnderFlood),
+			zap.Int("max_oneapi_calls_per_3m", capacity.MaxCallsPerWindow),
+			zap.Bool("consumes_refresh_verdicts", authenticator.ObservesAuthority(oneapi.BillingAPI)),
 		)
 	}
 	return authenticator, nil

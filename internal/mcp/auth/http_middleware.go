@@ -8,7 +8,6 @@ import (
 
 	errors "github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
-	"github.com/Laisky/zap"
 )
 
 // RetryAfterSeconds is the Retry-After hint sent when validation is unavailable.
@@ -45,18 +44,13 @@ func HTTPMiddlewareWith(authenticator *Authenticator, next http.Handler) http.Ha
 }
 
 // unavailableLog samples the console's validation-unavailable WARN lines.
-var unavailableLog = NewLogSampler(time.Minute)
+var unavailableLog = NewUnavailableLog(time.Minute)
 
 // WriteHTTPAuthError writes the console JSON error for an Authenticate failure:
 // 503 with Retry-After when no verdict was available, otherwise 401.
 func WriteHTTPAuthError(w http.ResponseWriter, r *http.Request, err error) {
 	if IsUnavailable(err) {
-		logger := gmw.GetLogger(r.Context())
-		if emit, suppressed := unavailableLog.Allow(time.Now()); emit {
-			logger.Warn("api key validation unavailable", zap.Int64("suppressed_since_last", suppressed), zap.Error(err))
-		} else {
-			logger.Debug("api key validation unavailable", zap.Error(err))
-		}
+		unavailableLog.Log(gmw.GetLogger(r.Context()), "api key validation unavailable", err)
 		w.Header().Set("Retry-After", strconv.Itoa(RetryAfterSeconds))
 		writeJSONError(w, http.StatusServiceUnavailable, ErrValidationUnavailable.Error())
 		return

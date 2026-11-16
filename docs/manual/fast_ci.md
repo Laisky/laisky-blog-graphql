@@ -14,7 +14,8 @@ toolchain versions actually measured; they are not relabelled as Go 1.27.2 runs.
 
 The automatic `Linter / check` runs read-only gofmt and goimports checks plus
 the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
-`library/log`, `library/throttle`, `library/httpbody`, `internal/web`,
+`library/log`, `library/throttle`, `library/httpbody`, `library/httpclient`,
+`library/billing/oneapi`, `internal/web`,
 `internal/library/toolpolicy`, `internal/library/fileio`, `internal/mcp`,
 `internal/mcp/auth`, `internal/mcp/askuser`, `internal/mcp/userrequests`,
 `internal/library/ssoredirect`,
@@ -27,7 +28,14 @@ ask_user console, GraphQL shared fields), caching, flood bounds, outage
 fail-closed behavior, production wiring, the prod-mode refusal of disabled
 validation, the configured protected-resource metadata URL, upstream budgets
 spent only by calls that hold a slot, request-body caps, slow-body and
-burst-then-stall cuts, and held requests that outlive the read budget. The
+burst-then-stall cuts, and held requests that outlive the read budget. They
+also cover the anonymous access boundary: the transport allowlist, refusal of
+anonymous tool calls before any handler, and the SDK dispatch check for every
+registered tool. They also check that no caller can cancel another caller's
+request, while legacy sessions keep their own cancellations. Other selections
+keep credentials off redirect targets for the validator and the consume call.
+They check that only one-api's success envelope on a consume refreshes an
+active key's verdict, and that the refresh never revives a rejected key. The
 request-body read-credit arithmetic runs on a fake clock. Real-socket timing
 variants stay in `make test` and are not selected:
 `TestReadDeadlineCutsSlowBodyButNotTheResponse`, `TestMinDataRate*`,

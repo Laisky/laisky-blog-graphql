@@ -64,15 +64,55 @@ If no tool dependencies are met the server skips MCP initialisation.
 
 Both tools rely on a Bearer token supplied via the `Authorization` header. The backend accepts two formats:
 
-1. `Authorization: Bearer <token>` — assigns default identities.
-2. `Authorization: Bearer <identity>@<token>` — binds identities explicitly.
+1. `Authorization: Bearer <token>`.
+2. `Authorization: Bearer <identity>@<token>` — the legacy format. Only `<token>` is used; the `<identity>` part (including a `user-id:ai-id` pair) is accepted for backward compatibility and ignored.
 
-Within the identity segment you can optionally separate user and AI identities with a colon (`user-id:ai-id`). When the colon is omitted the same value is used for both. Examples:
+Only the token decides who the caller is:
 
-- `Authorization: Bearer user:assistant@sk-example` → `user-id=user`, `ai-id=assistant`.
-- `Authorization: Bearer workspace@sk-example` → `user-id=workspace`, `ai-id=workspace`.
+- The token is validated with one-api (see below).
+- Its SHA-256 hash is the tenant namespace. The user and AI identities are both derived from that hash, so `sk-example` and `workspace@sk-example` are the same tenant.
+- The last four characters are kept for display in the ask_user dashboard.
 
-The raw token is validated with one-api (see below), hashed with SHA-256 to derive the tenant namespace, and the last four characters are kept for display in the ask_user dashboard. Store tokens securely; the server does not persist them in plain text.
+Store tokens securely; the server does not persist them in plain text.
+
+### Access Boundary
+
+Four separate checks decide what a request may do:
+
+| Responsibility | Decided by | Outcome when it fails |
+| --- | --- | --- |
+| Protocol discovery | Nobody: open to anonymous callers. | — |
+| Authenticated execution | The transport's bearer gate, before the MCP SDK runs. | `401` (no or invalid key) or `503` (no verdict available). |
+| Tenant authorization | The verified key's hash, inside each tool. A tool only reads and writes its own tenant's files, memories and requests. | Tool error. |
+| Billing authorization | Each paid tool's one-api consume call. | Tool error; the billing outcome is recorded in the call log. |
+
+**Anonymous callers.** A request without any credential may only discover the server. This includes an `Authorization: Bearer` header with an empty token. The allowed JSON-RPC messages are:
+
+- `initialize` and `server/discover`;
+- `ping`;
+- `tools/list`, `prompts/list`, `resources/list` and `resources/templates/list`;
+- `notifications/initialized` (the legacy handshake), without an `id`.
+
+Everything else gets `401` with `WWW-Authenticate: Bearer resource_metadata="<public origin>/.well-known/oauth-protected-resource"`, before the MCP SDK parses the request. That includes `tools/call`, `tasks/*`, `completion/complete`, `resources/read`, `prompts/get`, `logging/setLevel`, `subscriptions/listen`, every other notification (`notifications/cancelled` in particular), client responses, batches, and bodies that are not a single JSON-RPC object.
+
+- The header carries no `error` code, because the request presented no credential (RFC 6750 §3.1).
+- The JSON body is `{"error":"authentication_required", "error_description":"…", "resource_metadata":"…"}`.
+- MCP clients react to this `401` by asking for credentials. A `200` tool error would not trigger that.
+
+Requests without a body keep reaching the SDK: legacy SSE `GET` streams and session `DELETE`.
+
+**Second check at dispatch.** The MCP SDK also refuses every tool handler for a request whose key the gate did not verify, so a future transport path cannot run a tool anonymously by accident.
+
+- It applies to every tool the server registers, also when a client runs one as a task, and to per-session tools.
+- The SDK does not wrap handlers added with `AddTaskTool`. The server adds none, and the test below fails if the advertised catalog ever differs from the registered one.
+- The check answers with an `authentication_required` tool error and logs a WARN, because reaching it means a transport path skipped the gate.
+- `TestToolDispatchRequiresVerifiedCallerForEveryTool` drives every registered tool through the SDK dispatcher to prove it.
+
+**Cancellation.** Clients cancel a 2026-07-28 request by closing its response stream, as that protocol revision requires; the server then cancels the request. A POSTed `notifications/cancelled` from a 2026-07-28 client is answered `202` and ignored.
+
+- That transport defines no client-to-server notifications.
+- The MCP SDK would key such a cancellation by request id alone, because those requests have no session. It would then abort whichever caller's request carried that id.
+- Legacy sessions keep `notifications/cancelled`, scoped to their credential-bound session id.
 
 ### Credential Validation
 
@@ -82,12 +122,13 @@ Every entrypoint that derives a tenant from a bearer — the MCP transport, the 
   - A key is accepted only on `200` with `Content-Type: application/json` and a bounded body carrying `"success": true`.
   - `401` and `403` reject the key.
   - Everything else means one-api gave no verdict: `429`, `5xx`, redirects, transport errors, timeouts, and also `200 {"success": false}` or an HTML page.
+  - Redirects are never followed, whichever HTTP client the validator was built with (`library/httpclient.WithoutRedirects`). The key is only ever sent to the configured authority. Go's own redirect policy would keep the `Authorization` header on a subdomain, on another port or on an `https`→`http` downgrade of the same host. The paid-tool consume call (`POST /api/token/consume`) follows the same rule.
 - **MCP transport responses.** A presented but rejected key receives `401` with `WWW-Authenticate: Bearer error="invalid_token", error_description="…", resource_metadata="<public origin>/.well-known/oauth-protected-resource"` before any session is issued or any tool runs. If no verdict can be obtained, the response is `503` with `Retry-After: 5`, never `401` and never a tenant.
 - **Protected-resource metadata URL.** Every Bearer challenge (MCP transport `401`, and the agent probes at `/api`, `/api/v1`, `/v1`, `/v2` and `/agent/auth`) advertises the RFC 9728 document of `settings.mcp.public_origin` (default `https://mcp.laisky.com`). The URL comes from configuration only, never from a request's `Host` or `X-Forwarded-Host`.
   - The value must be a bare `http(s)` origin (no path, query, fragment or user info); anything else fails startup.
   - RFC 9728 §3.3 makes clients discard a metadata document whose `resource` differs from that origin. The shipped document is `web/public/.well-known/oauth-protected-resource` (and the other `.well-known` files name the same origin). A self-hosted deployment must replace those files and set the origin; startup logs a WARN when the built document disagrees with the setting.
 - **Console and GraphQL responses.** Console APIs keep their `{"error": "..."}` JSON with `401`, or `503` when no verdict is available. GraphQL keeps its normal error path.
-- **Anonymous discovery.** Requests without any credential keep working for `initialize`, `tools/list` and similar discovery calls. This includes an `Authorization: Bearer` header with an empty token. Tools still require a valid key.
+- **Anonymous discovery.** Requests without any credential may only discover the server; every other method gets `401` before the MCP SDK runs. See [Access Boundary](#access-boundary).
 - **One validation per request.** The verified identity travels in the request context, so nested `mcp_pipe` steps and every handler reuse it.
 - **Caching.**
   - An accepted key is trusted for `positive_ttl` (default 5 minutes); this is also the revocation lag.
@@ -140,7 +181,19 @@ Consequences to know:
 
 #### Capacity and scaling
 
-Every actively used key revalidates once per `positive_ttl`. With the defaults, revalidations draw on the reserve (0.2/s) and then the global budget (1/s), together about 1.2 calls/s:
+**Active keys revalidate through their own tool calls.** Every MCP tool invocation already sends one consume call to one-api with the caller's key: a paid tool's charge, or the zero-cost usage report of every other tool. one-api serves `/api/token/consume` behind the same `TokenAuth` as `/api/token/balance`. So an accepted consume is a fresh verdict, and the key's trust period restarts from the moment that call started. `Authenticator.BeginAuthorityCall` records it.
+
+- A key that calls at least one tool per `positive_ttl` needs no separate validation call. A flood that spends the gate's budgets therefore cannot lock it out.
+- The revocation lag stays at most `positive_ttl` after one-api's last acceptance.
+- Only the same proof that validation requires counts: `200` with `Content-Type: application/json` and `"success": true` (`oneapi.ConsumeReceipt.TokenAccepted`). A `200` HTML page from a proxy, or a non-success envelope, still bills as before but refreshes nothing.
+- A refused or failed consume changes no verdict. Rejections still come only from the validator, so a consume refused for lack of quota does not lock a key out of free tools.
+- This applies only when the consume goes to the validator's own base URL, path prefix included. With the defaults, both are `oneapi.BillingAPI`. A self-hosted `base_url` that differs from it turns the refresh off.
+- Startup logs `consumes_refresh_verdicts` to show which case applies.
+- `TestIngressActiveKeyStaysServedThroughItsOwnConsumes` (`internal/mcp`) runs this on the production handler: budgets spent, the key still served from its consumes, and `503` again `positive_ttl` after the last one.
+
+The budgets below therefore only have to cover keys that call no tool within `positive_ttl`. Examples are clients that only reconnect and list tools, console users, and GraphQL callers.
+
+Each such key revalidates once per `positive_ttl`. With the defaults, revalidations draw on the reserve (0.2/s) and then the global budget (1/s), together about 1.2 calls/s:
 
 - **Without a flood**, about `1.2 × 300 s ≈ 360` keys can be active at once. New keys and balance queries share the global part of that budget.
 - **Under a flood that spends the global budget**, only the reserve remains: about `0.2 × 300 s ≈ 60` known keys.
@@ -153,7 +206,25 @@ To support more keys:
 - raise `positive_ttl`, which lengthens the revocation lag; or
 - exempt this server's egress address from one-api's per-IP limit.
 
-Before treating the defaults as safe for a deployment, compare its real number of simultaneously active keys with these limits.
+Before treating the defaults as safe for a deployment, compare its real number of simultaneously active keys with these limits:
+
+- **Configured capacity.** At startup, the `MCP API key validation enabled` line logs `active_key_capacity`, `active_key_capacity_under_flood` and `max_oneapi_calls_per_3m` for the configured settings. These are the figures above, per process.
+- **Observed demand.** The call log gives an upper bound. Keys that called tools refresh through their consumes, so they need less than this. Query, for the busiest 5-minute windows of the last 30 days (PostgreSQL 14+):
+
+  ```sql
+  SELECT date_bin('5 minutes', occurred_at, TIMESTAMPTZ '2000-01-01') AS window_start,
+         count(DISTINCT api_key_hash) AS active_keys
+  FROM mcp_call_logs
+  WHERE occurred_at >= now() - interval '30 days' AND api_key_hash IS NOT NULL AND api_key_hash <> ''
+  GROUP BY 1 ORDER BY 2 DESC LIMIT 10;
+  ```
+
+- **Exhaustion signal.** The `api key validation unavailable` lines carry `unavailable_cause`:
+  - `local_budget` when the local budgets ran out;
+  - `authority` when one-api gave no verdict;
+  - `local` for a request that ended while waiting, or a missing authenticator.
+
+  Each cause gets its own WARN summary per minute, so a capacity shortage stays visible during an outage.
 
 Revocation and failure:
 
@@ -165,6 +236,7 @@ Several replicas:
 - Every budget, cache and concurrency cap is local to one process.
 - Replicas behind a shared egress address therefore add up at one-api: `N` replicas can send `N` times the configured rates.
 - Divide `upstream_*`, `revalidation_*` and `max_concurrent` by the replica count, or route one-api calls through one egress per replica.
+- A shared limiter would avoid that division. An example is a Redis GCRA keyed by egress address, with a local fallback of budget/N when Redis is unreachable. It is not built in, because it makes Redis a hard dependency of every authentication. Consider it only if replicas scale dynamically.
 
 #### Prod mode
 
@@ -192,7 +264,7 @@ Settings (`settings.mcp.auth.validation.*`). For `stale_grace` and `revalidation
 
 `settings.mcp.public_origin` (default `https://mcp.laisky.com`) is the public origin whose `/.well-known/oauth-protected-resource` every Bearer challenge advertises.
 
-Logging: rejected bearers are logged at DEBUG. Unavailable verdicts and stale-grace answers produce at most one WARN summary per minute per entrypoint, with a suppressed-count field, plus DEBUG lines per request.
+Logging: rejected bearers are logged at DEBUG. Unavailable verdicts produce at most one WARN summary per minute, per entrypoint and per `unavailable_cause` (`local_budget`, `authority` or `local`), with a suppressed-count field, plus DEBUG lines per request. Stale-grace answers produce one WARN summary per minute. Anonymous requests refused at the transport are logged at DEBUG with their JSON-RPC method.
 
 ### Request Size and Time Limits
 
@@ -209,7 +281,7 @@ Settings (`settings.web.request_body.*`, plus `settings.web.idle_timeout`):
 | Key                       | Default   | Applies to                                                                                     |
 | ------------------------- | --------- | ---------------------------------------------------------------------------------------------- |
 | `mcp_max_bytes`           | 32 MiB    | MCP transport requests that carry a validated key. This leaves room for the largest tool call, `extract_key_info` with 10 MB of materials. |
-| `mcp_anonymous_max_bytes` | 1 MiB     | MCP transport requests without credentials (discovery only).                                   |
+| `mcp_anonymous_max_bytes` | 1 MiB     | MCP transport requests without credentials (discovery only, see [Access Boundary](#access-boundary)). |
 | `graphql_max_bytes`       | 64 MiB    | `/query` and `/query/v2`. gqlgen's multipart upload limit (32 MiB) still applies inside.        |
 | `default_max_bytes`       | 1 MiB     | Every other route (one-api balance proxy, SSO code exchange, webhooks). Routes with tighter own caps keep them. |
 | `min_data_rate`           | `4096` B/s | Minimum delivery rate after the grace period, on every route.                                 |

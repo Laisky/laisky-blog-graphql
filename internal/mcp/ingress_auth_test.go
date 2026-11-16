@@ -27,11 +27,13 @@ import (
 
 const issuedIngressKey = "sk-issued-ingress-key"
 
-// oneAPITokenFixture emulates one-api's read-only GET /api/token/balance,
-// which sits behind TokenAuth: 200 for an issued key, 401 for anything else.
+// oneAPITokenFixture emulates one-api's read-only GET /api/token/balance and
+// POST /api/token/consume, which both sit behind TokenAuth: 200 for an issued
+// key, 401 for anything else. calls counts balance (validation) calls only.
 type oneAPITokenFixture struct {
 	*httptest.Server
-	calls atomic.Int64
+	calls    atomic.Int64
+	consumes atomic.Int64
 }
 
 // newOneAPITokenFixture starts the fixture.
@@ -43,8 +45,13 @@ func newOneAPITokenFixture(t *testing.T, issued ...string) *oneAPITokenFixture {
 		allowed[key] = true
 	}
 	fixture.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fixture.calls.Add(1)
-		if r.URL.Path != "/api/token/balance" || r.Method != http.MethodGet {
+		consume := r.URL.Path == "/api/token/consume" && r.Method == http.MethodPost
+		if consume {
+			fixture.consumes.Add(1)
+		} else {
+			fixture.calls.Add(1)
+		}
+		if !consume && (r.URL.Path != "/api/token/balance" || r.Method != http.MethodGet) {
 			http.NotFound(w, r)
 			return
 		}
@@ -253,18 +260,17 @@ func TestIngressFailsClosedWhenAuthorityUnavailable(t *testing.T) {
 }
 
 // TestIngressKeepsAnonymousDiscovery preserves initialize and tools/list
-// without credentials, including a bearer scheme with an empty token.
+// without credentials, including a bearer scheme with an empty token, while
+// an anonymous tools/call is refused before any tool runs (review finding A).
 func TestIngressKeepsAnonymousDiscovery(t *testing.T) {
 	fixture := newOneAPITokenFixture(t, issuedIngressKey)
 	s, _ := newIngressTestServer(t, fixture)
-	var tenants atomic.Int64
-	s.toolHandlers["test_session_effect"] = func(ctx context.Context, _ mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-		if _, ok := mcpauth.FromContext(ctx); ok {
-			tenants.Add(1)
-		}
+	var steps atomic.Int64
+	s.toolHandlers["test_session_effect"] = func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+		steps.Add(1)
 		return mcpgo.NewToolResultText("anonymous step"), nil
 	}
-	for _, authorization := range []string{"", "Bearer", "Bearer   "} {
+	for _, authorization := range anonymousAuthorizations {
 		headers := http.Header{"Mcp-Protocol-Version": {mcpgo.ProtocolVersion20250618}}
 		if authorization != "" {
 			headers.Set("Authorization", authorization)
@@ -282,9 +288,9 @@ func TestIngressKeepsAnonymousDiscovery(t *testing.T) {
 
 		call := httptest.NewRecorder()
 		s.Handler().ServeHTTP(call, newModernToolCallRequest(t, context.Background(), "/mcp/", authorization))
-		require.Equal(t, http.StatusOK, call.Code, call.Body.String())
+		requireAuthenticationRequired(t, call)
 	}
-	require.Zero(t, tenants.Load(), "an anonymous request never carries a tenant into a tool")
+	require.Zero(t, steps.Load(), "an anonymous request never reaches a tool")
 	require.Zero(t, fixture.calls.Load(), "anonymous discovery never consults the authority")
 
 	oversized := httptest.NewRequest(http.MethodPost, "/mcp/", strings.NewReader(strings.Repeat(" ", int(DefaultMCPAnonymousMaxBodyBytes)+1)))
@@ -372,8 +378,10 @@ func TestIngressSourceFloodCannotLockOutOtherCallers(t *testing.T) {
 }
 
 // TestIngressOutageLogsOneWarnPerInterval: a flood during an outage yields one
-// sampled WARN summary per interval and DEBUG lines otherwise, never a WARN
-// line (with a full error chain) per request.
+// sampled WARN summary per cause and interval and DEBUG lines otherwise, never
+// a WARN line (with a full error chain) per request. The flood also spends the
+// global budget (burst 30), and that capacity signal gets its own summary
+// instead of hiding behind the outage's.
 func TestIngressOutageLogsOneWarnPerInterval(t *testing.T) {
 	core, observed := observer.New(zap.DebugLevel)
 	logger, err := glog.NewWithName("ingress-log", glog.LevelDebug, zap.WrapCore(func(zapcore.Core) zapcore.Core { return core }))
@@ -392,6 +400,13 @@ func TestIngressOutageLogsOneWarnPerInterval(t *testing.T) {
 		gate.ServeHTTP(response, request)
 		require.Equal(t, http.StatusServiceUnavailable, response.Code)
 	}
-	require.Equal(t, 1, observed.FilterLevelExact(zap.WarnLevel).Len(), "one WARN summary per interval")
-	require.Equal(t, 49, observed.FilterMessage("mcp api key validation unavailable").FilterLevelExact(zap.DebugLevel).Len())
+	warnings := observed.FilterLevelExact(zap.WarnLevel)
+	require.Equal(t, 2, warnings.Len(), "one WARN summary per cause and interval")
+	for _, cause := range []string{mcpauth.UnavailableCauseAuthority, mcpauth.UnavailableCauseLocalBudget} {
+		require.Equal(t, 1, warnings.FilterField(zap.String("unavailable_cause", cause)).Len(), cause)
+	}
+	debug := observed.FilterMessage("mcp api key validation unavailable").FilterLevelExact(zap.DebugLevel)
+	require.Equal(t, 48, debug.Len())
+	require.Equal(t, 29, debug.FilterField(zap.String("unavailable_cause", mcpauth.UnavailableCauseAuthority)).Len(),
+		"the first 30 keys reached the failing authority")
 }

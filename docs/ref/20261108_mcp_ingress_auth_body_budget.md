@@ -204,3 +204,132 @@ Conclusion for `library/httpbody`:
   the `WWW-Authenticate` header or the well-known URI. Clients use the header
   when present, otherwise they probe the path-inserted URI, then the root.
   <https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization>
+
+## Second maintainer review (2026-11-15, revision 2a1ab2a)
+
+Research checked on 2026-11-15 against the primary sources linked below.
+
+### Anonymous discovery versus execution (finding A)
+
+- **Status codes.** The MCP authorization spec (2025-11-25 and 2026-07-28 are
+  identical here) maps "Authorization required or token invalid" to `401` and
+  "Invalid scopes or insufficient permissions" to `403`. Authorization "MUST
+  be included in every HTTP request … even if they are part of the same
+  logical session". The security best practices add "MCP Servers MUST NOT use
+  sessions for authentication."
+  <https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization>,
+  <https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices>
+- **Per-method gating is allowed.** The spec neither requires nor forbids
+  open discovery with protected tool calls.
+- **Claude's lazy-authentication guide uses that exact design.**
+  `initialize` and `tools/list` pass. A protected `tools/call` gets `401`
+  "before the MCP SDK runs", including for stateful Streamable HTTP sessions.
+  A `200` with `isError: true` triggers no auth prompt; only a transport
+  `401` does. <https://claude.com/docs/connectors/building/lazy-authentication>
+- **Challenge without credentials.** RFC 6750 §3.1: when "the request lacks
+  any authentication information … the resource server SHOULD NOT include an
+  error code or other error information". The challenge is therefore
+  `Bearer resource_metadata="…"`. A presented but invalid key keeps
+  `error="invalid_token"`. <https://www.rfc-editor.org/rfc/rfc6750#section-3.1>
+- **`scope=` is left out on purpose.** The MCP spec says servers SHOULD include
+  `scope`. These API keys carry no scopes and the server enforces none, so
+  naming one would claim an enforcement that does not exist. The agent probes
+  and the `invalid_token` challenge omit it too.
+- **Batches.** 2025-03-26 clients may send JSON-RPC batches; 2025-06-18
+  removed them. mcp-go v1.1.1 decodes one object per POST and answers an
+  array with a parse error. The anonymous policy refuses arrays outright
+  rather than relying on that.
+- **Cancellation (independent review of this follow-up).** The 2026-07-28
+  cancellation page: "Streamable HTTP: Closing the SSE response stream is the
+  cancellation signal. The server MUST treat a client disconnect as
+  cancellation of that request. No `notifications/cancelled` message is
+  required or expected." The transport page says the revision "defines no
+  client-to-server notifications over Streamable HTTP". The 2025-11-25 page:
+  "Invalid cancellation notifications SHOULD be ignored", and receivers "MAY
+  ignore" unknown request ids.
+  <https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/cancellation>,
+  <https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http>
+  - **The SDK gap.** mcp-go v1.1.1 still acts on a POSTed
+    `notifications/cancelled`. Its `inflightKey` is `sessionID + ":" +
+    requestId`, and 2026-07-28 requests have an empty session id. So any
+    caller, including an anonymous one, could abort any other caller's modern
+    request with the same small integer id.
+  - **The fix.** The transport answers a 2026-07-28 `notifications/cancelled`
+    with `202` and does not forward it. Anonymous callers may send only
+    `notifications/initialized`. Legacy sessions keep cancellation; their
+    keys include the HMAC session id.
+  - **Classification.** Notifications skip the SDK's `Mcp-Method` header
+    validation (`HandleMessage` dispatches id-less messages before it), so
+    the guard decodes the body. `"id": null` counts as a notification there.
+- **Parser parity.** The policy decodes the routing members with
+  `encoding/json` into the same shape as the SDK. Duplicate keys
+  (last wins) and case-folded keys (`METHOD`) therefore name the same method
+  for both. Anything that does not decode is refused.
+- **Open question for the owner.** OAuth-capable clients (Claude, Claude
+  Code) start a sign-in flow on a `401` that carries `resource_metadata`.
+  `web/public/.well-known/oauth-authorization-server` offers only
+  `client_credentials`, and its authorization endpoint is the purchase page,
+  so an authorization-code + PKCE flow cannot complete. That was already true
+  for the `invalid_token` challenge and the agent probes. Users configure an
+  API key header instead.
+
+### Redirects on credential-bearing clients (finding B)
+
+- **Go 1.27 `net/http` redirect policy.** `shouldCopyHeaderOnRedirect` drops
+  `Authorization`, `Www-Authenticate`, `Cookie`, `Cookie2`,
+  `Proxy-Authorization` and `Proxy-Authenticate` only when the target host is
+  neither the first request's host nor a subdomain of it. It compares
+  `Hostname()` only.
+  - The header is therefore kept on a subdomain, on a port change and on an
+    `https`→`http` downgrade of the same host.
+  - The 1.27 doc: "sensitive headers are retained on redirect to a subdomain
+    or to a different scheme on the same host".
+  - Related fixes: CVE-2023-45289, CVE-2024-45336 (stripping now persists for
+    the rest of the chain) and CVE-2025-4673.
+  <https://github.com/golang/go/blob/release-branch.go1.27/src/net/http/client.go>,
+  <https://pkg.go.dev/vuln/GO-2025-3420>
+- **Practice.** `CheckRedirect` returning `http.ErrUseLastResponse` returns
+  the 3xx itself, with its body unclosed. A shallow copy `c := *base` is
+  idiomatic: `http.Client` has only Transport, CheckRedirect, Jar and Timeout,
+  and the copy shares the connection pool.
+  `library/httpclient.WithoutRedirects` does this for the validator (any
+  injected client) and for the one-api consume call.
+- **Production check.** `GET /api/token/balance` and
+  `POST /api/token/consume` on `https://oneapi.laisky.com` answer `401` with
+  no redirect (checked 2026-11-15), so refusing redirects changes nothing for
+  the primary deployment.
+
+### Revalidation capacity (finding C)
+
+- **one-api routes.** `router/api.go` registers both
+  `POST /api/token/consume` and `GET /api/token/balance` with
+  `middleware.TokenAuth()`. A consume that answered `200` therefore passed the
+  same credential check as a validation, at the moment it ran. Every MCP tool
+  invocation already sends one, either the paid charge or the zero-cost usage
+  report. Refreshing the key's trust from it removes the revalidation demand
+  of active keys, instead of coordinating more of it.
+- **Kept conservative.**
+  - Only the validator's own proof counts: `200`, `application/json`,
+    `"success": true` (`oneapi.ConsumeReceipt`). An independent review showed
+    that a plain `err == nil` let a `200` HTML page keep a revoked key alive.
+    The consume's billing classification is unchanged.
+  - The refresh is dated when the consume started.
+  - It applies only to a key the validator already accepted, and only when
+    the consume went to the validator's own base URL (path prefix included).
+  - It runs under the verdict lock, so it cannot undo a rejection recorded
+    meanwhile.
+  - Refusals are ignored: one-api's consume handler can refuse for
+    quota-per-call reasons that `TokenAuth` alone would not.
+- **Coordinating budgets across replicas**, for when that is ever needed:
+  - Shared GCRA in Redis (go-redis/redis_rate v10.0.1, atomic Lua using the
+    Redis `TIME` clock) keyed by egress address.
+  - A static per-replica split (budget/N), which wastes capacity and drifts
+    under autoscaling.
+  - A dedicated egress component that owns the limit.
+
+  A Redis limiter makes Redis a hard dependency of authentication. Failing
+  closed turns a Redis outage into a full outage; failing open risks the
+  egress address being banned. A short Redis timeout with a budget/N local
+  fallback is the usual hybrid. None is built in: the primary deployment is
+  one process, and the manual documents the division.
+  <https://pkg.go.dev/github.com/go-redis/redis_rate/v10>

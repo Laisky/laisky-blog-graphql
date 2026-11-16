@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	errors "github.com/Laisky/errors/v2"
+
+	"github.com/Laisky/laisky-blog-graphql/library/httpclient"
 )
 
 // OneAPITokenBalancePath is one-api's read-only, TokenAuth-protected endpoint
@@ -48,25 +50,31 @@ type OneAPITokenValidator struct {
 	client   *http.Client
 }
 
-// NewOneAPITokenValidator targets baseURL+OneAPITokenBalancePath. A nil client
-// uses a dedicated client that never follows redirects, so the key is only
-// ever sent to the configured authority.
+// NewOneAPITokenValidator targets baseURL+OneAPITokenBalancePath. Whatever
+// client is injected (nil uses a zero-value one), the validator works on a
+// copy that never follows redirects: a redirect answer is no verdict
+// (ErrValidationUnavailable), so the key is only ever sent to the configured
+// authority and no other origin can answer for it. The caller's client is not
+// modified.
 func NewOneAPITokenValidator(baseURL string, client *http.Client) (*OneAPITokenValidator, error) {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil {
 		return nil, errors.Wrap(err, "parse one-api base url")
 	}
-	if (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+	if !isHTTPScheme(parsed.Scheme) || parsed.Host == "" {
 		return nil, errors.Errorf("one-api base url must be an absolute http(s) url, got %q", parsed.Redacted())
 	}
-	if client == nil {
-		client = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	}
-
 	return &OneAPITokenValidator{
 		endpoint: strings.TrimSuffix(parsed.String(), "/") + OneAPITokenBalancePath,
-		client:   client,
+		client:   httpclient.WithoutRedirects(client),
 	}, nil
+}
+
+// AuthorityBaseURL returns the one-api base URL the validator calls under,
+// which Authenticator.BeginAuthorityCall matches against other
+// TokenAuth-protected calls (one-api consumes).
+func (v *OneAPITokenValidator) AuthorityBaseURL() string {
+	return canonicalBaseURL(strings.TrimSuffix(v.endpoint, OneAPITokenBalancePath))
 }
 
 // Endpoint returns the validation URL, for wiring checks.

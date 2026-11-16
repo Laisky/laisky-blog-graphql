@@ -81,3 +81,15 @@ func TestDefaultBudgetsCapacityForActiveKeys(t *testing.T) {
 			"the reserve is finite; raise revalidation_rate_per_second or positive_ttl for more keys")
 	})
 }
+
+// TestValidationCapacityMatchesTheManual keeps the startup capacity report
+// equal to the figures the manual derives from the defaults, and covers a
+// disabled reserve.
+func TestValidationCapacityMatchesTheManual(t *testing.T) {
+	require.Equal(t, ValidationCapacity{ActiveKeys: 360, ActiveKeysUnderFlood: 60, MaxCallsPerWindow: 266},
+		DefaultValidationSettings().Capacity())
+
+	noReserve := DefaultValidationSettings()
+	noReserve.RevalidationRatePerSecond = 0
+	require.Equal(t, ValidationCapacity{ActiveKeys: 300, ActiveKeysUnderFlood: 0, MaxCallsPerWindow: 210}, noReserve.Capacity())
+}

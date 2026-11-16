@@ -34,7 +34,7 @@ func ParsePublicOrigin(raw string) (string, error) {
 	}
 	scheme := strings.ToLower(parsed.Scheme)
 	switch {
-	case scheme != "https" && scheme != "http", parsed.Host == "", parsed.Hostname() == "":
+	case !isHTTPScheme(scheme), parsed.Host == "", parsed.Hostname() == "":
 		return "", errors.Errorf("%s must be an absolute http(s) origin, got %q", PublicOriginConfigKey, trimmed)
 	case parsed.User != nil:
 		return "", errors.Errorf("%s must not carry user info", PublicOriginConfigKey)

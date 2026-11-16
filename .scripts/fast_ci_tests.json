@@ -221,7 +221,13 @@
       "TestOneAPIValidatorRequiresJSONContentType",
       "TestSlotWaitersThatNeverStartKeepTheirBudget",
       "TestRevalidationSlotWaitersKeepTheReserve",
-      "TestParsePublicOriginAcceptsOnlyBareOrigins"
+      "TestParsePublicOriginAcceptsOnlyBareOrigins",
+      "TestOneAPIValidatorRefusesRedirectsWithInjectedClient",
+      "TestBeginAuthorityCallRestartsTrustOfAnAcceptedKey",
+      "TestBeginAuthorityCallChangesNothingElse",
+      "TestBeginAuthorityCallNeverResurrectsARejectedKey",
+      "TestValidationCapacityMatchesTheManual",
+      "TestUnavailableCauseSeparatesAuthorityFromLocalFailures"
     ]
   },
   {
@@ -236,7 +242,16 @@
       "TestIngressReadBudgetDoesNotCutHeldRequests",
       "TestIngressSourceFloodCannotLockOutOtherCallers",
       "TestIngressOutageLogsOneWarnPerInterval",
-      "TestIngressChallengeAdvertisesTheConfiguredMetadataURL"
+      "TestIngressChallengeAdvertisesTheConfiguredMetadataURL",
+      "TestIngressRefusesAnonymousToolExecution",
+      "TestIngressAnonymousMethodPolicy",
+      "TestToolDispatchRequiresVerifiedCallerForEveryTool",
+      "TestIngressActiveKeyStaysServedThroughItsOwnConsumes",
+      "TestIngressCancellationCannotCrossCallers",
+      "TestIngressLegacySessionCancellationStillWorks",
+      "TestCancellationGuardIgnoresOnlyModernCancellations",
+      "TestIngressModernRequestIsCanceledByClosingItsStream",
+      "TestIngressConsumeRefreshNeedsTheValidatorsProof"
     ]
   },
   {
@@ -249,6 +264,20 @@
       "TestReadDeadlineReachesThroughUnwrappingWriters",
       "TestReadCreditIsBoundedAndDrains",
       "TestBurstThenStallIsCutAfterTheIdleBound"
+    ]
+  },
+  {
+    "package": "./library/httpclient",
+    "tests": [
+      "TestWithoutRedirectsReturnsTheRedirectAndKeepsBase"
+    ]
+  },
+  {
+    "package": "./library/billing/oneapi",
+    "tests": [
+      "TestCheckUserExternalBillingNeverFollowsRedirects",
+      "TestCheckUserExternalBillingKeepsTheDefaultClientTransport",
+      "TestConsumeAtReceiptRequiresOneAPISuccessEnvelope"
     ]
   },
   {

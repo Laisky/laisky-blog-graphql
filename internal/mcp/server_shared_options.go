@@ -25,6 +25,11 @@ type sharedServerServices struct {
 	// resourceMetadataURL is the RFC 9728 document advertised in Bearer
 	// challenges; empty uses mcpauth.DefaultResourceMetadataURL.
 	resourceMetadataURL string
+	// consume replaces the one-api consume call and consumeBaseURL names its
+	// authority. Production leaves both unset: oneapi.ConsumeAt against
+	// oneapi.BillingAPI. Tests point the same call at a fixture.
+	consume        consumeCall
+	consumeBaseURL string
 }
 
 // WithFileHistoryReader enables the history tool adapters when FileIO exposure is enabled.

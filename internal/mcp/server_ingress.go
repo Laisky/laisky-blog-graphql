@@ -137,9 +137,10 @@ func withRequestBodyBudget(next http.Handler, budget RequestBodyBudget, logger l
 // A present bearer (header or legacy query key) must be validated by the
 // credential authority before a session is issued or any tool runs; the
 // verified context then serves the whole request, including nested mcp_pipe
-// calls. A request without credentials keeps anonymous discovery but only
-// within the anonymous body budget; tools still require authorization.
-// Rejections point to metadataURL (RFC 9728); empty uses the default.
+// calls. A request without credentials may only discover the server, within
+// the anonymous body budget (serveAnonymous); every other method is answered
+// 401 before the SDK dispatches. Challenges point to metadataURL (RFC 9728);
+// empty uses the default.
 func withBearerAuthentication(next http.Handler, resolve func() *mcpauth.Authenticator, anonymousMaxBytes int64, metadataURL string, logger logSDK.Logger) http.Handler {
 	if next == nil {
 		return nil
@@ -147,18 +148,14 @@ func withBearerAuthentication(next http.Handler, resolve func() *mcpauth.Authent
 	if metadataURL == "" {
 		metadataURL = mcpauth.DefaultResourceMetadataURL
 	}
-	unavailableLog := mcpauth.NewLogSampler(time.Minute)
+	unavailableLog := mcpauth.NewUnavailableLog(time.Minute)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header, source := resolveRequestAuthorizationHeader(r)
 		// A bearer scheme without a token (e.g. a client whose key variable is
 		// empty) carries no credential: it keeps anonymous discovery, as before,
 		// and can never yield a tenant.
 		if library.StripBearerPrefix(header) == "" {
-			if err := httpbody.Tighten(w, r, anonymousMaxBytes); err != nil {
-				writeRequestTooLarge(w, httpbody.Limit(err))
-				return
-			}
-			next.ServeHTTP(w, r)
+			serveAnonymous(w, r, next, anonymousMaxBytes, metadataURL, logger)
 			return
 		}
 
@@ -168,15 +165,9 @@ func withBearerAuthentication(next http.Handler, resolve func() *mcpauth.Authent
 		authCtx, err := resolve().Authenticate(ctx, header)
 		if err != nil {
 			if mcpauth.IsUnavailable(err) {
-				// A flood must yield one summary per interval, not a WARN per request.
-				if logger != nil {
-					if emit, suppressed := unavailableLog.Allow(time.Now()); emit {
-						logger.Warn("mcp api key validation unavailable", zap.String("auth_source", source),
-							zap.Int64("suppressed_since_last", suppressed), zap.Error(err))
-					} else {
-						logger.Debug("mcp api key validation unavailable", zap.String("auth_source", source), zap.Error(err))
-					}
-				}
+				// A flood must yield one summary per cause and interval, not a
+				// WARN per request; "local_budget" marks spent capacity.
+				unavailableLog.Log(logger, "mcp api key validation unavailable", err, zap.String("auth_source", source))
 				writeValidationUnavailable(w)
 				return
 			}
@@ -186,9 +177,13 @@ func withBearerAuthentication(next http.Handler, resolve func() *mcpauth.Authent
 			writeInvalidToken(w, metadataURL)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(mcpauth.WithContext(ctx, authCtx)))
+		serveVerified(w, r.WithContext(mcpauth.WithContext(ctx, authCtx)), next, logger)
 	})
 }
+
+// authenticationRequiredDescription is the public reason of a refusal for a
+// request that presented no credential.
+const authenticationRequiredDescription = "This MCP method requires a valid Laisky MCP API key in the Authorization header."
 
 // invalidTokenDescription is the public reason of every bearer rejection.
 const invalidTokenDescription = "The API key is not a valid, active Laisky MCP API key." //nolint:gosec // G101: an error message, not a credential
