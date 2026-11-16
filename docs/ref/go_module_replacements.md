@@ -56,8 +56,9 @@ deep-hash implementation. The wire-contract tests passed unchanged with goar's
 
 The gateway (`fakegateway_test.go`) validates each chunk independently of goar,
 as a node does: the Merkle proof against the signed data root, the offset, the
-size limits and the canonical split. `TestFakeGatewayRejectsInvalidChunks` is
-its negative control. The chunk tests also passed with `Wallet.SendData`
+size limits and the node's strict and rebase split rules.
+`TestFakeGatewayRejectsInvalidChunks` and `TestFakeGatewayEnforcesNodeSplitRules`
+are its negative controls. The chunk tests also passed with `Wallet.SendData`
 before the transport moved into this repository; the cancellation, timeout and
 retry tests in `ardrive_lifecycle_test.go` failed or hung on it.
 

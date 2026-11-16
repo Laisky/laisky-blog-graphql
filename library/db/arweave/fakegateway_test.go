@@ -79,6 +79,8 @@ type gatewayFault struct {
 	status     int
 	body       string
 	retryAfter string
+	// location is sent as the Location header, as a redirect would be.
+	location string
 	// stall holds the request open until the client abandons it.
 	stall bool
 	// serveFirst lets the gateway act on the request before the fault
@@ -89,9 +91,10 @@ type gatewayFault struct {
 // fakeGateway implements the Arweave gateway endpoints an upload uses.
 //
 // Like a node, it accepts a chunk only for a posted transaction and only with
-// a valid Merkle proof. It is stricter than a node in two ways: the chunk split
-// must be the canonical arweave-js split (a node answers 200 to other splits
-// but later drops their chunks), and the offset must be the inclusive end
+// a valid Merkle proof. It is stricter than a node in two ways. The chunk
+// split must pass the node's strict and rebase split rules (nodeSplitRules):
+// a node answers 200 to a chunk that passes only its base rules, then drops
+// it when the transaction is mined. And the offset must be the inclusive end
 // offset that arweave-js and goar send.
 type fakeGateway struct {
 	t       *testing.T
@@ -219,6 +222,9 @@ func (gw *fakeGateway) handle(route string, serve func(http.ResponseWriter, *htt
 		}
 		if fault.retryAfter != "" {
 			w.Header().Set("Retry-After", fault.retryAfter)
+		}
+		if fault.location != "" {
+			w.Header().Set("Location", fault.location)
 		}
 		w.WriteHeader(fault.status)
 		_, _ = w.Write([]byte(fault.body))
@@ -425,54 +431,101 @@ func validateChunk(post gatewayChunk) (accepted acceptedChunk, reason, detail st
 		return acceptedChunk{}, "offset_too_big", post.Offset
 	}
 
-	start, end, ok := provenChunkRange(root, offset, dataSize, path, chunk)
+	leaf, ok := provenChunkRange(root, offset, dataSize, path, chunk)
 	if !ok {
 		return acceptedChunk{}, "invalid_proof", "merkle path does not prove the chunk"
 	}
-	if offset != end-1 {
+	if offset != leaf.end-1 {
 		return acceptedChunk{}, "invalid_proof", "offset is not the chunk's inclusive end offset"
 	}
-	if !slices.Contains(canonicalChunkRanges(dataSize), [2]int{start, end}) {
-		return acceptedChunk{}, "invalid_proof", "chunk range is not part of the canonical split"
+	if strict, rebase := nodeSplitRules(leaf, dataSize); !strict || !rebase {
+		return acceptedChunk{}, "invalid_proof", "chunk split breaks the node's strict or rebase split rule"
 	}
-	return acceptedChunk{post: post, start: start, end: end, data: chunk}, "", ""
+	return acceptedChunk{post: post, start: leaf.start, end: leaf.end, data: chunk}, "", ""
+}
+
+// provenLeaf is the leaf a data_path leads to.
+type provenLeaf struct {
+	start, end int
+	// rightMost is set when the path takes only right branches, so the
+	// leaf is the last chunk of its tree. A single-leaf tree has no branch,
+	// and the node treats it as not right-most.
+	rightMost bool
 }
 
 // provenChunkRange walks an Arweave data_path from root towards offset, as
-// ar_merkle:validate_path does, and returns the [start, end) range of the
-// leaf it reaches once that leaf is shown to commit to sha256(chunk).
-func provenChunkRange(root []byte, offset, dataSize int, path, chunk []byte) (start, end int, ok bool) {
+// ar_merkle:validate_path does, and returns the leaf it reaches once that
+// leaf is shown to commit to sha256(chunk).
+func provenChunkRange(root []byte, offset, dataSize int, path, chunk []byte) (leaf provenLeaf, ok bool) {
 	id, left, right := root, 0, dataSize
+	turnedLeft, branched := false, false
 	for len(path) > arweaveLeafProofSize {
 		if len(path) < arweaveBranchProofSize {
-			return 0, 0, false
+			return provenLeaf{}, false
 		}
 		leftID, rightID, note := path[:arweaveHashSize], path[arweaveHashSize:2*arweaveHashSize], path[2*arweaveHashSize:arweaveBranchProofSize]
 		pivot, valid := merkleNote(note)
 		if !valid || !bytes.Equal(id, merkleNodeID(leftID, rightID, note)) {
-			return 0, 0, false
+			return provenLeaf{}, false
 		}
+		branched = true
 		if offset < pivot {
-			id, right = leftID, min(right, pivot)
+			id, right, turnedLeft = leftID, min(right, pivot), true
 		} else {
 			id, left = rightID, max(left, pivot)
 		}
 		path = path[arweaveBranchProofSize:]
 	}
 	if len(path) != arweaveLeafProofSize {
-		return 0, 0, false
+		return provenLeaf{}, false
 	}
 
 	dataHash, note := path[:arweaveHashSize], path[arweaveHashSize:]
 	leafEnd, valid := merkleNote(note)
 	if !valid || leafEnd != right || left >= right || !bytes.Equal(id, merkleNodeID(dataHash, note)) {
-		return 0, 0, false
+		return provenLeaf{}, false
 	}
 	sum := sha256.Sum256(chunk)
 	if !bytes.Equal(sum[:], dataHash) || len(chunk) != right-left {
-		return 0, 0, false
+		return provenLeaf{}, false
 	}
-	return left, right, true
+	return provenLeaf{start: left, end: right, rightMost: branched && !turnedLeft}, true
+}
+
+// nodeSplitRules applies the leaf checks of ar_merkle:validate_path
+// (ArweaveTeam/arweave 18d402c, ar_merkle.erl L131-L195) to a proven leaf of
+// a transaction that is not rebased. Both rulesets also require the leaf to
+// be at most 256 KiB.
+//
+// strict_data_split_ruleset: a full chunk starts on a 256 KiB boundary; the
+// last chunk ends off a boundary and starts no later than the last boundary
+// before its end; any other chunk starts on a boundary with more than 256 KiB
+// and less than 512 KiB of the data left.
+//
+// offset_rebase_support_ruleset, which a node applies to new transactions:
+// the right-most chunk starts on a boundary or reaches exactly one byte or
+// more into the next 256 KiB bucket without ending on a boundary; any other
+// chunk starts on a boundary.
+func nodeSplitRules(leaf provenLeaf, dataSize int) (strict, rebase bool) {
+	const size = arweaveMaxChunkSize
+	if leaf.end-leaf.start > size {
+		return false, false
+	}
+	switch {
+	case leaf.end-leaf.start == size:
+		strict = leaf.start%size == 0
+	case leaf.end == dataSize:
+		strict = leaf.end%size > 0 && leaf.start <= leaf.end/size*size
+	default:
+		rest := dataSize - leaf.start
+		strict = leaf.start%size == 0 && rest > size && rest < 2*size
+	}
+	if leaf.rightMost {
+		rebase = leaf.start%size == 0 || (leaf.start/size+1 == leaf.end/size && leaf.end%size != 0)
+	} else {
+		rebase = leaf.start%size == 0
+	}
+	return strict, rebase
 }
 
 // merkleNodeID hashes each part and then the concatenation of those hashes.
@@ -504,8 +557,9 @@ func merkleNote(note []byte) (int, bool) {
 }
 
 // canonicalChunkRanges is the arweave-js chunkData split: 256 KiB chunks,
-// except that a remainder below 32 KiB is balanced with the chunk before it.
-// A trailing empty chunk is part of the Merkle tree but is never posted.
+// except that a remainder below 32 KiB is balanced with the chunk before it,
+// the larger half first. A trailing empty chunk is part of the Merkle tree
+// but is never posted. goar puts the larger half last; a node accepts both.
 func canonicalChunkRanges(dataSize int) [][2]int {
 	var ranges [][2]int
 	cursor, rest := 0, dataSize

@@ -15,8 +15,9 @@ import (
 
 const (
 	arweaveGateway = "https://arweave.net"
-	// committedUploadTimeout bounds an upload after its signed transaction is
-	// sent. A node drops a pending data root after about 30 minutes, so
+	// committedUploadTimeout bounds an upload from the moment it starts
+	// sending its signed transaction, including the retries of its chunks.
+	// A node drops a pending data root 30 minutes after it first sees it, so
 	// chunks that are still unsent by then may no longer be accepted.
 	committedUploadTimeout = 30 * time.Minute
 )
@@ -58,12 +59,15 @@ func newArdrive(walletPath, gatewayURL string) *Ardrive {
 // The ID means the gateway accepted the transaction and every chunk, not
 // that the transaction is confirmed on chain.
 //
-// Canceling ctx stops the upload until its signed transaction is sent.
-// Sending it commits the reward, which is spent once the transaction is
-// mined whether or not its data arrives, so from then on Upload finishes the
-// chunks under a context that ignores ctx's cancellation and deadline and is
-// bounded by committedUploadTimeout instead. Each gateway request has its own
-// timeout, and transient gateway failures are retried.
+// Canceling ctx stops the upload only until Upload starts sending its signed
+// transaction. The gateway may accept that header even if its reply is lost,
+// and an accepted header commits the reward, which is spent once the
+// transaction is mined whether or not its data arrives. So from the first
+// POST /tx on, Upload ignores ctx's cancellation and deadline and is bounded
+// by committedUploadTimeout instead. Each gateway request has its own
+// timeout. Transient failures are retried a few times, except that a chunk
+// is retried until committedUploadTimeout, because a node may not know the
+// transaction yet.
 func (a *Ardrive) Upload(ctx context.Context,
 	data []byte, opts ...UploadOption) (fileID string, err error) {
 	if a.signer == nil {
@@ -106,8 +110,8 @@ func (a *Ardrive) send(ctx context.Context, data []byte, tags []schema.Tag) (str
 		return "", errors.Wrap(err, "upload canceled before the transaction was sent")
 	}
 
-	// Past this point the reward is committed: finish the upload even if the
-	// caller stops waiting, within its own bound.
+	// From the first POST /tx on, the reward may be committed: finish the
+	// upload even if the caller stops waiting, within its own bound.
 	commitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.commitTimeout)
 	defer cancel()
 

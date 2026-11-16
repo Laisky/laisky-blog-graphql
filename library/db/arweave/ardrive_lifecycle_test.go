@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -249,4 +250,86 @@ func TestArdriveUploadRejectsInvalidGatewayQuotes(t *testing.T) {
 			require.Zero(t, gw.txCount())
 		})
 	}
+}
+
+// TestArdriveUploadDoesNotFollowUploadRedirects: a redirected POST is not an
+// accepted POST. Go's client would turn a 301, 302 or 303 into a GET of the
+// Location, and a 200 there would be mistaken for an accepted transaction or
+// chunk. The 3xx itself must reach the classifier, and the Location must not
+// be requested.
+func TestArdriveUploadDoesNotFollowUploadRedirects(t *testing.T) {
+	walletPath, _ := writeTestWallet(t)
+	for _, tc := range []struct {
+		name   string
+		route  string
+		status int
+	}{
+		{name: "transaction moved permanently", route: routeTx, status: http.StatusMovedPermanently},
+		{name: "transaction found", route: routeTx, status: http.StatusFound},
+		{name: "transaction temporary redirect", route: routeTx, status: http.StatusTemporaryRedirect},
+		{name: "chunk found", route: routeChunk, status: http.StatusFound},
+		// A node's own 303 to a chunk carries no Location; one that does is a redirect.
+		{name: "chunk see other", route: routeChunk, status: http.StatusSeeOther},
+		{name: "chunk permanent redirect", route: routeChunk, status: http.StatusPermanentRedirect},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gw := newFakeGateway(t)
+			// The Location answers 200 to a GET, and also to a re-sent POST.
+			gw.failEvery(tc.route, gatewayFault{status: tc.status, location: "/tx_anchor"})
+			payload := randomPayload(t, 300<<10)
+
+			r := awaitUpload(t, startUpload(context.Background(), newTestArdrive(t, walletPath, gw.url), payload))
+			require.ErrorContains(t, r.err, strconv.Itoa(tc.status), "the redirect status must be reported")
+			require.Empty(t, r.id)
+			require.Equal(t, 1, gw.hitCount(routeAnchor), "the redirect target must not be requested")
+			require.Equal(t, 1, gw.hitCount(tc.route), "a redirect is a permanent answer, not a transient one")
+			if tc.route == routeTx {
+				require.Zero(t, gw.hitCount(routeChunk), "chunks must not follow a transaction that was not accepted")
+			}
+		})
+	}
+}
+
+// TestArdriveUploadKeepsRetryingCommittedChunks: a node can answer
+// data_root_not_found for a while after the transaction header is accepted,
+// until the header reaches it. The reward is already committed, so a chunk
+// keeps being retried for the whole committed-phase bound instead of being
+// abandoned after the per-request attempt limit.
+func TestArdriveUploadKeepsRetryingCommittedChunks(t *testing.T) {
+	walletPath, pub := writeTestWallet(t)
+	gw := newFakeGateway(t)
+	a := newTestArdrive(t, walletPath, gw.url)
+	transient := 3 * a.gateway.maxAttempts
+	for n := 2; n < 2+transient; n++ {
+		gw.failRequest(routeChunk, n, gatewayFault{status: http.StatusBadRequest, body: `{"error":"data_root_not_found"}`})
+	}
+	payload := randomPayload(t, 600<<10)
+
+	r := awaitUpload(t, startUpload(context.Background(), a, payload))
+	require.NoError(t, r.err)
+	tx := gw.onlyTx(t)
+	require.Equal(t, tx.ID, r.id)
+	require.Equal(t, payload, gw.deliveredData(t, tx))
+	require.Equal(t, 3+transient, gw.hitCount(routeChunk))
+	require.NoError(t, verifyArweaveSignature(t, tx, pub))
+}
+
+// TestArdriveUploadBoundsCommittedRetries: committed retries end at the
+// committed-phase bound, and the error names both the transaction and the
+// last gateway answer, so an operator can finish or reconcile it.
+func TestArdriveUploadBoundsCommittedRetries(t *testing.T) {
+	walletPath, _ := writeTestWallet(t)
+	gw := newFakeGateway(t)
+	gw.failEvery(routeChunk, gatewayFault{status: http.StatusBadRequest, body: `{"error":"data_root_not_found"}`})
+	a := newTestArdrive(t, walletPath, gw.url)
+	setCommitTimeout(a, 300*time.Millisecond)
+
+	started := time.Now()
+	r := awaitUpload(t, startUpload(context.Background(), a, randomPayload(t, 300<<10)))
+	require.ErrorIs(t, r.err, context.DeadlineExceeded)
+	require.ErrorContains(t, r.err, gw.onlyTx(t).ID)
+	require.ErrorContains(t, r.err, "data_root_not_found", "the last gateway answer explains why the upload is incomplete")
+	require.Empty(t, r.id)
+	require.Greater(t, gw.hitCount(routeChunk), a.gateway.maxAttempts, "committed chunks outlast the per-request attempt limit")
+	require.Less(t, time.Since(started), uploadWatchdog/2)
 }

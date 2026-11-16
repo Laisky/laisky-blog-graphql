@@ -76,13 +76,17 @@ func TestArdriveUploadGzipWithContentType(t *testing.T) {
 // TestArdriveUploadChunksPassNodeValidation covers the chunk boundaries a node
 // treats specially. Every posted chunk must carry a Merkle proof that the fake
 // gateway verifies against the signed data root, at its inclusive end offset,
-// and the chunks must follow the canonical split.
+// and the split must pass the node's split rules.
 func TestArdriveUploadChunksPassNodeValidation(t *testing.T) {
 	walletPath, pub := writeTestWallet(t)
 	for _, tc := range []struct {
 		name   string
 		size   int
 		chunks [][2]int
+		// goarSplit marks a layout where goar puts the larger half of a
+		// balanced remainder last and arweave-js puts it first. The node
+		// accepts both (see TestFakeGatewayEnforcesNodeSplitRules).
+		goarSplit bool
 	}{
 		{name: "one byte", size: 1, chunks: [][2]int{{0, 1}}},
 		{name: "exactly one chunk", size: 256 << 10, chunks: [][2]int{{0, 256 << 10}}},
@@ -95,9 +99,20 @@ func TestArdriveUploadChunksPassNodeValidation(t *testing.T) {
 			name: "three chunks", size: 600 << 10,
 			chunks: [][2]int{{0, 256 << 10}, {256 << 10, 512 << 10}, {512 << 10, 600 << 10}},
 		},
+		{name: "odd balanced remainder", size: 256<<10 + 1, chunks: [][2]int{{0, 131072}, {131072, 262145}}, goarSplit: true},
+		{name: "largest balanced remainder", size: 288<<10 - 1, chunks: [][2]int{{0, 147455}, {147455, 294911}}, goarSplit: true},
+		{name: "smallest unbalanced remainder", size: 288 << 10, chunks: [][2]int{{0, 256 << 10}, {256 << 10, 288 << 10}}},
+		{
+			name: "odd balanced remainder after full chunks", size: 768<<10 + 1, goarSplit: true,
+			chunks: [][2]int{{0, 256 << 10}, {256 << 10, 512 << 10}, {512 << 10, 655360}, {655360, 786433}},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.chunks, canonicalChunkRanges(tc.size), "test table must match the canonical split")
+			if tc.goarSplit {
+				require.NotEqual(t, tc.chunks, canonicalChunkRanges(tc.size), "goar's split now matches arweave-js; drop goarSplit")
+			} else {
+				require.Equal(t, tc.chunks, canonicalChunkRanges(tc.size), "test table must match the arweave-js split")
+			}
 			gw := newFakeGateway(t)
 			payload := make([]byte, tc.size)
 			_, err := rand.Read(payload)

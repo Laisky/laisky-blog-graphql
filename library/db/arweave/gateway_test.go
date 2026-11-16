@@ -46,16 +46,29 @@ func TestGatewayResponseClassification(t *testing.T) {
 	}
 }
 
-// TestGatewayRetryDelay checks capped exponential backoff and Retry-After.
+// TestGatewayRetryDelay checks capped exponential backoff with equal jitter,
+// and Retry-After.
 func TestGatewayRetryDelay(t *testing.T) {
 	g := newGatewayClient("https://gateway.example")
-	require.Equal(t, time.Second, g.retryDelay(1, 0))
-	require.Equal(t, 2*time.Second, g.retryDelay(2, 0))
-	require.Equal(t, 16*time.Second, g.retryDelay(5, 0))
-	require.Equal(t, gatewayRetryMaxDelay, g.retryDelay(6, 0))
-	require.Equal(t, gatewayRetryMaxDelay, g.retryDelay(200, 0), "large attempts must not overflow")
-	require.Equal(t, 10*time.Second, g.retryDelay(1, 10*time.Second), "a longer Retry-After is honored")
-	require.Equal(t, 2*time.Second, g.retryDelay(2, time.Second), "a shorter Retry-After does not cut the backoff")
+	inHalf := func(t *testing.T, backoff time.Duration, attempt int, retryAfter time.Duration, msg string) {
+		t.Helper()
+		seen := map[time.Duration]bool{}
+		for range 200 {
+			d := g.retryDelay(attempt, retryAfter)
+			require.GreaterOrEqual(t, d, backoff/2, msg)
+			require.LessOrEqual(t, d, backoff, msg)
+			seen[d] = true
+		}
+		require.Greater(t, len(seen), 1, "%s: the delay must be jittered", msg)
+	}
+	inHalf(t, time.Second, 1, 0, "first retry")
+	inHalf(t, 2*time.Second, 2, 0, "second retry")
+	inHalf(t, 16*time.Second, 5, 0, "fifth retry")
+	inHalf(t, gatewayRetryMaxDelay, 6, 0, "capped")
+	inHalf(t, gatewayRetryMaxDelay, 200, 0, "large attempts must not overflow")
+	inHalf(t, 2*time.Second, 2, 500*time.Millisecond, "a shorter Retry-After does not cut the backoff")
+
+	require.Equal(t, 10*time.Second, g.retryDelay(1, 10*time.Second), "a longer Retry-After is honored exactly")
 	require.Equal(t, gatewayRetryMaxDelay, g.retryDelay(1, time.Hour), "Retry-After is capped")
 
 	require.Equal(t, 5*time.Second, parseRetryAfter(" 5 "))
