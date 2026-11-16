@@ -25,6 +25,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/library/ssoredirect"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 	"github.com/Laisky/laisky-blog-graphql/library/clientip"
+	"github.com/Laisky/laisky-blog-graphql/library/httpclient"
 )
 
 const (
@@ -479,6 +480,15 @@ func fetchGitHubOAuthUser(ctx context.Context,
 	config *oauth2.Config,
 	code string,
 ) (*githubOAuthUser, string, error) {
+	// The code exchange carries the OAuth client secret and every API call
+	// the user's token, which the oauth2 transport sets again on each hop,
+	// cross-domain included, so neither may follow a redirect: a redirect
+	// answer fails like any other non-2xx status.
+	base, _ := ctx.Value(oauth2.HTTPClient).(*http.Client)
+	if base == nil {
+		base = http.DefaultClient
+	}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, httpclient.WithoutRedirects(base))
 	token, err := config.Exchange(ctx, strings.TrimSpace(code))
 	if err != nil {
 		return nil, "", errors.Wrap(err, "exchange github oauth code")
@@ -561,7 +571,7 @@ func doGitHubJSONRequest(httpClient *http.Client, req *http.Request, out any) er
 		httpClient = githubOAuthHTTPClient
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := httpclient.WithoutRedirects(httpClient).Do(req)
 	if err != nil {
 		return errors.Wrap(err, "send github api request")
 	}

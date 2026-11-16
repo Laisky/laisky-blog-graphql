@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 
 	errors "github.com/Laisky/errors/v2"
+
+	"github.com/Laisky/laisky-blog-graphql/library/httpclient"
 )
 
 const mcpSessionHeader = "Mcp-Session-Id"
@@ -146,7 +148,8 @@ func (c *MCPClient) Close(ctx context.Context) error {
 		return errors.Wrap(err, "construct MCP close request")
 	}
 	c.applyHeaders(req, sessionID)
-	resp, err := c.httpClient.Do(req)
+	// Requests carry the Authorization credential: never follow a redirect.
+	resp, err := httpclient.WithoutRedirects(c.httpClient).Do(req)
 	if err != nil {
 		return errors.Wrap(err, "close MCP session")
 	}
@@ -214,7 +217,8 @@ func (c *MCPClient) rpc(ctx context.Context, request rpcRequest) (json.RawMessag
 		return nil, errors.New("MCP client is closed")
 	}
 	c.applyHeaders(httpRequest, sessionID)
-	response, err := c.httpClient.Do(httpRequest)
+	// Requests carry the Authorization credential: never follow a redirect.
+	response, err := httpclient.WithoutRedirects(c.httpClient).Do(httpRequest)
 	if err != nil {
 		return nil, errors.Wrap(err, "send MCP request")
 	}

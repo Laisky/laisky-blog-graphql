@@ -20,6 +20,8 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/minio/minio-go/v7/pkg/lifecycle"
 	"github.com/minio/minio-go/v7/pkg/signer"
+
+	"github.com/Laisky/laisky-blog-graphql/library/httpclient"
 )
 
 // MinIOConfig holds the connection parameters for the MinIO object store.
@@ -429,7 +431,9 @@ func (m *MinIOClient) rawBucketLifecycle(ctx context.Context, client *minio.Clie
 	}
 	req.Header.Set("X-Amz-Content-Sha256", emptyPayloadSHA256)
 	signed := signer.SignV4(*req, m.cfg.AccessKey, m.cfg.SecretKey, "", location)
-	resp, err := lifecycleHTTPClient.Do(signed)
+	// The signed request carries the access key id and a replayable
+	// signature: a redirect answer fails below instead of being followed.
+	resp, err := httpclient.WithoutRedirects(lifecycleHTTPClient).Do(signed)
 	if err != nil {
 		return nil, errors.Wrap(err, "storage: get bucket lifecycle")
 	}
