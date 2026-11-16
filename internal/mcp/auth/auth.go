@@ -53,7 +53,10 @@ func (a *Context) Verified() bool {
 func parseAuthorizationHeader(header string) (*Context, error) {
 	trimmedHeader := strings.TrimSpace(header)
 	if trimmedHeader == "" {
-		return nil, ErrMissingAuthorization
+		return nil, errors.WithStack(ErrMissingAuthorization)
+	}
+	if len(trimmedHeader) > maxAuthorizationHeaderLength {
+		return nil, errors.Wrap(ErrInvalidAuthorization, "authorization header exceeds the maximum length")
 	}
 
 	raw := library.StripBearerPrefix(trimmedHeader)
@@ -70,6 +73,7 @@ func parseAuthorizationHeader(header string) (*Context, error) {
 		return nil, ErrInvalidAuthorization
 	}
 
+	// DeriveFromAPIKey refuses an oversized key before hashing it.
 	apiKey := normalizeAuthorizationToken(tokenFields[0])
 
 	derived, err := DeriveFromAPIKey(apiKey)
@@ -135,12 +139,21 @@ func looksLikeAPIKey(token string) bool {
 	return false
 }
 
+// maxAuthorizationHeaderLength bounds a whole Authorization header before it
+// is split: the scheme, a legacy identity, a key of MaxAPIKeyLength and
+// some whitespace fit easily.
+const maxAuthorizationHeaderLength = 2048
+
 // DeriveFromAPIKey builds the canonical, unverified tenant identifiers of a raw API key.
 // The result is never honored by FromContext; use an Authenticator to authenticate a caller.
+// A key longer than MaxAPIKeyLength is refused before it is hashed.
 func DeriveFromAPIKey(apiKey string) (*Context, error) {
 	token := strings.TrimSpace(apiKey)
 	if token == "" {
-		return nil, ErrInvalidAuthorization
+		return nil, errors.WithStack(ErrInvalidAuthorization)
+	}
+	if len(token) > MaxAPIKeyLength {
+		return nil, errors.Wrap(ErrInvalidAuthorization, "api key exceeds the maximum length")
 	}
 
 	hashed := sha256.Sum256([]byte(token))

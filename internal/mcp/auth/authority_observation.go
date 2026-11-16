@@ -78,20 +78,9 @@ func (a *Authenticator) BeginAuthorityCall(baseURL, apiKey string) func(accepted
 	}
 }
 
-// refreshTrust moves a known key's last acceptance forward to acceptedAt.
-// It runs under the verdict lock, so it can never resurrect a key whose
-// rejection was recorded in the meantime (a rejection removes the entry).
+// refreshTrust moves a known key's last acceptance forward to acceptedAt
+// (verdictStore.refresh), under the verdict lock, so it can never resurrect
+// a key whose rejection was recorded in the meantime.
 func (a *Authenticator) refreshTrust(key string, acceptedAt time.Time) {
-	a.verdicts.Lock()
-	defer a.verdicts.Unlock()
-
-	now := a.opts.Now()
-	entry, known := a.positive.get(key, now)
-	if !known || !acceptedAt.After(entry.validatedAt) {
-		return
-	}
-	if _, rejected := a.negative.get(key, now); rejected {
-		return
-	}
-	a.positive.put(key, positiveEntry{validatedAt: acceptedAt}, a.positiveExpiry(acceptedAt))
+	a.verdicts.refresh(key, acceptedAt)
 }

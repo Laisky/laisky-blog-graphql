@@ -2,6 +2,7 @@ package auth
 
 import (
 	"math"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -17,8 +18,10 @@ import (
 // validationConfigPrefix is the settings namespace of API key validation.
 const validationConfigPrefix = "settings.mcp.auth.validation."
 
-// legacyBalanceURLKey is the older balance endpoint override, honored as the
-// one-api origin when settings.mcp.auth.validation.base_url is unset.
+// legacyBalanceURLKey is the older balance endpoint override. It named an
+// exact endpoint URL, so it is honored verbatim (ValidationSettings.Endpoint)
+// when settings.mcp.auth.validation.base_url is unset; startup logs a
+// deprecation WARN.
 const legacyBalanceURLKey = "settings.oneapi.balance_url"
 
 // Validation bounds that keep a misconfiguration from disabling revocation or flooding one-api.
@@ -44,6 +47,12 @@ const (
 	maxValidationRate = 1000
 	// maxValidationBurst bounds every burst.
 	maxValidationBurst = 100_000
+	// maxGateways bounds the gateway list, which every budgeted call scans.
+	maxGateways = 64
+	// minGatewayPrefixIPv4 and minGatewayPrefixIPv6 refuse a gateway range
+	// so wide that it would merge unrelated clients into one source.
+	minGatewayPrefixIPv4 = 16
+	minGatewayPrefixIPv6 = 32
 )
 
 // DefaultOneAPIRateLimit is one-api's default GLOBAL_API_RATE_LIMIT: calls
@@ -56,6 +65,11 @@ type ValidationSettings struct {
 	Enabled bool
 	// BaseURL is the one-api origin; empty uses oneapi.BillingAPI.
 	BaseURL string
+	// Endpoint is an exact validation URL from the deprecated
+	// settings.oneapi.balance_url, used verbatim when BaseURL is unset. A URL
+	// that does not end in OneAPITokenBalancePath names no one-api base, so
+	// consumes cannot refresh verdicts (consumes_refresh_verdicts=false).
+	Endpoint string
 	// Timeout bounds one upstream validation.
 	Timeout time.Duration
 	// PositiveTTL is how long an accepted key is trusted (revocation lag).
@@ -82,11 +96,24 @@ type ValidationSettings struct {
 	// for keys one-api accepted before; 0 disables the reserve.
 	RevalidationRatePerSecond float64
 	RevalidationBurst         int
-	// OneAPIRateLimit is one-api's per-IP REST limit for this server's egress
-	// address, in calls per OneAPIRateLimitWindow (GLOBAL_API_RATE_LIMIT);
-	// 0 means the egress is exempt. The gate may not be configured to start
-	// more calls than this, because paid-tool consumes share the limit.
+	// OneAPIRateLimit is one-api's per-IP REST limit for this process's
+	// share of its egress address, in calls per OneAPIRateLimitWindow
+	// (GLOBAL_API_RATE_LIMIT); 0 means the egress is exempt. The gate may not
+	// be configured to start more calls than this, and at run time it starts
+	// none once this process's one-api REST calls (consumes included, see
+	// oneapi.CallLedger) reach it within the window.
 	OneAPIRateLimit int
+	// Gateways gives client address ranges their own per-source budget
+	// (settings key "gateways": a list of {cidr, rate_per_second, burst}).
+	Gateways []GatewaySetting
+}
+
+// GatewaySetting is one configured gateway range, as written in settings.
+// ParseGateways validates it into a GatewaySource.
+type GatewaySetting struct {
+	CIDR          string
+	RatePerSecond float64
+	Burst         int
 }
 
 // DefaultValidationSettings returns the production defaults: one-api validation enabled.
@@ -131,9 +158,10 @@ func LoadValidationSettings(get func(string) any) ValidationSettings {
 		settings.BaseURL = strings.TrimSpace(raw)
 	}
 	if settings.BaseURL == "" {
-		// Honor the pre-existing balance-proxy override for self-hosted one-api.
+		// Honor the pre-existing balance-proxy override for self-hosted
+		// one-api exactly as it was used: as the endpoint URL itself.
 		if raw, ok := get(legacyBalanceURLKey).(string); ok {
-			settings.BaseURL = strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(raw), "/"), OneAPITokenBalancePath)
+			settings.Endpoint = strings.TrimSpace(raw)
 		}
 	}
 	settings.Timeout = clampDuration(durationValue(value("timeout"), settings.Timeout), minTimeout, maxTimeout)
@@ -157,7 +185,112 @@ func LoadValidationSettings(get func(string) any) ValidationSettings {
 	settings.RevalidationRatePerSecond = max(0, floatValue(value("revalidation_rate_per_second"), settings.RevalidationRatePerSecond))
 	settings.RevalidationBurst = max(1, intValue(value("revalidation_burst"), settings.RevalidationBurst))
 	settings.OneAPIRateLimit = intValue(value("oneapi_rate_limit"), settings.OneAPIRateLimit)
+	settings.Gateways = gatewaySettings(value("gateways"))
 	return settings
+}
+
+// gatewaySettings reads the gateway list as config loaders deliver it: a
+// list of maps. Entries of another shape become an empty setting, which
+// ParseGateways refuses, so a typo fails startup instead of vanishing.
+func gatewaySettings(raw any) []GatewaySetting {
+	list, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	gateways := make([]GatewaySetting, 0, len(list))
+	for _, item := range list {
+		var fields map[string]any
+		switch typed := item.(type) {
+		case map[string]any:
+			fields = typed
+		case map[any]any:
+			fields = make(map[string]any, len(typed))
+			for key, value := range typed {
+				if name, ok := key.(string); ok {
+					fields[name] = value
+				}
+			}
+		}
+		cidr, _ := fields["cidr"].(string)
+		gateways = append(gateways, GatewaySetting{
+			CIDR:          strings.TrimSpace(cidr),
+			RatePerSecond: floatValue(fields["rate_per_second"], 0),
+			Burst:         intValue(fields["burst"], 0),
+		})
+	}
+	return gateways
+}
+
+// ParseGateways validates the configured gateways against the global
+// budget: each range is a valid prefix (a bare address is one host) no wider
+// than /16 for IPv4 or /32 for IPv6, ranges do not overlap, and each budget
+// is positive and within upstream_rate_per_second and upstream_burst, so a
+// gateway can never spend more than the global budget all sources share.
+func ParseGateways(s ValidationSettings) ([]GatewaySource, error) {
+	if len(s.Gateways) > maxGateways {
+		return nil, errors.Errorf("%sgateways lists %d ranges; at most %d are allowed", validationConfigPrefix, len(s.Gateways), maxGateways)
+	}
+	var errs []error
+	parsed := make([]GatewaySource, 0, len(s.Gateways))
+	for index, gateway := range s.Gateways {
+		refuse := func(format string, args ...any) {
+			errs = append(errs, errors.Errorf("%sgateways[%d] "+format, append([]any{validationConfigPrefix, index}, args...)...))
+		}
+		prefix, err := parseGatewayPrefix(gateway.CIDR)
+		if err != nil {
+			refuse("cidr=%q: %v", gateway.CIDR, err)
+			continue
+		}
+		switch {
+		case math.IsNaN(gateway.RatePerSecond) || gateway.RatePerSecond <= 0 || gateway.RatePerSecond > s.UpstreamRatePerSecond:
+			refuse("rate_per_second=%v must be positive and at most upstream_rate_per_second=%v", gateway.RatePerSecond, s.UpstreamRatePerSecond)
+			continue
+		case gateway.Burst < 1 || gateway.Burst > s.UpstreamBurst:
+			refuse("burst=%d must be between 1 and upstream_burst=%d", gateway.Burst, s.UpstreamBurst)
+			continue
+		}
+		for _, previous := range parsed {
+			if previous.Prefix.Overlaps(prefix) {
+				refuse("cidr=%s overlaps %s", prefix, previous.Prefix)
+			}
+		}
+		parsed = append(parsed, GatewaySource{Prefix: prefix, RatePerSecond: gateway.RatePerSecond, Burst: gateway.Burst})
+	}
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+// parseGatewayPrefix parses a CIDR or a bare address (one host) and refuses
+// ranges wider than the minimum prefix lengths.
+func parseGatewayPrefix(raw string) (netip.Prefix, error) {
+	if raw == "" {
+		return netip.Prefix{}, errors.New("a cidr is required")
+	}
+	if !strings.Contains(raw, "/") {
+		addr, err := netip.ParseAddr(raw)
+		if err != nil {
+			return netip.Prefix{}, errors.Wrap(err, "parse address")
+		}
+		addr = addr.Unmap()
+		return netip.PrefixFrom(addr, addr.BitLen()), nil
+	}
+	prefix, err := netip.ParsePrefix(raw)
+	if err != nil {
+		return netip.Prefix{}, errors.Wrap(err, "parse prefix")
+	}
+	minBits := minGatewayPrefixIPv6
+	if prefix.Addr().Unmap().Is4() {
+		minBits = minGatewayPrefixIPv4
+		if prefix.Addr().Is4In6() {
+			prefix = netip.PrefixFrom(prefix.Addr().Unmap(), max(prefix.Bits()-96, 0))
+		}
+	}
+	if prefix.Bits() < minBits {
+		return netip.Prefix{}, errors.Errorf("prefix /%d is wider than /%d", prefix.Bits(), minBits)
+	}
+	return prefix.Masked(), nil
 }
 
 // CheckValidationBounds refuses settings that would defeat the controls they
@@ -175,6 +308,12 @@ func CheckValidationBounds(s ValidationSettings) error {
 	var errs []error
 	refuse := func(format string, args ...any) {
 		errs = append(errs, errors.Errorf(validationConfigPrefix+format, args...))
+	}
+	if _, err := s.newValidator(); err != nil {
+		errs = append(errs, err)
+	}
+	if _, err := ParseGateways(s); err != nil {
+		errs = append(errs, err)
 	}
 	for _, bound := range []struct {
 		key   string
@@ -227,7 +366,7 @@ func CheckValidationBounds(s ValidationSettings) error {
 
 // OneAPIRateLimitWindow is the window of one-api's per-IP REST rate limit
 // (GLOBAL_API_RATE_LIMIT, by default 480 calls per 3 minutes).
-const OneAPIRateLimitWindow = 3 * time.Minute
+const OneAPIRateLimitWindow = oneapi.RateLimitWindow
 
 // ValidationCapacity is what the upstream budgets of one process sustain.
 // Keys whose tool calls keep being accepted by one-api's consume need no
@@ -272,10 +411,53 @@ func CheckValidationMode(settings ValidationSettings, debug bool) error {
 		"run with --debug or enable one-api validation", validationConfigPrefix)
 }
 
+// newValidator builds the one-api validator these settings select: the
+// exact legacy Endpoint, else BaseURL (or oneapi.BillingAPI) plus
+// OneAPITokenBalancePath.
+func (s ValidationSettings) newValidator() (*OneAPITokenValidator, error) {
+	if s.BaseURL == "" && s.Endpoint != "" {
+		validator, err := NewOneAPITokenValidatorAt(s.Endpoint, nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "%s", legacyBalanceURLKey)
+		}
+		return validator, nil
+	}
+	baseURL := s.BaseURL
+	if baseURL == "" {
+		baseURL = oneapi.BillingAPI
+	}
+	validator, err := NewOneAPITokenValidator(baseURL, nil)
+	if err != nil {
+		return nil, errors.Wrapf(err, "%sbase_url", validationConfigPrefix)
+	}
+	return validator, nil
+}
+
 // NewAuthenticatorFromSettings builds the production Authenticator: the one-api
 // validator when enabled, otherwise an explicit accept-all opt-out logged at WARN.
+// The enabled gate admits against the process-wide oneapi.DefaultCallLedger,
+// which every consume also records into.
 func NewAuthenticatorFromSettings(settings ValidationSettings, logger logSDK.Logger) (*Authenticator, error) {
+	if !settings.Enabled {
+		if logger != nil {
+			logger.Warn("MCP API key validation is DISABLED (settings.mcp.auth.validation.enabled=false); " +
+				"any non-empty bearer becomes a tenant. Never use this outside local development.")
+		}
+		authMetrics.oneapiRateLimit.Set(0)
+		authenticator, err := NewAuthenticator(InsecureAcceptAllValidator{}, UnmeteredOptions("disabled"))
+		return authenticator, errors.WithStack(err)
+	}
+
+	gateways, err := ParseGateways(settings)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	validator, err := settings.newValidator()
+	if err != nil {
+		return nil, errors.Wrap(err, "build one-api api key validator")
+	}
 	options := AuthenticatorOptions{
+		Name:                      "oneapi",
 		PositiveTTL:               settings.PositiveTTL,
 		NegativeTTL:               settings.NegativeTTL,
 		Timeout:                   settings.Timeout,
@@ -289,30 +471,21 @@ func NewAuthenticatorFromSettings(settings ValidationSettings, logger logSDK.Log
 		StaleGrace:                disabledIfZero(settings.StaleGrace),
 		RevalidationRatePerSecond: disabledIfZeroRate(settings.RevalidationRatePerSecond),
 		RevalidationBurst:         settings.RevalidationBurst,
+		Gateways:                  gateways,
+		Ledger:                    oneapi.DefaultCallLedger(),
+		OneAPIRateLimit:           settings.OneAPIRateLimit,
 	}
-	if !settings.Enabled {
-		if logger != nil {
-			logger.Warn("MCP API key validation is DISABLED (settings.mcp.auth.validation.enabled=false); " +
-				"any non-empty bearer becomes a tenant. Never use this outside local development.")
-		}
-		authenticator, err := NewAuthenticator(InsecureAcceptAllValidator{}, UnmeteredOptions("disabled"))
-		return authenticator, errors.WithStack(err)
-	}
-
-	baseURL := settings.BaseURL
-	if baseURL == "" {
-		baseURL = oneapi.BillingAPI
-	}
-	validator, err := NewOneAPITokenValidator(baseURL, nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "build one-api api key validator")
-	}
-	options.Name = "oneapi"
 	authenticator, err := NewAuthenticator(validator, options)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	authMetrics.oneapiRateLimit.Set(float64(settings.OneAPIRateLimit))
 	if logger != nil {
+		if settings.BaseURL == "" && settings.Endpoint != "" {
+			logger.Warn("settings.oneapi.balance_url is deprecated; set settings.mcp.auth.validation.base_url to the one-api origin instead",
+				zap.String("endpoint", validator.Endpoint()),
+				zap.Bool("names_oneapi_base", validator.AuthorityBaseURL() != ""))
+		}
 		capacity := settings.Capacity()
 		logger.Info("MCP API key validation enabled",
 			zap.String("validator", options.Name),
@@ -325,6 +498,8 @@ func NewAuthenticatorFromSettings(settings ValidationSettings, logger logSDK.Log
 			zap.Int("active_key_capacity", capacity.ActiveKeys),
 			zap.Int("active_key_capacity_under_flood", capacity.ActiveKeysUnderFlood),
 			zap.Int("max_oneapi_calls_per_3m", capacity.MaxCallsPerWindow),
+			zap.Int("oneapi_rate_limit", settings.OneAPIRateLimit),
+			zap.Int("gateways", len(gateways)),
 			zap.Bool("consumes_refresh_verdicts", authenticator.ObservesAuthority(oneapi.BillingAPI)),
 		)
 	}

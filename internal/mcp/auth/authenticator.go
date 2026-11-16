@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -10,10 +9,14 @@ import (
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	"github.com/Laisky/zap"
 	"golang.org/x/sync/singleflight"
+
+	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 )
 
-// MaxAPIKeyLength bounds a presented API key before hashing or any upstream call.
-// one-api keys, including a channel suffix, are far shorter.
+// MaxAPIKeyLength bounds a presented API key. parseAuthorizationHeader and
+// DeriveFromAPIKey refuse a longer key before hashing it, so no tenant
+// identifier, cache lookup or upstream call ever exists for it. one-api keys,
+// including a channel suffix, are far shorter.
 const MaxAPIKeyLength = 256
 
 // Validator decides whether an API key is an issued, currently usable credential.
@@ -73,6 +76,14 @@ type AuthenticatorOptions struct {
 	// for keys accepted before, which unknown-key traffic cannot spend.
 	RevalidationRatePerSecond float64
 	RevalidationBurst         int
+	// Gateways gives listed client address ranges their own per-source
+	// budget (see GatewaySource).
+	Gateways []GatewaySource
+	// Ledger counts this process's one-api REST calls; with OneAPIRateLimit
+	// above 0 the gate starts no call once the ledger holds that many within
+	// oneapi.RateLimitWindow. A nil Ledger does not bound.
+	Ledger          *oneapi.CallLedger
+	OneAPIRateLimit int
 	// Now overrides the clock in tests.
 	Now func() time.Time
 }
@@ -94,45 +105,32 @@ func UnmeteredOptions(name string) AuthenticatorOptions {
 	}
 }
 
-// Timing constants of the key caches.
-const (
-	// knownKeyRetention keeps a key "known" (eligible for the reserved
-	// revalidation budget) long after its trust period, independently of the
-	// stale grace window.
-	knownKeyRetention = 24 * time.Hour
-	// unavailableRetry spaces upstream retries of one known key after one-api
-	// failed for it, so an outage cannot spend the reserve on a single key.
-	unavailableRetry = 15 * time.Second
-	// balanceTTL is how long a balance answer is reused for the same key.
-	balanceTTL = 30 * time.Second
-)
-
-// positiveEntry records when one-api last accepted a key.
-type positiveEntry struct {
-	validatedAt time.Time
-	// retryAt delays the next upstream call after one-api failed for the key.
-	retryAt time.Time
-}
-
-// Authenticator is the single credential gate shared by every MCP entrypoint:
-// it parses a bearer, validates it with an authoritative Validator through the
-// UpstreamGate, and caches the verdict by key hash. Only its results satisfy
-// FromContext. It also serves one-api balance queries through the same gate.
+// Authenticator is the single credential gate shared by every entrypoint
+// that derives a tenant from an API key. It composes three parts with one
+// responsibility each:
+//
+//   - the verdict store (verdictStore) remembers what one-api answered per
+//     key hash and derives trust from it (fresh, expired, rejected);
+//   - the upstream gate (UpstreamGate) decides whether this server may start
+//     another one-api call now, per source, globally and within one-api's
+//     own per-IP window;
+//   - Authenticate applies the policy: cached verdicts first, then one
+//     coalesced upstream call, and a stale acceptance only when one-api
+//     itself gave no verdict.
+//
+// Only its results satisfy FromContext. Balance serves one-api balance
+// queries through the same store and gate.
 type Authenticator struct {
 	validator Validator
 	opts      AuthenticatorOptions
 	// authority is the canonical base URL of the validator's authority, or
-	// "" for validators that consult none (see BeginAuthorityCall).
+	// "" for validators that consult none or whose endpoint names no base
+	// (see BeginAuthorityCall).
 	authority string
-	// verdicts serializes verdict updates across the key caches, so an
-	// observed acceptance can never undo a concurrently recorded rejection.
-	verdicts sync.Mutex
-	positive *ttlCache[positiveEntry]
-	negative *ttlCache[struct{}]
-	balances *ttlCache[Balance]
-	flights  singleflight.Group
-	gate     *UpstreamGate
-	staleLog *LogSampler
+	verdicts  *verdictStore
+	flights   singleflight.Group
+	gate      *UpstreamGate
+	staleLog  *LogSampler
 }
 
 // NewAuthenticator builds an Authenticator around an authoritative validator.
@@ -149,9 +147,7 @@ func NewAuthenticator(validator Validator, opts AuthenticatorOptions) (*Authenti
 		validator: validator,
 		opts:      opts,
 		authority: authority,
-		positive:  newTTLCache[positiveEntry](opts.MaxEntries),
-		negative:  newTTLCache[struct{}](opts.MaxEntries),
-		balances:  newTTLCache[Balance](opts.MaxEntries),
+		verdicts:  newVerdictStore(opts),
 		gate:      newUpstreamGate(opts),
 		staleLog:  NewLogSampler(time.Minute),
 	}, nil
@@ -188,6 +184,7 @@ func normalizeOptions(opts AuthenticatorOptions) AuthenticatorOptions {
 	if opts.PerSourceRatePerSecond <= 0 {
 		opts.PerSourceRatePerSecond = defaults.PerSourceRatePerSecond
 	}
+	opts.OneAPIRateLimit = max(opts.OneAPIRateLimit, 0)
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
@@ -216,49 +213,80 @@ func (a *Authenticator) Validator() Validator {
 // Authenticate parses the Authorization header and returns a verified context
 // only when the credential authority accepts the key. It returns
 // ErrMissingAuthorization for an absent header, ErrInvalidAuthorization for a
-// malformed one, ErrCredentialRejected for a refused key, and
+// malformed or oversized one, ErrCredentialRejected for a refused key, and
 // ErrValidationUnavailable when no verdict can be obtained (with
 // ErrUpstreamThrottled when this server's own budget refused the call). A nil
 // receiver fails closed with ErrValidationUnavailable.
+//
+// A key one-api accepted before is served past its trust period only while
+// one-api itself gives no verdict (errAuthorityNoVerdict) and within
+// PositiveTTL+StaleGrace. Neither a refusal by this server's own budgets nor
+// a caller that stopped waiting is evidence of an outage, so neither extends
+// a key's life.
 func (a *Authenticator) Authenticate(ctx context.Context, header string) (*Context, error) {
 	candidate, err := a.parseCandidate(header)
 	if err != nil {
+		if IsUnavailable(err) {
+			observeUnavailable(err)
+		} else {
+			observeDecision(decisionInvalid)
+		}
 		return nil, errors.WithStack(err)
 	}
 
 	now := a.opts.Now()
-	entry, known := a.positive.get(candidate.APIKeyHash, now)
-	if known && now.Sub(entry.validatedAt) < a.opts.PositiveTTL {
+	trust := a.verdicts.trust(candidate.APIKeyHash, now)
+	switch {
+	case trust.level == trustFresh:
+		observeDecision(decisionAcceptedCache)
 		return markVerified(candidate), nil
-	}
-	if _, rejected := a.negative.get(candidate.APIKeyHash, now); rejected {
+	case trust.level == trustRejected:
+		observeDecision(decisionRejectedCache)
 		return nil, errors.WithStack(ErrCredentialRejected)
-	}
-	if known && now.Before(entry.retryAt) {
+	case trust.known() && now.Before(trust.entry.retryAt):
 		// one-api failed for this key moments ago; do not ask again yet.
-		return a.staleOr(ctx, candidate, entry, now,
+		return a.staleOr(ctx, candidate, trust.entry, now,
 			errors.Wrap(errors.Join(ErrValidationUnavailable, errAuthorityNoVerdict), "one-api was unavailable moments ago"))
 	}
 
 	class := callNewKey
-	if known {
+	if trust.known() {
 		class = callRevalidation
 	}
 	lookupErr := a.lookup(ctx, candidate, class)
 	switch {
 	case lookupErr == nil:
+		observeDecision(decisionAcceptedAuthority)
 		return markVerified(candidate), nil
-	case errors.Is(lookupErr, ErrCredentialRejected), errors.Is(lookupErr, ErrUpstreamThrottled), !known:
-		// A refusal by this server's own budget never grants stale-if-error.
+	case isCredentialRejection(lookupErr):
+		observeDecision(decisionRejectedAuthority)
+		return nil, errors.WithStack(lookupErr)
+	case !trust.known() || !isAuthorityFailure(lookupErr):
+		observeUnavailable(lookupErr)
 		return nil, errors.WithStack(lookupErr)
 	}
-	return a.staleOr(ctx, candidate, entry, a.opts.Now(), lookupErr)
+	return a.staleOr(ctx, candidate, trust.entry, a.opts.Now(), lookupErr)
+}
+
+// isCredentialRejection reports a definitive refusal by the authority.
+func isCredentialRejection(err error) bool {
+	return errors.Is(err, ErrCredentialRejected)
+}
+
+// isAuthorityFailure reports an unavailable verdict that one-api itself
+// caused, the only cause that may serve a stale acceptance. A refusal by this
+// server's budgets (ErrUpstreamThrottled) and a waiter whose own context
+// ended carry no errAuthorityNoVerdict.
+func isAuthorityFailure(err error) bool {
+	return errors.Is(err, errAuthorityNoVerdict) && !errors.Is(err, ErrUpstreamThrottled)
 }
 
 // staleOr serves a key one-api accepted within PositiveTTL+StaleGrace while
-// one-api itself is unavailable, and otherwise returns cause.
+// one-api itself is unavailable, and otherwise returns cause, which must be
+// an authority failure.
 func (a *Authenticator) staleOr(ctx context.Context, candidate *Context, entry positiveEntry, now time.Time, cause error) (*Context, error) {
-	if a.opts.StaleGrace <= 0 || now.Sub(entry.validatedAt) >= a.opts.PositiveTTL+a.opts.StaleGrace {
+	if !a.verdicts.withinStaleGrace(entry, now) {
+		observeUnavailable(cause)
 		return nil, errors.WithStack(cause)
 	}
 	logger := gmw.GetLogger(ctx)
@@ -268,18 +296,17 @@ func (a *Authenticator) staleOr(ctx context.Context, candidate *Context, entry p
 	} else {
 		logger.Debug("one-api unavailable; serving recent api key validation", zap.String("key_suffix", candidate.MaskedKey()))
 	}
+	observeDecision(decisionAcceptedStale)
 	return markVerified(candidate), nil
 }
 
-// parseCandidate parses a bearer header and bounds the key before any cache
-// lookup or upstream call. A nil receiver fails closed.
+// parseCandidate parses and bounds a bearer header (parseAuthorizationHeader
+// refuses an oversized key before hashing it) ahead of any cache lookup or
+// upstream call. A nil receiver fails closed.
 func (a *Authenticator) parseCandidate(header string) (*Context, error) {
 	candidate, err := parseAuthorizationHeader(header)
 	if err != nil {
 		return nil, errors.WithStack(err)
-	}
-	if len(candidate.APIKey) > MaxAPIKeyLength {
-		return nil, errors.Wrap(ErrInvalidAuthorization, "api key exceeds the maximum length")
 	}
 	if a == nil {
 		return nil, errors.Wrap(ErrValidationUnavailable, "no api key authenticator is installed")
@@ -296,8 +323,8 @@ func (a *Authenticator) lookup(ctx context.Context, candidate *Context, class ca
 }
 
 // coalesce runs fn once per flight key for all concurrent callers; a caller
-// whose ctx ends first stops waiting with ErrValidationUnavailable while the
-// shared call completes for the others.
+// whose ctx ends first stops waiting with ErrValidationUnavailable (no
+// authority failure) while the shared call completes for the others.
 func (a *Authenticator) coalesce(ctx context.Context, flight, waiting string, fn func() (any, error)) (any, error) {
 	results := a.flights.DoChan(flight, fn)
 	select {
@@ -311,8 +338,9 @@ func (a *Authenticator) coalesce(ctx context.Context, flight, waiting string, fn
 // upstream runs one authority call for key through the gate's budgets,
 // detached from the first caller's cancellation and bounded by Timeout, and
 // records its verdict. Every result maps to nil, ErrCredentialRejected or
-// ErrValidationUnavailable.
-func (a *Authenticator) upstream(parent context.Context, key string, class callClass, call func(context.Context) error) error {
+// ErrValidationUnavailable; only a call that started can carry
+// errAuthorityNoVerdict. label names the call in metrics.
+func (a *Authenticator) upstream(parent context.Context, key string, class callClass, label string, call func(context.Context) error) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), a.opts.Timeout)
 	defer cancel()
 	release, err := a.gate.admit(ctx, class)
@@ -322,9 +350,12 @@ func (a *Authenticator) upstream(parent context.Context, key string, class callC
 	defer release()
 
 	err = call(ctx)
-	a.recordVerdict(key, err)
+	observeAuthorityCall(label, err)
+	if outcome := a.verdicts.record(key, err); outcome.rejectedKnown {
+		authMetrics.knownKeyRejections.Inc()
+	}
 	switch {
-	case err == nil, errors.Is(err, ErrCredentialRejected):
+	case err == nil, isCredentialRejection(err):
 		return errors.WithStack(err)
 	default:
 		// The call started, so whatever went wrong happened at or on the way
@@ -338,87 +369,20 @@ func (a *Authenticator) upstream(parent context.Context, key string, class callC
 // the first caller's cancellation. Only a call that is about to start is
 // charged: cache hits and coalesced waiters never reach the gate.
 func (a *Authenticator) validateUpstream(parent context.Context, candidate *Context, class callClass) error {
-	key := candidate.APIKeyHash
-	now := a.opts.Now()
-	if entry, ok := a.positive.get(key, now); ok && now.Sub(entry.validatedAt) < a.opts.PositiveTTL {
+	switch a.verdicts.trust(candidate.APIKeyHash, a.opts.Now()).level {
+	case trustFresh:
 		return nil
-	}
-	if _, rejected := a.negative.get(key, now); rejected {
+	case trustRejected:
 		return errors.WithStack(ErrCredentialRejected)
+	case trustUnknown, trustExpired:
 	}
-	return a.upstream(parent, key, class, func(ctx context.Context) error {
+	label := callLabelNewKey
+	if class == callRevalidation {
+		label = callLabelRevalidation
+	}
+	return a.upstream(parent, candidate.APIKeyHash, class, label, func(ctx context.Context) error {
 		return errors.WithStack(a.validator.ValidateAPIKey(ctx, candidate.APIKey))
 	})
-}
-
-// recordVerdict stores the outcome of one upstream call for key.
-func (a *Authenticator) recordVerdict(key string, err error) {
-	a.verdicts.Lock()
-	defer a.verdicts.Unlock()
-
-	now := a.opts.Now()
-	switch {
-	case err == nil:
-		a.negative.remove(key)
-		a.positive.put(key, positiveEntry{validatedAt: now}, a.positiveExpiry(now))
-	case errors.Is(err, ErrCredentialRejected):
-		a.positive.remove(key)
-		a.balances.remove(key)
-		a.negative.put(key, struct{}{}, now.Add(a.opts.NegativeTTL))
-	default:
-		if entry, ok := a.positive.get(key, now); ok {
-			entry.retryAt = now.Add(unavailableRetry)
-			a.positive.put(key, entry, a.positiveExpiry(entry.validatedAt))
-		}
-	}
-}
-
-// positiveExpiry is when an acceptance at validatedAt stops being "known".
-func (a *Authenticator) positiveExpiry(validatedAt time.Time) time.Time {
-	return validatedAt.Add(a.opts.PositiveTTL + max(a.opts.StaleGrace, knownKeyRetention))
-}
-
-// Balance returns the one-api quota of apiKey and validates the key in the
-// same call. Answers are reused for a short time per key hash, and every
-// upstream call is charged to the caller's per-source and the global budget.
-// It fails like Authenticate: ErrCredentialRejected or ErrValidationUnavailable.
-func (a *Authenticator) Balance(ctx context.Context, apiKey string) (Balance, error) {
-	candidate, err := a.parseCandidate("Bearer " + apiKey)
-	if err != nil {
-		return Balance{}, errors.WithStack(err)
-	}
-	fetcher, ok := a.validator.(BalanceValidator)
-	if !ok {
-		return Balance{}, errors.Wrap(ErrValidationUnavailable, "the configured validator reports no balance")
-	}
-
-	key := candidate.APIKeyHash
-	now := a.opts.Now()
-	if _, rejected := a.negative.get(key, now); rejected {
-		return Balance{}, errors.WithStack(ErrCredentialRejected)
-	}
-	if balance, cached := a.balances.get(key, now); cached {
-		return balance, nil
-	}
-
-	value, err := a.coalesce(ctx, "balance:"+key, "wait for one-api balance", func() (any, error) {
-		var balance Balance
-		err := a.upstream(ctx, key, callNewKey, func(callCtx context.Context) error {
-			var fetchErr error
-			balance, fetchErr = fetcher.FetchBalance(callCtx, candidate.APIKey)
-			return errors.WithStack(fetchErr)
-		})
-		if err != nil {
-			return Balance{}, errors.WithStack(err)
-		}
-		a.balances.put(key, balance, a.opts.Now().Add(balanceTTL))
-		return balance, nil
-	})
-	if err != nil {
-		return Balance{}, errors.WithStack(err)
-	}
-	balance, _ := value.(Balance)
-	return balance, nil
 }
 
 // markVerified flags a freshly parsed context as accepted by the authority.

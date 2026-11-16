@@ -122,6 +122,9 @@ func ConsumeAt(ctx context.Context, baseURL, apikey string, cost Price, costReas
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	// A consume is never refused locally (the tool call already ran), but it
+	// shares one-api's per-IP REST limit, so the API key gate must see it.
+	DefaultCallLedger().Record(time.Now(), RouteTokenConsume)
 	resp, err := consumeClient().Do(req) //nolint: bodyclose
 	if err != nil {
 		// A transport failure or timeout cannot distinguish "never delivered"

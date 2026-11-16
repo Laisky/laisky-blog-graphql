@@ -66,3 +66,36 @@ func TestValidateStartupConfigRefusesUnsafeValidationBounds(t *testing.T) {
 	disabled["debug"] = true
 	require.NoError(t, validateStartupConfigWithGetter(newMapConfigGetter(disabled)))
 }
+
+// TestValidateStartupConfigChecksAuthorityURLsAndGateways: a malformed
+// one-api base URL, legacy balance endpoint or gateway list fails startup
+// validation (third maintainer review of PR #95), not the first request.
+func TestValidateStartupConfigChecksAuthorityURLsAndGateways(t *testing.T) {
+	withValidation := func(validation map[string]any) map[string]any {
+		return map[string]any{"settings": map[string]any{"mcp": map[string]any{"auth": map[string]any{"validation": validation}}}}
+	}
+	err := validateStartupConfigWithGetter(newMapConfigGetter(withValidation(map[string]any{"base_url": "oneapi.example.com"})))
+	require.ErrorContains(t, err, "settings.mcp.auth.validation.base_url")
+	err = validateStartupConfigWithGetter(newMapConfigGetter(map[string]any{"settings": map[string]any{
+		"oneapi": map[string]any{"balance_url": "ftp://oneapi.example.com/api/token/balance"},
+	}}))
+	require.ErrorContains(t, err, "settings.oneapi.balance_url")
+	require.NoError(t, validateStartupConfigWithGetter(newMapConfigGetter(map[string]any{"settings": map[string]any{
+		"oneapi": map[string]any{"balance_url": "https://proxy.example.com/custom/balance"},
+	}})), "a custom legacy endpoint path is kept verbatim")
+
+	gateway := func(entry map[string]any) map[string]any {
+		return withValidation(map[string]any{"gateways": []any{entry}})
+	}
+	require.NoError(t, validateStartupConfigWithGetter(newMapConfigGetter(gateway(map[string]any{
+		"cidr": "203.0.113.10/32", "rate_per_second": 0.5, "burst": 20,
+	}))))
+	err = validateStartupConfigWithGetter(newMapConfigGetter(gateway(map[string]any{
+		"cidr": "0.0.0.0/0", "rate_per_second": 0.5, "burst": 20,
+	})))
+	require.ErrorContains(t, err, "settings.mcp.auth.validation.gateways[0]")
+	err = validateStartupConfigWithGetter(newMapConfigGetter(gateway(map[string]any{
+		"cidr": "203.0.113.10", "rate_per_second": 5, "burst": 20,
+	})))
+	require.ErrorContains(t, err, "upstream_rate_per_second")
+}
