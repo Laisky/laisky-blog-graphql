@@ -1,14 +1,13 @@
 package files_test
 
 import (
-	"context"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	pageindex "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/pageindex"
@@ -97,9 +96,7 @@ func TestFileIOHistoryToolsRestoreUsesOriginalLiveVersion(t *testing.T) {
 				require.Equal(t, snapshots+1, f.count(t, "mcp_file_versions"))
 
 				// The same numeric history row is invisible in another tenant's namespace.
-				other := f.auth
-				other.APIKeyHash = strings.Repeat("b", 64)
-				otherCtx := context.WithValue(f.ctx, ctxkeys.AuthContext, &other)
+				otherCtx := authtest.WithVerified(f.ctx, "sk-fileio-race-other-tenant")
 				failure = callRaceToolError(t, otherCtx, history[tools.FileReadVersionToolName], tools.FileReadVersionToolName, args)
 				require.Equal(t, "NOT_FOUND", failure["code"])
 			})

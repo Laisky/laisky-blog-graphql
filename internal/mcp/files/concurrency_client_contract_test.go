@@ -1,12 +1,10 @@
 package files_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/pageindex"
 	ragplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
@@ -42,7 +40,7 @@ func TestFileIOClientPreconditionsMandatory(t *testing.T) {
 				require.NoError(t, err)
 				renamer, err := tools.NewFileRenameTool(manager)
 				require.NoError(t, err)
-				ctx := context.WithValue(f.ctx, ctxkeys.AuthContext, &f.auth)
+				ctx := f.toolContext()
 				args := map[string]any{"project": "race", "path": "plain.txt", "content": "original", "mode": "TRUNCATE"}
 				require.Equal(t, "PRECONDITION_REQUIRED", callRaceToolError(t, ctx, writer, "file_write", args)["code"])
 				require.Zero(t, f.count(t, "mcp_files"))

@@ -94,6 +94,11 @@ func loadDisabledToolsForListRequest(r *http.Request, preferenceService *userreq
 	}
 
 	auth := askuser.FromSharedContext(shared)
+	if auth == nil {
+		// FromContext only returns verified contexts; this guards the checked
+		// conversion should that ever change.
+		return false, nil
+	}
 	if logger != nil {
 		logger.Debug("tools/list filtering authorization resolved",
 			zap.String("user_identity", auth.UserIdentity),

@@ -2,27 +2,20 @@ package askuser
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 
 	"github.com/Laisky/errors/v2"
 
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 )
 
-// AuthorizationContext captures caller identity derived from the Authorization header.
-// It is a compatibility view of mcpauth.Context for the ask_user and
-// user-request packages and is only built from a verified context (see
-// FromSharedContext); new code should use mcpauth.Context instead of adding
-// fields here.
-type AuthorizationContext struct {
-	RawHeader    string
-	APIKey       string
-	APIKeyHash   string
-	KeySuffix    string
-	UserID       string
-	UserIdentity string
-	AIIdentity   string
-}
+// AuthorizationContext is the caller identity of the ask_user and
+// user-request packages. It is the shared mcpauth.Context itself, not a copy,
+// so the verified flag travels with it: a value from ParseAuthorizationFromContext
+// or FromSharedContext is one the credential authority accepted
+// (Verified() == true), and the only key-less principal is the explicit
+// NewTelegramAnswerer. New fields belong on mcpauth.Context.
+type AuthorizationContext = mcpauth.Context
 
 // ParseAuthorizationFromContext returns the verified caller of a request: the
 // auth context installed by an MCP gate, or the header authenticated by the
@@ -43,33 +36,30 @@ func ParseAuthorizationFromContext(ctx context.Context, header string) (*Authori
 		}
 	}
 
-	return FromSharedContext(shared), nil
+	return shared, nil
 }
 
-// MaskedKey returns a short identifier for logging purposes.
-func (a *AuthorizationContext) MaskedKey() string {
-	if a == nil || a.APIKey == "" {
-		return ""
-	}
-	if len(a.APIKey) <= 4 {
-		return fmt.Sprintf("***%s", a.APIKey)
-	}
-	return fmt.Sprintf("***%s", a.APIKey[len(a.APIKey)-4:])
-}
-
-// FromSharedContext converts the shared MCP auth context into ask_user auth context.
+// FromSharedContext is the checked conversion of a shared MCP auth context
+// into an ask_user identity: it returns shared only when the credential
+// authority verified it, and nil otherwise (including for nil). Callers must
+// handle nil as "no caller".
 func FromSharedContext(shared *mcpauth.Context) *AuthorizationContext {
-	if shared == nil {
+	if !shared.Verified() {
 		return nil
 	}
+	return shared
+}
 
+// NewTelegramAnswerer returns the one delegated, key-less principal of the
+// ask_user answer path: a Telegram user answering a question for the API key
+// whose hash apiKeyHash is bound to telegramUID. The caller must have checked
+// that binding (the binding was created by proving possession of a key the
+// credential authority accepted). The principal is unverified by design and
+// carries no key, so it never satisfies mcpauth.FromContext and can only act
+// where a service accepts an explicit answerer for apiKeyHash.
+func NewTelegramAnswerer(apiKeyHash string, telegramUID int64) *AuthorizationContext {
 	return &AuthorizationContext{
-		RawHeader:    shared.RawHeader,
-		APIKey:       shared.APIKey,
-		APIKeyHash:   shared.APIKeyHash,
-		KeySuffix:    shared.KeySuffix,
-		UserID:       shared.UserID,
-		UserIdentity: shared.UserIdentity,
-		AIIdentity:   shared.AIIdentity,
+		APIKeyHash:   apiKeyHash,
+		UserIdentity: "telegram:" + strconv.FormatInt(telegramUID, 10),
 	}
 }

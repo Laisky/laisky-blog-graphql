@@ -14,7 +14,7 @@ import (
 	"github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/require"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	rag "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
 )
@@ -62,11 +62,7 @@ func (s *e2eCredentialStore) Delete(_ context.Context, key string) error {
 func TestFileToolsEndToEndFlow(t *testing.T) {
 	svc := newE2EFileService(t, false)
 	plugin := mustE2EPlugin(t, svc)
-	authCtx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
-		APIKey:       "key",
-		APIKeyHash:   "hash",
-		UserIdentity: "user:test",
-	})
+	authCtx := authtest.WithVerified(context.Background(), "key")
 
 	writeTool, err := NewFileWriteTool(plugin)
 	require.NoError(t, err)
@@ -179,11 +175,7 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 func TestFileDeleteToolRootWipe(t *testing.T) {
 	svc := newE2EFileService(t, true)
 	plugin := mustE2EPlugin(t, svc)
-	authCtx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
-		APIKey:       "key",
-		APIKeyHash:   "hash",
-		UserIdentity: "user:test",
-	})
+	authCtx := authtest.WithVerified(context.Background(), "key")
 
 	writeTool, err := NewFileWriteTool(plugin)
 	require.NoError(t, err)
@@ -233,11 +225,7 @@ func TestFileDeleteToolRootWipe(t *testing.T) {
 func TestFileDeleteToolRootWipeDisabled(t *testing.T) {
 	svc := newE2EFileService(t, false)
 	plugin := mustE2EPlugin(t, svc)
-	authCtx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
-		APIKey:       "key",
-		APIKeyHash:   "hash",
-		UserIdentity: "user:test",
-	})
+	authCtx := authtest.WithVerified(context.Background(), "key")
 
 	deleteTool, err := NewFileDeleteTool(plugin)
 	require.NoError(t, err)

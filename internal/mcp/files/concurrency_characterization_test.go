@@ -13,7 +13,6 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	ragplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
@@ -358,7 +357,7 @@ func TestFileIOMCPVersionRegression(t *testing.T) {
 			require.NoError(t, err)
 			reader, err := tools.NewFileReadTool(manager)
 			require.NoError(t, err)
-			ctx := context.WithValue(f.ctx, ctxkeys.AuthContext, &f.auth)
+			ctx := f.toolContext()
 			args := map[string]any{"project": "race", "path": "text.txt", "content": "key=0", "mode": "TRUNCATE", "create_only": true}
 			created := callRaceTool(t, ctx, writer, "file_write", args)
 			require.NotEmpty(t, created["version"])

@@ -12,8 +12,6 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
-	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	pageindex "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/pageindex"
@@ -32,9 +30,8 @@ type entrypointFixture struct {
 func newEntrypointFixture(t *testing.T, backend, pluginName string) *entrypointFixture {
 	t.Helper()
 	f := newRaceFixture(t, backend, nil)
-	auth, err := mcpauth.DeriveFromAPIKey("sk-fileio-cross-entrypoint-fixture")
-	require.NoError(t, err)
-	f.auth = files.AuthContext{APIKey: auth.APIKey, APIKeyHash: auth.APIKeyHash, UserID: auth.UserID, UserIdentity: auth.UserIdentity}
+	f.setTenant(t, "sk-fileio-cross-entrypoint-fixture")
+	var err error
 	managers := make([]*mcpplugin.Manager, 2)
 	for i, service := range f.svc {
 		var plugin mcpplugin.Plugin
@@ -60,7 +57,7 @@ func newEntrypointFixture(t *testing.T, backend, pluginName string) *entrypointF
 		},
 	))
 	return &entrypointFixture{raceFixture: f, writer: writer, reader: reader, handler: handler,
-		toolCtx: context.WithValue(f.ctx, ctxkeys.AuthContext, &f.auth)}
+		toolCtx: f.toolContext()}
 }
 
 func (f *entrypointFixture) request(method, endpoint, body, header, version string) *httptest.ResponseRecorder {
