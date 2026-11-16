@@ -64,7 +64,9 @@ settings:
           # no default because buckets are deployment-specific.
           bucket: REPLACE_WITH_BUCKET_NAME
           # Object-key prefix under the bucket. Leading / trailing slashes are
-          # trimmed. Optional. Default: mcp/user_requests/images.
+          # trimmed. Every deployment with its own database needs its own
+          # bucket or prefix (keys are content-addressed per user).
+          # Optional. Default: mcp/user_requests/images.
           prefix: mcp/user_requests/images
           # MinIO access key. Required when `enabled: true`. Must live in a
           # private overlay — never commit real credentials.
@@ -89,12 +91,64 @@ settings:
         # deletes it. Re-uploading the same SHA refreshes this TTL.
         # Optional. Default: 7.
         object_ttl_days: 7
+        # Who owns the bucket lifecycle rule that expires the prefix:
+        #   manage  the server installs it and keeps it in place (it reinstalls
+        #           the rule when another writer of the bucket erased it);
+        #   verify  the server never writes the bucket lifecycle and only checks
+        #           that some rule (for example one managed by IaC) expires the
+        #           prefix within object_ttl_days.
+        # Optional. Default: manage.
+        lifecycle_mode: manage
+        # How often the lifecycle rule is checked again, in seconds, after a
+        # first re-check one minute after start. 0 keeps only the check at
+        # start and that first re-check.
+        # Optional. Default: 3600 (= 1h).
+        lifecycle_check_seconds: 3600
         # Validity window (minutes) of presigned GET URLs handed to AI agents.
         # Optional. Default: 30.
         presign_ttl_minutes: 30
         # How often the DB-side image GC sweeps expired refs, in seconds. Set
         # to 0 to disable the worker. Optional. Default: 3600 (= 1h).
         gc_sweep_seconds: 3600
+        # Process-wide cap, in bytes, on the summed estimated memory of
+        # concurrent image decodes (decode + resize + PNG encode). Uploads wait
+        # for budget; an image whose estimate alone exceeds it is rejected as
+        # decode_failed. The default admits every 8-bit-per-channel image up
+        # to 8192x8192 except a TIFF stored as one large compressed strip or
+        # tile (admitted up to ~28 MP) and a progressive full-chroma or CMYK
+        # JPEG (admitted up to roughly 40-60 MP); 16-bit interlaced PNG is
+        # also rejected above roughly 60 MP. A lowered budget admits less (an
+        # 8192x8192 RGBA PNG is estimated at ~686 MiB). See "Decode memory
+        # budget" in docs/manual/mcp.md.
+        # When this key is not set, the budget is lowered at start so the
+        # whole image memory envelope (this budget plus the input and prepared
+        # images of max_concurrent_requests creates, ~2.25 GiB by default)
+        # fits half the process memory limit; a value set here is kept, so
+        # leave it unset unless you sized it yourself.
+        # Optional. Default: 1342177280 (= 1.25 GiB).
+        # decode_memory_budget_bytes: 1342177280
+        # How often the reconciler processes due image claims (crashed uploads,
+        # failed deletes, refs the GC expired) and deletes objects nothing uses
+        # any more, in seconds. It never lists the bucket. Set to 0 to disable
+        # it (expired objects are then left to the bucket lifecycle rule).
+        # Optional. Default: 3600 (= 1h).
+        orphan_sweep_seconds: 3600
+        # Maximum due claims one reconciler pass processes. A pass that fills
+        # its batch is followed by another, up to 8 passes per interval.
+        # Optional. Default: 1000.
+        orphan_sweep_batch: 1000
+        # Image create requests running at once in this process. Up to as
+        # many more wait (then 503 image_busy at their deadline); requests
+        # beyond that queue get 503 image_busy at once. A request is admitted
+        # before its multipart body is read, so input memory is bounded by
+        # this value x (18 MiB + per_image_max_bytes), and the images it
+        # prepared by this value x max_per_request x 18 MiB.
+        # Optional. Default: 8.
+        max_concurrent_requests: 8
+        # Image create requests of one user identity running at once in this
+        # process; up to as many more of that identity wait.
+        # Optional. Default: 2.
+        max_concurrent_requests_per_user: 2
         url_fetch:
           # Allow plain http:// image_url inputs. Not recommended for
           # production. Optional. Default: false (HTTPS only).

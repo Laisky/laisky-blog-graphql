@@ -1,0 +1,51 @@
+name: user-request-images-postgres
+
+# Deliberate acceptance of the user-request image workflow against a real
+# PostgreSQL (advisory and row locks, READ COMMITTED vs REPEATABLE READ
+# defaults, concurrent reservations, compensation and the reconciler). The
+# tests skip without MCP_USER_REQUESTS_TEST_POSTGRES_DSN, so this job supplies
+# a disposable database and fails when any of them skips. See
+# docs/manual/fast_ci.md for the cadence policy.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: user-request-images-postgres-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: userrequests_test
+          POSTGRES_PASSWORD: userrequests_test_only
+          POSTGRES_DB: userrequests_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U userrequests_test -d userrequests_test"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      MCP_USER_REQUESTS_TEST_POSTGRES_DSN: postgres://userrequests_test:userrequests_test_only@localhost:5432/userrequests_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+      - name: PostgreSQL image workflow tests with race detector
+        run: |
+          set -o pipefail
+          go test -race -count=3 -timeout 15m -v ./internal/mcp/userrequests -run TestPostgres | tee postgres-tests.log
+          if grep -E -- '--- SKIP: TestPostgres' postgres-tests.log; then
+            echo "a PostgreSQL test skipped although the database is configured" >&2
+            exit 1
+          fi

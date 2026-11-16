@@ -194,7 +194,7 @@ func (h *httpHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), createRequestTimeout)
 	defer cancel()
 	logger := h.logFromCtx(ctx)
 
@@ -210,77 +210,26 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var (
-		content     string
-		taskID      string
-		attachments []AttachmentInput
-	)
-	ct := r.Header.Get("Content-Type")
-	if strings.HasPrefix(ct, "multipart/form-data") {
-		parsedContent, parsedTaskID, parsedAttachments, parseErr := h.parseMultipart(r)
-		if parseErr != nil {
-			h.writeImageError(w, logger, parseErr, -1)
-			return
-		}
-		content = parsedContent
-		taskID = parsedTaskID
-		attachments = parsedAttachments
-	} else {
-		payload := struct {
-			Content   string   `json:"content"`
-			TaskID    string   `json:"task_id"`
-			ImageURLs []string `json:"image_urls"`
-		}{}
-		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
-			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid JSON payload")
-			return
-		}
-		content = payload.Content
-		taskID = payload.TaskID
-		for _, u := range payload.ImageURLs {
-			u = strings.TrimSpace(u)
-			if u == "" {
-				continue
-			}
-			attachments = append(attachments, AttachmentInput{URL: u})
-		}
+	intake := &createIntake{h: h, w: w, logger: logger, auth: auth}
+	defer intake.close()
+	content, taskID, attachments, ok := intake.read(ctx, r)
+	if !ok {
+		return
+	}
+	prepared, ok := intake.prepare(ctx, attachments)
+	if !ok {
+		return
 	}
 
-	var uploaded []UploadedImage
-	if len(attachments) > 0 {
-		if h.imageManager == nil || !h.imageManager.Settings().Enabled {
-			h.writeImageError(w, logger, errors.WithStack(ErrImageFeatureDisabled), -1)
-			return
-		}
-		settings := h.imageManager.Settings()
-		if settings.MaxPerRequest > 0 && len(attachments) > settings.MaxPerRequest {
-			h.writeImageError(w, logger, errors.WithStack(ErrTooManyImages), -1)
-			return
-		}
-		processed, processErr := h.imageManager.Process(ctx, auth, attachments)
-		if processErr != nil {
-			idx := extractAttachmentIndex(processErr)
-			h.writeImageError(w, logger, processErr, idx)
-			return
-		}
-		uploaded = processed
+	// Quota is reserved, objects are uploaded, and the request is committed
+	// as one workflow; on failure the uploaded objects are released.
+	var objects ImageObjectWriter
+	if h.imageManager != nil {
+		objects = h.imageManager
 	}
-
-	req, err := service.CreateRequestWithImages(ctx, auth, content, taskID, uploaded)
+	req, err := service.CreateRequestWithImages(ctx, auth, content, taskID, prepared, objects)
 	if err != nil {
-		switch {
-		case errors.Is(err, ErrEmptyContent):
-			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
-		case errors.Is(err, ErrInvalidRequestContent):
-			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
-		case errors.Is(err, ErrInvalidAuthorization):
-			h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
-		case errors.Is(err, ErrQuotaExceeded), errors.Is(err, ErrTooManyImages):
-			h.writeImageError(w, logger, err, -1)
-		default:
-			logger.Error("create user request", zap.Error(err))
-			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to create user request")
-		}
+		h.writeCreateError(w, logger, err)
 		return
 	}
 
@@ -307,7 +256,149 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleQuota reports the caller's live image usage.
+// createRequestTimeout bounds one create request, including reading its body.
+var createRequestTimeout = 30 * time.Second
+
+// createIntake reads and normalizes the input of one create request. It
+// takes the request's image-create slot at most once and, for multipart
+// bodies, before the body is read, so a request that waits for a slot or is
+// refused one holds none of its input bytes. Its methods write the error
+// response themselves and report false on failure; close releases the slot
+// and the multipart temporary files.
+type createIntake struct {
+	h       *httpHandler
+	w       http.ResponseWriter
+	logger  logSDK.Logger
+	auth    *askuser.AuthorizationContext
+	release func()
+	cleanup func()
+}
+
+// imagesEnabled reports whether image attachments are accepted.
+func (in *createIntake) imagesEnabled() bool {
+	return in.h.imageManager != nil && in.h.imageManager.Settings().Enabled
+}
+
+// admit takes the image-create slot unless it is already held.
+func (in *createIntake) admit(ctx context.Context) bool {
+	if in.release != nil {
+		return true
+	}
+	release, err := in.h.imageManager.AdmitCreate(ctx, in.auth)
+	if err != nil {
+		in.h.writeImageError(in.w, in.logger, err, -1)
+		return false
+	}
+	in.release = release
+	return true
+}
+
+// close releases the slot and removes multipart temporary files.
+func (in *createIntake) close() {
+	if in.cleanup != nil {
+		in.cleanup()
+	}
+	if in.release != nil {
+		in.release()
+	}
+}
+
+// bindBodyDeadline ends reads of the request body at ctx's deadline. Body
+// reads do not watch the context and the server sets no body read timeout,
+// so without it a client trickling a multipart body would keep the
+// image-create slot this request already holds past its deadline. The
+// connection's read deadline is set through http.ResponseController; a
+// writer that cannot set one (a test recorder) leaves the read unbounded,
+// which is logged at DEBUG.
+func (in *createIntake) bindBodyDeadline(ctx context.Context) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return
+	}
+	if err := http.NewResponseController(in.w).SetReadDeadline(deadline); err != nil {
+		in.logger.Debug("cannot bound the image request body read", zap.Error(err))
+	}
+}
+
+// read parses the multipart or JSON body into content, task ID and the
+// ordered attachments.
+func (in *createIntake) read(ctx context.Context, r *http.Request) (string, string, []AttachmentInput, bool) {
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		if in.imagesEnabled() && !in.admit(ctx) {
+			return "", "", nil, false
+		}
+		in.bindBodyDeadline(ctx)
+		content, taskID, attachments, cleanup, err := in.h.parseMultipart(r)
+		if err != nil {
+			in.h.writeImageError(in.w, in.logger, err, -1)
+			return "", "", nil, false
+		}
+		in.cleanup = cleanup
+		return content, taskID, attachments, true
+	}
+
+	payload := struct {
+		Content   string   `json:"content"`
+		TaskID    string   `json:"task_id"`
+		ImageURLs []string `json:"image_urls"`
+	}{}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
+		in.h.writeErrorWithLogger(in.w, in.logger, http.StatusBadRequest, "invalid JSON payload")
+		return "", "", nil, false
+	}
+	var attachments []AttachmentInput
+	for _, u := range payload.ImageURLs {
+		if u = strings.TrimSpace(u); u != "" {
+			attachments = append(attachments, AttachmentInput{URL: u})
+		}
+	}
+	return payload.Content, payload.TaskID, attachments, true
+}
+
+// prepare normalizes every attachment before anything is uploaded, so a bad
+// attachment cannot leave an object behind.
+func (in *createIntake) prepare(ctx context.Context, attachments []AttachmentInput) ([]UploadedImage, bool) {
+	if len(attachments) == 0 {
+		return nil, true
+	}
+	if !in.imagesEnabled() {
+		in.h.writeImageError(in.w, in.logger, errors.WithStack(ErrImageFeatureDisabled), -1)
+		return nil, false
+	}
+	if limit := in.h.imageManager.Settings().MaxPerRequest; limit > 0 && len(attachments) > limit {
+		in.h.writeImageError(in.w, in.logger, errors.WithStack(ErrTooManyImages), -1)
+		return nil, false
+	}
+	if !in.admit(ctx) {
+		return nil, false
+	}
+	images, err := in.h.imageManager.Prepare(ctx, in.auth, attachments)
+	if err != nil {
+		in.h.writeImageError(in.w, in.logger, err, extractAttachmentIndex(err))
+		return nil, false
+	}
+	return images, true
+}
+
+// writeCreateError maps a CreateRequestWithImages error onto the response.
+func (h *httpHandler) writeCreateError(w http.ResponseWriter, logger logSDK.Logger, err error) {
+	switch {
+	case errors.Is(err, ErrEmptyContent), errors.Is(err, ErrInvalidRequestContent):
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrInvalidAuthorization):
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, ErrQuotaExceeded), errors.Is(err, ErrTooManyImages), errors.Is(err, ErrImageBusy):
+		h.writeImageError(w, logger, err, -1)
+	case errors.Is(err, ErrStorageUnavailable):
+		h.writeImageError(w, logger, err, extractAttachmentIndex(err))
+	default:
+		logger.Error("create user request", zap.Error(err))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to create user request")
+	}
+}
+
+// handleQuota reports the caller's live image usage, the bytes its uploads in
+// progress reserve, and what the quota still admits.
 func (h *httpHandler) handleQuota(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -328,6 +419,8 @@ func (h *httpHandler) handleQuota(w http.ResponseWriter, r *http.Request) {
 		h.writeJSON(w, map[string]any{
 			fieldUserIdentity: auth.UserIdentity,
 			"used_bytes":      0,
+			"reserved_bytes":  0,
+			"available_bytes": 0,
 			"quota_bytes":     0,
 			"object_count":    0,
 			"ttl_days":        0,
@@ -341,9 +434,13 @@ func (h *httpHandler) handleQuota(w http.ResponseWriter, r *http.Request) {
 		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to load quota")
 		return
 	}
+	// reserved_bytes and available_bytes use the accounting admission uses:
+	// an image larger than available_bytes is refused with quota_exceeded.
 	h.writeJSON(w, map[string]any{
 		fieldUserIdentity: usage.UserIdentity,
 		"used_bytes":      usage.UsedBytes,
+		"reserved_bytes":  usage.ReservedBytes,
+		"available_bytes": usage.AvailableBytes,
 		"quota_bytes":     usage.QuotaBytes,
 		"object_count":    usage.ObjectCount,
 		"ttl_days":        usage.TTLDays,
