@@ -6,6 +6,8 @@ import (
 	"time"
 
 	gconfig "github.com/Laisky/go-config/v2"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/imageproc"
 )
 
 // Default values used when the corresponding config key is absent. Every
@@ -31,6 +33,21 @@ const (
 	DefaultImagePresignTTLMinutes = 30
 	// DefaultImageGCSweepInterval is how often the DB-side image GC runs. Default: 1h.
 	DefaultImageGCSweepInterval = time.Hour
+	// DefaultImageDecodeMemoryBudgetBytes caps the summed estimated decode
+	// working set of concurrent image normalizations. Default: 1.25 GiB.
+	DefaultImageDecodeMemoryBudgetBytes = imageproc.DefaultDecodeMemoryBudgetBytes
+	// DefaultImageOrphanSweepInterval is how often the orphan-object
+	// reconciler runs. Default: 1h.
+	DefaultImageOrphanSweepInterval = time.Hour
+	// DefaultImageOrphanSweepBatch is how many due claims one reconciler pass
+	// processes at most. Default: 1000.
+	DefaultImageOrphanSweepBatch = 1000
+	// DefaultImageMaxConcurrentCreates caps image create requests running at
+	// once in one process. Default: 8.
+	DefaultImageMaxConcurrentCreates = 8
+	// DefaultImageMaxConcurrentCreatesPerUser caps image create requests of
+	// one user identity running at once in one process. Default: 2.
+	DefaultImageMaxConcurrentCreatesPerUser = 2
 
 	// DefaultImageMinIOEndpoint is the endpoint the MinIO client uses when one is
 	// not provided. Default: "s3.laisky.com".
@@ -105,12 +122,54 @@ type ImageSettings struct {
 	// lifecycle rule deletes it. Re-uploading the same SHA refreshes the TTL.
 	// Default: 7.
 	ObjectTTLDays int
+	// LifecycleMode selects who owns the bucket lifecycle rule of Prefix:
+	// LifecycleModeManage ("manage", the default) installs it and keeps it in
+	// place; LifecycleModeVerify ("verify") never writes the bucket
+	// configuration and only checks that a rule managed elsewhere (IaC)
+	// expires Prefix within ObjectTTLDays. Default: "manage".
+	LifecycleMode string
+	// LifecycleCheckInterval is how often the lifecycle rule is checked again
+	// (and, in manage mode, reinstalled when another writer erased it), after
+	// a first re-check one minute after start. Zero or negative disables the
+	// periodic checks: the rule is then checked at start and at that first
+	// re-check only. Default: 1h.
+	LifecycleCheckInterval time.Duration
 	// PresignTTL is the validity window of presigned GET URLs handed to AI
 	// agents. Default: 30m.
 	PresignTTL time.Duration
 	// GCSweepInterval is how often the DB-side image GC sweeps expired refs.
 	// Zero or negative disables the worker. Default: 1h.
 	GCSweepInterval time.Duration
+	// DecodeMemoryBudgetBytes caps the summed estimated transient memory of
+	// concurrent image normalizations in this process. Decoding waits for
+	// budget; an image whose estimate alone exceeds it is rejected as
+	// decode_failed. Non-positive values use the default. Default: 1.25 GiB,
+	// lowered at startup to fit a detected process memory limit unless the
+	// value is configured explicitly (see SizeImageMemory).
+	DecodeMemoryBudgetBytes int64
+	// DecodeMemoryBudgetConfigured reports whether decode_memory_budget_bytes
+	// was set explicitly to a positive value; only a defaulted budget is sized
+	// to the memory limit.
+	DecodeMemoryBudgetConfigured bool
+	// OrphanSweepInterval is how often the reconciler processes due image
+	// claims: it deletes objects this database recorded writing (crashed
+	// uploads, failed deletes, refs the GC expired, late-write re-checks of
+	// failed requests) once nothing references or claims them. It never
+	// lists the bucket. Zero or negative disables it. Default: 1h.
+	OrphanSweepInterval time.Duration
+	// OrphanSweepBatch caps how many due claims one reconciler pass
+	// processes. Non-positive values use the default. Default: 1000.
+	OrphanSweepBatch int
+	// MaxConcurrentCreates caps image create requests running at once in this
+	// process; up to as many more wait (until their deadline, then 503
+	// image_busy) and any beyond that are refused at once with image_busy.
+	// A request takes its slot before its multipart body is read.
+	// Non-positive values use the default. Default: 8.
+	MaxConcurrentCreates int
+	// MaxConcurrentCreatesPerUser caps image create requests of one user
+	// identity running at once in this process; up to as many more of that
+	// identity wait. Non-positive values use the default. Default: 2.
+	MaxConcurrentCreatesPerUser int
 	// URLAllowHTTP allows unencrypted http:// image_url inputs. Default: false
 	// (HTTPS only). Not recommended for production.
 	URLAllowHTTP bool
@@ -140,19 +199,34 @@ func LoadSettingsFromConfig() Settings {
 // the Default* constants as fallbacks.
 func loadImageSettings() ImageSettings {
 	return ImageSettings{
-		Enabled:            boolFromConfig("settings.mcp.tools.user_requests.images.enabled", false),
-		Bucket:             stringFromConfig("settings.mcp.tools.user_requests.images.minio.bucket", ""),
-		Prefix:             strings.Trim(stringFromConfig("settings.mcp.tools.user_requests.images.minio.prefix", DefaultImageMinIOPrefix), "/"),
-		Endpoint:           stringFromConfig("settings.mcp.tools.user_requests.images.minio.endpoint", DefaultImageMinIOEndpoint),
-		AccessKey:          stringFromConfig("settings.mcp.tools.user_requests.images.minio.access_key", ""),
-		SecretKey:          stringFromConfig("settings.mcp.tools.user_requests.images.minio.secret_key", ""),
-		UseSSL:             boolFromConfig("settings.mcp.tools.user_requests.images.minio.use_ssl", DefaultImageMinIOUseSSL),
-		PerUserQuotaBytes:  int64FromConfig("settings.mcp.tools.user_requests.images.per_user_quota_bytes", DefaultImagePerUserQuotaBytes),
-		PerImageMaxBytes:   int64FromConfig("settings.mcp.tools.user_requests.images.per_image_max_bytes", DefaultImagePerImageMaxBytes),
-		MaxPerRequest:      intFromConfig("settings.mcp.tools.user_requests.images.max_per_request", DefaultImageMaxPerRequest),
-		ObjectTTLDays:      intFromConfig("settings.mcp.tools.user_requests.images.object_ttl_days", DefaultImageObjectTTLDays),
-		PresignTTL:         time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.presign_ttl_minutes", DefaultImagePresignTTLMinutes)) * time.Minute,
-		GCSweepInterval:    time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.gc_sweep_seconds", int(DefaultImageGCSweepInterval/time.Second))) * time.Second,
+		Enabled:           boolFromConfig("settings.mcp.tools.user_requests.images.enabled", false),
+		Bucket:            stringFromConfig("settings.mcp.tools.user_requests.images.minio.bucket", ""),
+		Prefix:            strings.Trim(stringFromConfig("settings.mcp.tools.user_requests.images.minio.prefix", DefaultImageMinIOPrefix), "/"),
+		Endpoint:          stringFromConfig("settings.mcp.tools.user_requests.images.minio.endpoint", DefaultImageMinIOEndpoint),
+		AccessKey:         stringFromConfig("settings.mcp.tools.user_requests.images.minio.access_key", ""),
+		SecretKey:         stringFromConfig("settings.mcp.tools.user_requests.images.minio.secret_key", ""),
+		UseSSL:            boolFromConfig("settings.mcp.tools.user_requests.images.minio.use_ssl", DefaultImageMinIOUseSSL),
+		PerUserQuotaBytes: int64FromConfig("settings.mcp.tools.user_requests.images.per_user_quota_bytes", DefaultImagePerUserQuotaBytes),
+		PerImageMaxBytes:  int64FromConfig("settings.mcp.tools.user_requests.images.per_image_max_bytes", DefaultImagePerImageMaxBytes),
+		MaxPerRequest:     intFromConfig("settings.mcp.tools.user_requests.images.max_per_request", DefaultImageMaxPerRequest),
+		ObjectTTLDays:     intFromConfig("settings.mcp.tools.user_requests.images.object_ttl_days", DefaultImageObjectTTLDays),
+		LifecycleMode: strings.ToLower(strings.TrimSpace(
+			stringFromConfig("settings.mcp.tools.user_requests.images.lifecycle_mode", LifecycleModeManage))),
+		LifecycleCheckInterval: time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.lifecycle_check_seconds",
+			int(DefaultImageLifecycleCheckInterval/time.Second))) * time.Second,
+		PresignTTL:      time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.presign_ttl_minutes", DefaultImagePresignTTLMinutes)) * time.Minute,
+		GCSweepInterval: time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.gc_sweep_seconds", int(DefaultImageGCSweepInterval/time.Second))) * time.Second,
+		DecodeMemoryBudgetBytes: int64FromConfig("settings.mcp.tools.user_requests.images.decode_memory_budget_bytes",
+			DefaultImageDecodeMemoryBudgetBytes),
+		DecodeMemoryBudgetConfigured: gconfig.S.Get("settings.mcp.tools.user_requests.images.decode_memory_budget_bytes") != nil &&
+			int64FromConfig("settings.mcp.tools.user_requests.images.decode_memory_budget_bytes", 0) > 0,
+		OrphanSweepInterval: time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.orphan_sweep_seconds",
+			int(DefaultImageOrphanSweepInterval/time.Second))) * time.Second,
+		OrphanSweepBatch: intFromConfig("settings.mcp.tools.user_requests.images.orphan_sweep_batch", DefaultImageOrphanSweepBatch),
+		MaxConcurrentCreates: intFromConfig("settings.mcp.tools.user_requests.images.max_concurrent_requests",
+			DefaultImageMaxConcurrentCreates),
+		MaxConcurrentCreatesPerUser: intFromConfig("settings.mcp.tools.user_requests.images.max_concurrent_requests_per_user",
+			DefaultImageMaxConcurrentCreatesPerUser),
 		URLAllowHTTP:       boolFromConfig("settings.mcp.tools.user_requests.images.url_fetch.allow_http", DefaultImageURLAllowHTTP),
 		URLMaxRedirects:    intFromConfig("settings.mcp.tools.user_requests.images.url_fetch.max_redirects", DefaultImageURLMaxRedirects),
 		URLTotalTimeout:    time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.url_fetch.total_timeout_seconds", DefaultImageURLTotalTimeoutSeconds)) * time.Second,
