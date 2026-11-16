@@ -26,15 +26,15 @@ var (
 	inflightBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "http_request_body_inflight_bytes",
 		Help: "Request-body bytes read and not yet released by in-flight requests, by entry.",
-	}, []string{"entry"})
+	}, []string{entryLabel})
 	inflightCapacity = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "http_request_body_inflight_capacity_bytes",
 		Help: "Capacity of the in-flight body budget, by entry.",
-	}, []string{"entry"})
+	}, []string{entryLabel})
 	inflightRefused = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "http_request_body_inflight_refused_total",
 		Help: "Request-body reads refused by an in-flight body budget, by entry and reason (capacity, tenant_share).",
-	}, []string{"entry", "reason"})
+	}, []string{entryLabel, "reason"})
 	unclassifiedRefused = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "http_request_body_unclassified_refused_total",
 		Help: "Request-body reads refused because a request read more than its pending bound before it was assigned to a budget.",
