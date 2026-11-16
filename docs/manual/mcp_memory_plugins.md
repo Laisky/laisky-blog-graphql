@@ -361,11 +361,14 @@ How the ceilings are enforced:
   - the provider-reported total when the provider reports usage;
   - for an answer without usage, the input estimate plus the answer's estimated tokens;
   - for an error response from the provider, the input estimate;
-  - nothing for a request the client-side rate limiter kept in the process (the
-    upstream call itself stays counted);
+  - nothing, with its call returned too, for a request that never left the process
+    (the client-side rate limiter, an ended context, an invalid output schema); a
+    request the rate limiter cannot send before the indexing deadline is not
+    retried, and its work degrades as `timeout`;
   - for a request the provider never answered (a timeout, a cancellation or a
-    connection failure), its whole reservation, because the provider may have
-    processed and billed it in full.
+    connection failure while it was in flight), its whole reservation, because the
+    provider may have processed and billed it in full. When the context ends while
+    the client waits to retry, the last request sent is charged by its own outcome.
 
   A charge below the reservation frees the difference at once; a charge above it is
   debt that counts against the rolling budgets for a whole `window` from the time it

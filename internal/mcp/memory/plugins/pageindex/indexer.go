@@ -300,7 +300,7 @@ func (idx *Indexer) Index(ctx context.Context, kind DocKind, bytes []byte, opts 
 	tree.AlgorithmVer = algoVer
 	tree.IndexedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	stats.Wallclock = time.Since(start)
-	if idx.log != nil && (stats.BudgetRefusals > 0 || stats.StructureTruncated || stats.DeadlineReached) {
+	if idx.log != nil && (stats.BudgetRefusals > 0 || stats.IncompleteAnswers > 0 || stats.StructureTruncated || stats.DeadlineReached) {
 		idx.log.Debug("pageindex.index.limited",
 			glog.String("kind", string(kind)),
 			glog.Int("llm_calls", stats.LLMCalls),
@@ -309,6 +309,7 @@ func (idx *Indexer) Index(ctx context.Context, kind DocKind, bytes []byte, opts 
 			glog.Int64("reported_tokens", stats.ReportedTokens),
 			glog.Int64("estimated_tokens", stats.EstimatedTokens),
 			glog.Int("budget_refusals", stats.BudgetRefusals),
+			glog.Int("incomplete_answers", stats.IncompleteAnswers),
 			glog.Int("rolling_refusals", stats.RollingRefusals),
 			glog.Int("local_summaries", stats.LocalSummaries),
 			glog.Bool("structure_truncated", stats.StructureTruncated),
@@ -356,6 +357,10 @@ func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, st
 	resp, err := idx.gate.call(ctx, idx.llm, req, budget)
 	if resp != nil {
 		stats.addLLMCall(resp.Usage.InputTokens, resp.Usage.OutputTokens)
+	}
+	if errors.Is(err, errDeadlineAhead) {
+		stats.markDeadline()
+		return nil, errors.WithStack(errDeadlineRefusal)
 	}
 	if err != nil {
 		if errors.Is(err, ErrBudgetExceeded) {

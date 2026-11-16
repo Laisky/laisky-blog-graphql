@@ -198,14 +198,19 @@ func (a *llmAdmission) settle(resp *Response, err error) {
 	if a.pending == nil {
 		return
 	}
+	if errors.Is(err, errRequestNotSent) {
+		// Nothing left the process: the call and its tokens are returned.
+		a.budget.release(a.reservation())
+		a.pending.release()
+		a.pending = nil
+		return
+	}
 	charged := a.attemptCharge(resp, err)
 	a.budget.settle(a.reservation(), charged)
 	a.pending.settle(charged)
 	a.pending = nil
-	if !errors.Is(err, errRequestNotSent) {
-		a.sent++
-		a.budget.recordUpstream(charged, reportedUsage(resp), a.sent > 1)
-	}
+	a.sent++
+	a.budget.recordUpstream(charged, reportedUsage(resp), a.sent > 1)
 }
 
 // reportedUsage reports that resp carries provider-reported usage, which
@@ -241,6 +246,11 @@ func (a *llmAdmission) attemptCharge(resp *Response, err error) int64 {
 // request comes near it; it keeps a gateway that reports absurd usage from
 // overflowing the budgets' arithmetic, and still exhausts any ceiling.
 const maxRequestCharge int64 = 1 << 40
+
+// errDeadlineRefusal is the ErrBudgetExceeded refusal of an indexing request
+// that could not be sent before the indexing deadline (errDeadlineAhead): the run
+// degrades as if the deadline had passed.
+var errDeadlineRefusal = errors.Wrap(ErrBudgetExceeded, "llm request would outlive the indexing deadline")
 
 // providerAnswered reports that err is an error response from the provider, as
 // opposed to a request that got no answer.

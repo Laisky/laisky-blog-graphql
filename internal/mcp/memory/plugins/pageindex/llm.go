@@ -62,6 +62,11 @@ type Request struct {
 // process (the client-side rate limiter), so the request costs nothing upstream.
 var errRequestNotSent = errors.New("llm request not sent")
 
+// errDeadlineAhead is the errRequestNotSent of a request the client-side rate
+// limiter could not send before its context's deadline: it anticipates the
+// deadline, so the work it was for degrades like the deadline itself.
+var errDeadlineAhead = errors.Wrap(errRequestNotSent, "llm request would outlive its deadline")
+
 // DefaultLLMRetryAttempts is the default number of upstream requests one call may
 // make, including the first (settings indexer.retry.max_attempts).
 const DefaultLLMRetryAttempts = 3
@@ -222,75 +227,15 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 	if model == "" {
 		model = l.model
 	}
-	params := responses.ResponseNewParams{
-		Model: model,
-		Input: responses.ResponseNewParamsInputUnion{
-			OfInputItemList: buildInput(req.Input),
-		},
-	}
-	if req.Temperature != 0 {
-		params.Temperature = param.NewOpt(float64(req.Temperature))
-	}
-	if req.MaxOutTokens > 0 {
-		params.MaxOutputTokens = param.NewOpt(int64(req.MaxOutTokens))
-	}
 	if err := ctx.Err(); err != nil {
 		return nil, errors.Wrapf(errRequestNotSent, "context ended: %v", err)
 	}
-	if len(req.Schema) > 0 {
-		var schema map[string]any
-		if err := json.Unmarshal(req.Schema, &schema); err != nil {
-			return nil, errors.Wrapf(errRequestNotSent, "decode schema: %v", err)
-		}
-		name := req.SchemaName
-		if name == "" {
-			name = "structured_output"
-		}
-		params.Text = responses.ResponseTextConfigParam{
-			Format: responses.ResponseFormatTextConfigUnionParam{
-				OfJSONSchema: &responses.ResponseFormatTextJSONSchemaConfigParam{
-					Name:   name,
-					Schema: schema,
-					Strict: param.NewOpt(true),
-					Type:   constant.JSONSchema("json_schema"),
-				},
-			},
-		}
+	params, err := responseParams(model, req)
+	if err != nil {
+		return nil, err
 	}
-
-	var resp *responses.Response
 	start := time.Now()
-	attempt := 0
-	var lastErr error
-	err := retry.Do(func() error {
-		attempt++
-		if attempt > 1 && req.AdmitRetry != nil {
-			if admitErr := req.AdmitRetry(attempt, lastErr); admitErr != nil {
-				return retry.Unrecoverable(admitErr)
-			}
-		}
-		if l.limiter != nil {
-			if waitErr := l.limiter.Wait(ctx); waitErr != nil {
-				lastErr = errors.Wrapf(errRequestNotSent, "rate limiter: %v", waitErr)
-				return lastErr
-			}
-		}
-		out, callErr := l.client.Responses.New(ctx, params)
-		if callErr != nil {
-			lastErr = callErr
-			return callErr
-		}
-		resp = out
-		return nil
-	},
-		retry.Context(ctx),
-		retry.Attempts(uint(l.retry.MaxAttempts)),
-		retry.Delay(l.retry.InitialBackoff),
-		retry.MaxDelay(l.retry.MaxBackoff),
-		retry.DelayType(retry.BackOffDelay),
-		retry.LastErrorOnly(true),
-		retry.RetryIf(func(err error) bool { return isRetryableLLMError(ctx, err) }),
-	)
+	resp, err := l.send(ctx, req, params)
 	if err != nil {
 		if l.log != nil {
 			l.log.Warn("pageindex.llm.respond failed",
@@ -340,6 +285,98 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 		)
 	}
 	return out, nil
+}
+
+// responseParams builds the Responses API request of req for model. A schema
+// that does not decode fails before anything is sent (errRequestNotSent).
+func responseParams(model string, req Request) (responses.ResponseNewParams, error) {
+	params := responses.ResponseNewParams{
+		Model: model,
+		Input: responses.ResponseNewParamsInputUnion{
+			OfInputItemList: buildInput(req.Input),
+		},
+	}
+	if req.Temperature != 0 {
+		params.Temperature = param.NewOpt(float64(req.Temperature))
+	}
+	if req.MaxOutTokens > 0 {
+		params.MaxOutputTokens = param.NewOpt(int64(req.MaxOutTokens))
+	}
+	if len(req.Schema) == 0 {
+		return params, nil
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(req.Schema, &schema); err != nil {
+		return params, errors.Wrapf(errRequestNotSent, "decode schema: %v", err)
+	}
+	name := req.SchemaName
+	if name == "" {
+		name = "structured_output"
+	}
+	params.Text = responses.ResponseTextConfigParam{
+		Format: responses.ResponseFormatTextConfigUnionParam{
+			OfJSONSchema: &responses.ResponseFormatTextJSONSchemaConfigParam{
+				Name:   name,
+				Schema: schema,
+				Strict: param.NewOpt(true),
+				Type:   constant.JSONSchema("json_schema"),
+			},
+		},
+	}
+	return params, nil
+}
+
+// send sends params with the configured retry policy, admitting every retry
+// through req.AdmitRetry first. Its error is the last request's own outcome,
+// which decides what that request is charged.
+func (l *openaiLLM) send(ctx context.Context, req Request, params responses.ResponseNewParams) (*responses.Response, error) {
+	var resp *responses.Response
+	attempt := 0
+	var lastErr error
+	err := retry.Do(func() error {
+		attempt++
+		if attempt > 1 && req.AdmitRetry != nil {
+			if admitErr := req.AdmitRetry(attempt, lastErr); admitErr != nil {
+				return retry.Unrecoverable(admitErr)
+			}
+		}
+		if l.limiter != nil {
+			if waitErr := l.limiter.Wait(ctx); waitErr != nil {
+				// A wait that fails would fail again, so it is not retried.
+				cause := errRequestNotSent
+				if ctx.Err() == nil {
+					cause = errDeadlineAhead
+				}
+				lastErr = errors.Wrapf(cause, "rate limiter: %v", waitErr)
+				return retry.Unrecoverable(lastErr)
+			}
+		}
+		out, callErr := l.client.Responses.New(ctx, params)
+		if callErr != nil {
+			lastErr = callErr
+			return callErr
+		}
+		resp = out
+		return nil
+	},
+		retry.Context(ctx),
+		retry.Attempts(uint(l.retry.MaxAttempts)),
+		retry.Delay(l.retry.InitialBackoff),
+		retry.MaxDelay(l.retry.MaxBackoff),
+		retry.DelayType(retry.BackOffDelay),
+		retry.LastErrorOnly(true),
+		retry.RetryIf(func(err error) bool { return isRetryableLLMError(ctx, err) }),
+	)
+	if err != nil && lastErr != nil && ctx.Err() != nil {
+		// The context ended while waiting to retry: retry-go reports the context's
+		// error, but the request still pending settlement is the last one sent,
+		// whose own outcome decides its charge.
+		return nil, lastErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 // answerState classifies resp, sent with the output ceiling maxOut. It is

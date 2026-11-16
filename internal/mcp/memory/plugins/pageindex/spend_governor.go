@@ -352,10 +352,31 @@ func (t *spendTicket) settle(charged int64) {
 		ledger.expire(oldest)
 		switch {
 		case delta < 0:
-			ledger.refund(t.slot, -delta)
+			ledger.refund(t.slot, 0, -delta)
 		case delta > 0:
 			ledger.record(slot, 0, delta)
 		}
+	}
+}
+
+// release returns the ticket's whole reservation, its call included, to the
+// admission slot: the request was never sent. Releasing a settled ticket is a no-op.
+func (t *spendTicket) release() {
+	if t == nil {
+		return
+	}
+	g := t.governor
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if t.settled {
+		return
+	}
+	t.settled = true
+	t.tenant.inflight--
+	oldest := g.oldestCounted(g.slotLocked())
+	for _, ledger := range []*spendLedger{t.tenant, &g.global} {
+		ledger.expire(oldest)
+		ledger.refund(t.slot, 1, t.estimate)
 	}
 }
 
@@ -431,13 +452,15 @@ func (l *spendLedger) record(slot, calls, tokens int64) {
 	l.tokens = satAdd(l.tokens, tokens)
 }
 
-// refund returns up to tokens to slot when that slot is still counted.
-func (l *spendLedger) refund(slot, tokens int64) {
+// refund returns up to calls and tokens to slot when that slot is still counted.
+func (l *spendLedger) refund(slot, calls, tokens int64) {
 	for i := len(l.slots) - 1; i >= 0 && l.slots[i].index >= slot; i-- {
 		if l.slots[i].index == slot {
-			give := min(tokens, l.slots[i].tokens)
-			l.slots[i].tokens -= give
-			l.tokens -= give
+			giveCalls, giveTokens := min(calls, l.slots[i].calls), min(tokens, l.slots[i].tokens)
+			l.slots[i].calls -= giveCalls
+			l.slots[i].tokens -= giveTokens
+			l.calls -= giveCalls
+			l.tokens -= giveTokens
 			return
 		}
 	}

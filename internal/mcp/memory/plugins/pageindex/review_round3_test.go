@@ -12,6 +12,7 @@ import (
 
 	errors "github.com/Laisky/errors/v2"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 )
 
 // The tests below reproduce the findings of an independent review of the fixes
@@ -205,4 +206,84 @@ func TestRequestsThatNeverLeftAreNotChargedOrCounted(t *testing.T) {
 		})
 	}
 	require.Zero(t, hits.Load())
+}
+
+// TestContextEndingDuringBackoffChargesTheLastRequest covers the second
+// independent review: when the context ended while the client waited to retry,
+// retry-go returned the context's error, and the request that had been answered
+// with a 500 was charged its whole reservation instead of its input estimate.
+func TestContextEndingDuringBackoffChargesTheLastRequest(t *testing.T) {
+	srv, hits := statusServer(t, http.StatusInternalServerError)
+	tok, err := NewTokenizer("gpt-5.4-mini")
+	require.NoError(t, err)
+	client, err := NewOpenAILLM(LLMConfig{APIKey: "sk-test", BaseURL: srv.URL, Tokenizer: tok,
+		Retry: RetrySettings{MaxAttempts: 3, InitialBackoff: 5 * time.Second, MaxBackoff: 5 * time.Second}})
+	require.NoError(t, err)
+	gate := newLLMGate(tok, frozenSpend(LimitsSettings{}), LimitsSettings{})
+	req := Request{Input: userInput("Summarize the section.")}
+	stats := &Stats{}
+	budget := newOperationBudget(100_000, 10, unlimited, "t").metered(stats)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	_, err = gate.call(ctx, client, req, budget)
+	require.Error(t, err)
+	require.Equal(t, int32(1), hits.Load())
+	require.Equal(t, estimateInputTokens(tok, req), 100_000-budget.Remaining(), "the 500 is charged its input, as without the backoff")
+	require.Equal(t, 1, stats.UpstreamRequests)
+}
+
+// TestLimiterRefusalIsFreeAndDegradesToTimeout covers the client-side rate
+// limiter: a wait that would outlive the deadline sent nothing but used a call
+// of the budgets, was retried, and aborted the indexing run instead of degrading
+// it like the deadline it anticipates.
+func TestLimiterRefusalIsFreeAndDegradesToTimeout(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(responsesBody("completed", "null", "A generated summary.", usageJSON(40, 10, 50), 0)))
+	}))
+	t.Cleanup(srv.Close)
+	tok, err := NewTokenizer("gpt-5.4-mini")
+	require.NoError(t, err)
+	client, err := NewOpenAILLM(LLMConfig{APIKey: "sk-test", BaseURL: srv.URL, Tokenizer: tok, Retry: fastRetry(3),
+		Limiter: rate.NewLimiter(rate.Every(time.Hour), 1)})
+	require.NoError(t, err)
+	cfg := summarizingSettings()
+	cfg.Limits = LimitsSettings{TenantLLMCallsPerWindow: 2}
+	spend := frozenSpend(cfg.Limits)
+	idx, err := NewIndexer(Deps{LLM: client, Tokenizer: tok, Settings: cfg, Spend: spend})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	tree, stats, err := idx.Index(ctx, KindMarkdown, []byte(flatMarkdown(3, "l")), IndexOptions{DocID: "lim", Tenant: "t"}, nil)
+	require.NoError(t, err, "a request the limiter cannot send in time degrades the run")
+	require.Len(t, tree.Structure, 3)
+	require.Equal(t, int32(1), hits.Load(), "only the first request was sent")
+	require.Equal(t, 1, stats.UpstreamRequests)
+	require.Equal(t, degradedTimeout, stats.degradedReason())
+	require.Equal(t, 2, stats.LocalSummaries)
+	require.False(t, spend.wouldRefuse("t"), "requests that were never sent did not use the tenant's calls")
+}
+
+// TestUnsentRequestsDoNotUseCalls checks the call side of finding 6: a request
+// that never left the process returns its call to the operation and the rolling
+// budgets, not only its tokens.
+func TestUnsentRequestsDoNotUseCalls(t *testing.T) {
+	tok, err := NewTokenizer("gpt-5.4-mini")
+	require.NoError(t, err)
+	client, err := NewOpenAILLM(LLMConfig{APIKey: "sk-test", BaseURL: "http://127.0.0.1:1", Retry: fastRetry(3), Tokenizer: tok})
+	require.NoError(t, err)
+	spend := frozenSpend(LimitsSettings{TenantLLMCallsPerWindow: 1})
+	gate := newLLMGate(tok, spend, LimitsSettings{})
+	budget := newOperationBudget(100_000, 1, unlimited, "t")
+	for range 3 {
+		_, err := gate.call(context.Background(), client, Request{Input: userInput("hi"), Schema: json.RawMessage(`{not json`)}, budget)
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrBudgetExceeded, "the call is not refused: the budgets still hold it")
+	}
+	require.False(t, budget.exhausted())
+	require.False(t, spend.wouldRefuse("t"))
 }

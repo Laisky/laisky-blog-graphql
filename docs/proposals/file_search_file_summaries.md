@@ -444,12 +444,12 @@ runtime or service:
 - Apply the same English, word, and byte limits before persisting the tree.
 - Persist `SourceContentHash` on the tree and reject publication when it no longer
   matches the active file.
-- When a spending ceiling or the indexing deadline cuts the tree's LLM work short
-  (leaves summarized locally), or the node ceiling cuts its structure short, publish
-  the summary as `degraded` with a safe error code
-  (`budget_exhausted`, `timeout` or `document_limit`), mark the tree and catalog entry,
-  and keep a retryable refresh state for the first two (operator manual
-  `mcp_memory_plugins.md` §6.6).
+- When a spending ceiling, the indexing deadline or an answer the provider did not
+  complete cuts the tree's LLM work short (leaves summarized locally), or the node
+  ceiling cuts its structure short, publish the summary as `degraded` with a safe
+  error code (`budget_exhausted`, `timeout`, `provider_error` or `document_limit`),
+  mark the tree and catalog entry, and keep a retryable refresh state for the first
+  three (operator manual `mcp_memory_plugins.md` §6.6).
 - Copy the validated description into every `ChunkEntry` produced by the search loop.
 - Continue to use the pure-Go, in-process PageIndex implementation. No subprocess,
   sidecar, cgo, or IPC is permitted.
