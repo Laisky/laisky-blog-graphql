@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useApiKey } from '@/lib/api-key-context';
 import { fetchGraphQL } from '@/lib/graphql';
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 
 import { fetchCallLogs } from '../call-log/api';
 import { WebFetchPage } from './page';
@@ -157,6 +158,35 @@ describe('WebFetchPage output format selection', () => {
     const rawHeading = screen.getByText(/Fetched Content/i).parentElement;
     expect(rawHeading).not.toBeNull();
     expect(within(rawHeading as HTMLElement).getByText('Raw HTML')).toBeInTheDocument();
+  });
+
+  it('makes the fetched body and usage history keyboard-scrollable regions', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValue({
+      WebFetch: { url: 'https://example.com', created_at: '2026-01-01T00:00:00Z', content: '# Title', output_markdown: true },
+    });
+
+    render(<WebFetchPage />);
+    expect(screen.getByRole('region', { name: 'Web fetch usage history' })).toHaveAttribute('tabindex', '0');
+    expect(screen.getByRole('table', { name: 'Web fetch usage history' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText(/enter url/i), { target: { value: 'https://example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: /run fetch/i }));
+
+    const body = await screen.findByRole('region', { name: 'Fetched content' });
+    expect(body).toHaveAttribute('tabindex', '0');
+    expect(within(body).getByText('# Title')).toBeInTheDocument();
+    expect(findDanglingIdRefs()).toEqual([]);
+  });
+
+  it('announces a failed fetch', async () => {
+    vi.mocked(fetchGraphQL).mockRejectedValue(new Error('fetch backend unavailable'));
+
+    render(<WebFetchPage />);
+    fireEvent.change(screen.getByPlaceholderText(/enter url/i), { target: { value: 'https://example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: /run fetch/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/fetch backend unavailable|failed/i);
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 
   it('keeps the format selector usable while the console is locked but reports nothing', async () => {

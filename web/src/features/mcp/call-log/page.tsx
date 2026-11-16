@@ -245,7 +245,11 @@ export function CallLogPage() {
               </select>
             </div>
           </div>
-          {error && <div className="text-sm text-destructive">{error}</div>}
+          {error && (
+            <div role="alert" className="text-sm text-destructive">
+              {error}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -256,8 +260,16 @@ export function CallLogPage() {
             {pagination ? ` • ${pagination.total_items} total entries` : ''}
           </div>
         </div>
-        <div className="relative overflow-x-auto">
+        <div
+          tabIndex={0}
+          role="region"
+          aria-labelledby="call-log-table-caption"
+          className="relative overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
           <table className="min-w-full divide-y divide-border/60 text-sm">
+            <caption id="call-log-table-caption" className="sr-only">
+              Call log results
+            </caption>
             <thead className="bg-muted/40">
               <tr className="text-left uppercase tracking-widest text-xs text-muted-foreground">
                 <th scope="col" className="px-4 py-3 font-medium">

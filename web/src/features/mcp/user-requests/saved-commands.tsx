@@ -1,6 +1,6 @@
 import { BookmarkPlus, Check, ChevronDown, ChevronUp, Edit3, Loader2, Save, Search, Star, Trash2, X } from 'lucide-react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { normalizeApiKey, useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
+
+import { isImeComposingKeyDown } from '../shared/ime';
 
 import {
   createSavedCommand,
@@ -114,6 +116,7 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const commandListRef = useRef<HTMLDivElement>(null);
+  const contentId = useId();
 
   const hasContent = useMemo(() => currentContent.trim().length > 0, [currentContent]);
   const isDisabled = disabled || isToolConsoleLocked || !apiKey;
@@ -194,6 +197,7 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
           setSelectedIndex((prev) => Math.max(prev - 1, 0));
           break;
         case 'Enter':
+          if (isImeComposingKeyDown(e)) return;
           e.preventDefault();
           if (filteredCommands[selectedIndex] && !disabled && !editingId) {
             onSelectCommand(filteredCommands[selectedIndex].content);
@@ -342,6 +346,9 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
               setSavedCommandsExpanded(newValue);
             }}
             className="flex items-center gap-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+            aria-expanded={isExpanded}
+            // The list is not rendered while collapsed, so only an expanded toggle references it.
+            aria-controls={isExpanded ? contentId : undefined}
           >
             <Star className="h-5 w-5 text-amber-500" />
             <CardTitle className="text-lg text-foreground">Saved Commands</CardTitle>
@@ -372,9 +379,9 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
       </CardHeader>
 
       {isExpanded && (
-        <CardContent className="space-y-4">
+        <CardContent id={contentId} className="space-y-4">
           {error && (
-            <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
+            <div role="alert" className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
               {error}
               <button
                 type="button"
@@ -395,10 +402,12 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
                   value={newLabel}
                   onChange={(e: ChangeEvent<HTMLInputElement>) => setNewLabel(e.target.value)}
                   placeholder="Enter a label for this command…"
+                  aria-label="Label for the saved command"
                   className="flex-1"
                   onKeyDown={(e) => {
                     if (e.nativeEvent.isComposing) return;
                     if (e.key === 'Enter') {
+                      if (isImeComposingKeyDown(e)) return;
                       e.preventDefault();
                       handleSaveNewCommand();
                     } else if (e.key === 'Escape') {
@@ -412,7 +421,15 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
                   {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                   Save
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={handleToggleSaveInput} disabled={isSaving}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleToggleSaveInput}
+                  disabled={isSaving}
+                  aria-label="Cancel saving command"
+                  title="Cancel"
+                >
                   <X className="h-4 w-4" />
                 </Button>
               </div>
@@ -443,6 +460,7 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
                   onChange={(e: ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                   onKeyDown={handleSearchKeyDown}
                   placeholder="Type to search commands… (↑↓ navigate, Enter select)"
+                  aria-label="Search saved commands"
                   className="pl-9 pr-8"
                   disabled={isDisabled}
                 />
@@ -565,6 +583,7 @@ function SavedCommandItem({
           value={editLabel}
           onChange={(e: ChangeEvent<HTMLInputElement>) => onEditLabelChange(e.target.value)}
           placeholder="Command label"
+          aria-label="Command label"
           className="font-medium"
           disabled={isSaving}
           autoFocus
@@ -573,6 +592,7 @@ function SavedCommandItem({
           value={editContent}
           onChange={(e: ChangeEvent<HTMLTextAreaElement>) => onEditContentChange(e.target.value)}
           placeholder="Command content"
+          aria-label="Command content"
           rows={3}
           disabled={isSaving}
         />

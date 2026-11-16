@@ -38,6 +38,52 @@ export function clearSsoToken(): void {
   window.localStorage.removeItem(SSO_TOKEN_STORAGE_KEY);
 }
 
+/** SsoTokenChangeReason says why subscribeSsoToken re-read the stored token. */
+export type SsoTokenChangeReason = 'restored' | 'storage';
+
+/**
+ * subscribeSsoToken re-reads the stored SSO token whenever it may have changed without this
+ * document running the change itself, and passes it to onChange with the reason:
+ * - 'restored': the page came back from the back/forward cache (pageshow with persisted).
+ *   Chrome restores even Cache-Control: no-store pages unless cookies or other
+ *   authentication changed, and signing out only clears local storage, so a page restored
+ *   after a sign-out would otherwise keep showing the account it had loaded.
+ * - 'storage': another tab signed in or out. The key is re-read rather than taken from the
+ *   event, whose newValue may already be stale.
+ * A token that cannot be read (site data blocked) is reported as signed out. It returns
+ * the function that removes both listeners.
+ */
+export function subscribeSsoToken(onChange: (token: string, reason: SsoTokenChangeReason) => void): () => void {
+  if (typeof window === 'undefined') {
+    return () => undefined;
+  }
+  const readToken = () => {
+    try {
+      return loadSsoToken();
+    } catch {
+      return '';
+    }
+  };
+  const handlePageShow = (event: PageTransitionEvent) => {
+    if (event.persisted) {
+      onChange(readToken(), 'restored');
+    }
+  };
+  const handleStorage = (event: StorageEvent) => {
+    // A null key means some document cleared the whole storage area.
+    if (event.key !== null && event.key !== SSO_TOKEN_STORAGE_KEY) {
+      return;
+    }
+    onChange(readToken(), 'storage');
+  };
+  window.addEventListener('pageshow', handlePageShow);
+  window.addEventListener('storage', handleStorage);
+  return () => {
+    window.removeEventListener('pageshow', handlePageShow);
+    window.removeEventListener('storage', handleStorage);
+  };
+}
+
 export interface SsoTokenFromSearch {
   token: string;
   // nextSearch is the original query string with the sso_token parameter removed.

@@ -190,7 +190,11 @@ function WebSearchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; i
                   </Button>
                 </div>
 
-                {execError && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{execError}</div>}
+                {execError && (
+                  <div role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                    {execError}
+                  </div>
+                )}
 
                 {lastResult && (
                   <div className="mt-6 space-y-4">
@@ -240,8 +244,16 @@ function WebSearchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; i
         <section className="space-y-4">
           <h2 className="text-xl font-semibold text-foreground">Usage History</h2>
           <Card className="border border-border/60 bg-card overflow-hidden">
-            <div className="overflow-x-auto">
+            <div
+              tabIndex={0}
+              role="region"
+              aria-labelledby="web-search-history-caption"
+              className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            >
               <table className="w-full text-left text-sm">
+                <caption id="web-search-history-caption" className="sr-only">
+                  Web search usage history
+                </caption>
                 <thead className="bg-muted text-muted-foreground">
                   <tr>
                     <th scope="col" className="px-4 py-3 font-medium uppercase tracking-wider">

@@ -163,4 +163,12 @@ describe('MemoryPage private result boundaries', () => {
     expect(observer).not.toHaveBeenCalled();
     expect(callMcpTool).not.toHaveBeenCalled();
   });
+
+  it('announces before_turn errors to assistive technology', async () => {
+    mockApiKeyState('valid');
+    render(<MemoryPage />);
+    fireEvent.change(screen.getByLabelText('current_input (JSON array)'), { target: { value: 'not JSON' } });
+    fireEvent.click(screen.getByRole('button', { name: /run memory_before_turn/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/current_input is not valid JSON:/);
+  });
 });

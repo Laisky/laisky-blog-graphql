@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/confirm-dialog';
@@ -19,6 +19,7 @@ interface Props {
 export function UrlAttachmentDialog({ open, onOpenChange, onSubmit }: Props) {
   const [value, setValue] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -54,12 +55,19 @@ export function UrlAttachmentDialog({ open, onOpenChange, onSubmit }: Props) {
             autoFocus
             value={value}
             placeholder="https://example.com/image.png"
+            aria-label="Image URL"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
             onChange={(event) => {
               setValue(event.target.value);
               setError(null);
             }}
           />
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && (
+            <p id={errorId} role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
 import { useApiKey } from '@/lib/api-key-context';
+import { readStorage, writeStorage } from '@/lib/safe-storage';
 
 import { resolveMcpEndpoint } from '../shared/auth';
 
@@ -219,7 +220,7 @@ function applyInspectorDefaults(params: URLSearchParams, endpointUrl: string, au
     return;
   }
 
-  const currentHeaders = readCustomHeaders(window.localStorage.getItem('lastCustomHeaders'));
+  const currentHeaders = readCustomHeaders(readStorage('lastCustomHeaders'));
   const shouldOverrideHeaders =
     params.has('token') ||
     params.has('authorization') ||
@@ -238,7 +239,7 @@ function applyInspectorDefaults(params: URLSearchParams, endpointUrl: string, au
     },
   ];
 
-  window.localStorage.setItem('lastCustomHeaders', JSON.stringify(nextHeaders));
+  writeStorage('lastCustomHeaders', JSON.stringify(nextHeaders));
 }
 
 function readCustomHeaders(rawValue: string | null): CustomHeader[] {

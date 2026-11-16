@@ -112,6 +112,7 @@ export function PendingRequestCard({
             : 'cursor-grab opacity-0 hover:text-muted-foreground group-hover:opacity-100 active:cursor-grabbing'
         )}
         title="Drag to reorder"
+        aria-label="Drag to reorder request"
       >
         <GripVertical className="h-4 w-4" />
       </div>
@@ -137,7 +138,7 @@ export function PendingRequestCard({
       <CardContent className="flex justify-end gap-2 shrink-0 pt-0">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" disabled={isEditorDisabled} className="gap-1.5" title="Edit options">
+            <Button variant="outline" size="sm" disabled={isEditorDisabled} className="gap-1.5" title="Edit options" aria-label="Edit options">
               <Edit3 className="h-4 w-4" />
               <ChevronDown className="h-3.5 w-3.5 opacity-70" />
             </Button>
@@ -228,7 +229,14 @@ export function ConsumedCard({
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" disabled={isEditorDisabled} className="gap-1.5" title="Pick up this directive">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isEditorDisabled}
+                className="gap-1.5"
+                title="Pick up this directive"
+                aria-label="Pick up this directive"
+              >
                 <Package className="h-4 w-4" />
                 <ChevronDown className="h-3.5 w-3.5 opacity-70" />
               </Button>

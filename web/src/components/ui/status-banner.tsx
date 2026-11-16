@@ -22,6 +22,8 @@ interface StatusBannerProps {
 /**
  * StatusBanner displays a styled notification banner with tone-based coloring.
  * Use this component to provide feedback to users about the status of an operation.
+ * The banner is a live region: error tones use role="alert" so failures interrupt
+ * assistive technology, while info and success tones use role="status" (polite).
  */
 export function StatusBanner({ status, subtext, subtextOnSuccessOnly = true, className }: StatusBannerProps) {
   const toneStyles = {
@@ -33,7 +35,10 @@ export function StatusBanner({ status, subtext, subtextOnSuccessOnly = true, cla
   const showSubtext = subtext && (!subtextOnSuccessOnly || status.tone === 'success');
 
   return (
-    <div className={cn('flex flex-col gap-1 rounded-lg border px-4 py-3 text-sm transition-colors', toneStyles[status.tone], className)}>
+    <div
+      role={status.tone === 'error' ? 'alert' : 'status'}
+      className={cn('flex flex-col gap-1 rounded-lg border px-4 py-3 text-sm transition-colors', toneStyles[status.tone], className)}
+    >
       <span>{status.message}</span>
       {showSubtext && <span className="text-xs opacity-80">{subtext}</span>}
     </div>

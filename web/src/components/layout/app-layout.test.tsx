@@ -1,11 +1,14 @@
 import '@testing-library/jest-dom/vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { AppLayout } from './app-layout';
 import { useApiKey } from '@/lib/api-key-context';
+import { consolePages } from '@/lib/route-modules';
 import { useToolsConfig } from '@/lib/tools-config-context';
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 
 vi.mock('@/lib/api-key-context', () => ({
   useApiKey: vi.fn(),
@@ -120,5 +123,164 @@ describe('AppLayout API key banner', () => {
     renderLayout('/settings');
 
     expect(screen.queryByText('API key required. Set one in Settings to enable tools.')).not.toBeInTheDocument();
+  });
+});
+
+describe('AppLayout navigation semantics', () => {
+  /** mockValidKey renders the layout for an authenticated key with every tool enabled. */
+  function mockValidKey() {
+    vi.mocked(useToolsConfig).mockReturnValue({
+      ask_user: true,
+      extract_key_info: true,
+      file_io: true,
+      get_user_request: true,
+      memory: true,
+      web_fetch: true,
+      web_search: true,
+    });
+    vi.mocked(useApiKey).mockReturnValue({
+      apiKey: 'saved-key',
+      disconnect: vi.fn(),
+      history: [],
+      isToolConsoleLocked: false,
+      keyEntries: [],
+      remainQuota: 300000,
+      removeFromHistory: vi.fn(),
+      sessionId: 0,
+      setAliasForKey: vi.fn(),
+      setApiKey: vi.fn(),
+      status: 'valid',
+      switchApiKey: vi.fn(),
+      validateApiKey: vi.fn(),
+    });
+  }
+
+  it('offers a skip link that targets the focusable main landmark', () => {
+    mockValidKey();
+    renderLayout('/');
+
+    const skip = screen.getByRole('link', { name: 'Skip to main content' });
+    expect(skip).toHaveAttribute('href', '#main-content');
+    const main = screen.getByRole('main');
+    expect(main).toHaveAttribute('id', 'main-content');
+    expect(main).toHaveAttribute('tabindex', '-1');
+    expect(findDanglingIdRefs()).toEqual([]);
+  });
+
+  it('names the icon-only settings link and marks it current on the settings page', () => {
+    mockValidKey();
+    renderLayout('/settings');
+
+    expect(screen.getByRole('link', { name: 'Settings: Authenticated' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('exposes the console links as a disclosure that Escape closes back to its trigger', () => {
+    mockValidKey();
+    renderLayout('/');
+
+    const trigger = screen.getByRole('button', { name: /console/i });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).not.toHaveAttribute('aria-haspopup');
+    const list = document.getElementById(trigger.getAttribute('aria-controls') ?? '');
+    expect(list).not.toBeNull();
+    expect(list).not.toBeVisible();
+
+    act(() => trigger.click());
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(list).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Inspector (opens in a new tab)' })).toHaveAttribute('target', '_blank');
+
+    act(() => {
+      screen.getByRole('link', { name: 'web_search' }).focus();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveFocus();
+    expect(findDanglingIdRefs()).toEqual([]);
+  });
+
+  it('links only to console pages that the code-split registry routes and preloads', () => {
+    mockValidKey();
+    renderLayout('/');
+
+    const registered = new Set(consolePages.map((page) => page.path));
+    const consoleLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href^="/"]'))
+      .map((link) => link.getAttribute('href') ?? '')
+      .filter((href) => href !== '/');
+    expect(consoleLinks.length).toBeGreaterThan(0);
+    for (const href of consoleLinks) {
+      expect(registered, `${href} has no entry in consolePages`).toContain(href);
+    }
+  });
+});
+
+describe('AppLayout API key sessions', () => {
+  /** Counter is a console page with local state, standing in for any page's per-key work. */
+  function Counter() {
+    const [count, setCount] = useState(0);
+    return (
+      <button type="button" onClick={() => setCount((value) => value + 1)}>
+        clicked {count}
+      </button>
+    );
+  }
+
+  function mockKey(apiKey: string, sessionId: number, isToolConsoleLocked = false) {
+    vi.mocked(useToolsConfig).mockReturnValue({
+      ask_user: true,
+      extract_key_info: true,
+      file_io: true,
+      get_user_request: true,
+      memory: true,
+      web_fetch: true,
+      web_search: true,
+    });
+    vi.mocked(useApiKey).mockReturnValue({
+      apiKey,
+      disconnect: vi.fn(),
+      history: [],
+      isToolConsoleLocked,
+      keyEntries: [],
+      remainQuota: 300000,
+      removeFromHistory: vi.fn(),
+      sessionId,
+      setAliasForKey: vi.fn(),
+      setApiKey: vi.fn(),
+      status: isToolConsoleLocked ? 'validating' : 'valid',
+      switchApiKey: vi.fn(),
+      validateApiKey: vi.fn(),
+    });
+  }
+
+  const tree = () => (
+    <MemoryRouter initialEntries={['/']}>
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route index element={<Counter />} />
+        </Route>
+      </Routes>
+    </MemoryRouter>
+  );
+
+  it('remounts the console page for every key session but not for a lock change', () => {
+    mockKey('key-a', 1);
+    const view = render(tree());
+    act(() => screen.getByRole('button', { name: 'clicked 0' }).click());
+    expect(screen.getByRole('button', { name: 'clicked 1' })).toBeInTheDocument();
+
+    // Revalidating the same key locks the consoles for a moment; the page keeps its state.
+    mockKey('key-a', 1, true);
+    view.rerender(tree());
+    expect(screen.getByRole('button', { name: 'clicked 1' })).toBeInTheDocument();
+
+    // A different key, or a new session of the same key, starts the page over, so nothing
+    // a page started for the previous session can reach the new one.
+    mockKey('key-b', 2);
+    view.rerender(tree());
+    expect(screen.getByRole('button', { name: 'clicked 0' })).toBeInTheDocument();
+    act(() => screen.getByRole('button', { name: 'clicked 0' }).click());
+    mockKey('key-b', 3);
+    view.rerender(tree());
+    expect(screen.getByRole('button', { name: 'clicked 0' })).toBeInTheDocument();
   });
 });

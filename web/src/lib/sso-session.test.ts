@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   clearSsoToken,
@@ -7,6 +7,7 @@ import {
   loadSsoToken,
   resolveSiblingSsoPath,
   storeSsoToken,
+  subscribeSsoToken,
 } from './sso-session';
 
 afterEach(() => {
@@ -84,5 +85,60 @@ describe('resolveSiblingSsoPath', () => {
 
   it('ignores a trailing slash on the current path', () => {
     expect(resolveSiblingSsoPath('/sso/login/', 'profile')).toBe('/sso/profile');
+  });
+});
+
+describe('subscribeSsoToken', () => {
+  const pageShow = (persisted: boolean) => {
+    const event = new Event('pageshow');
+    Object.defineProperty(event, 'persisted', { value: persisted });
+    window.dispatchEvent(event);
+  };
+  const storage = (key: string | null) => window.dispatchEvent(new StorageEvent('storage', { key, storageArea: window.localStorage }));
+
+  afterEach(() => {
+    window.localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('re-reads the token on a back/forward cache restore only', () => {
+    const onChange = vi.fn();
+    const unsubscribe = subscribeSsoToken(onChange);
+    storeSsoToken('a.b.c');
+    pageShow(false);
+    expect(onChange).not.toHaveBeenCalled();
+    clearSsoToken();
+    pageShow(true);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('', 'restored');
+    unsubscribe();
+  });
+
+  it('re-reads the token for its own key or a cleared storage area, never from the event payload', () => {
+    const onChange = vi.fn();
+    const unsubscribe = subscribeSsoToken(onChange);
+    storeSsoToken('a.b.c');
+    storage('theme');
+    expect(onChange).not.toHaveBeenCalled();
+    storage('laisky_sso_token');
+    storage(null);
+    expect(onChange.mock.calls).toEqual([
+      ['a.b.c', 'storage'],
+      ['a.b.c', 'storage'],
+    ]);
+    unsubscribe();
+    storage('laisky_sso_token');
+    pageShow(true);
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a token it cannot read as signed out', () => {
+    const onChange = vi.fn();
+    const unsubscribe = subscribeSsoToken(onChange);
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('The operation is insecure.', 'SecurityError');
+    });
+    pageShow(true);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('', 'restored');
+    unsubscribe();
   });
 });

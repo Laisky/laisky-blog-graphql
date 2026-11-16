@@ -215,7 +215,11 @@ function WebFetchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; is
                   </div>
                 </fieldset>
 
-                {execError && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{execError}</div>}
+                {execError && (
+                  <div role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                    {execError}
+                  </div>
+                )}
 
                 {lastResult && (
                   <div className="mt-6 space-y-4">
@@ -227,7 +231,12 @@ function WebFetchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; is
                     </div>
                     {/* The body is untrusted remote content. It is rendered as
                         text in both formats and is never injected as markup. */}
-                    <div className="max-h-[600px] overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-4">
+                    <div
+                      tabIndex={0}
+                      role="region"
+                      aria-label="Fetched content"
+                      className="max-h-[600px] overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
                       <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-muted-foreground">
                         {lastResult.content}
                       </pre>
@@ -243,8 +252,16 @@ function WebFetchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; is
         <section className="space-y-4">
           <h2 className="text-xl font-semibold text-foreground">Usage History</h2>
           <Card className="border border-border/60 bg-card overflow-hidden">
-            <div className="overflow-x-auto">
+            <div
+              tabIndex={0}
+              role="region"
+              aria-labelledby="web-fetch-history-caption"
+              className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            >
               <table className="w-full text-left text-sm">
+                <caption id="web-fetch-history-caption" className="sr-only">
+                  Web fetch usage history
+                </caption>
                 <thead className="bg-muted text-muted-foreground">
                   <tr>
                     <th scope="col" className="px-4 py-3 font-medium uppercase tracking-wider">
