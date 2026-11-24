@@ -242,3 +242,38 @@ describe('FileIO page mandatory version workflow', () => {
     expect(saved).toContain('draft'); expect(saved).not.toContain(v1);
   });
 });
+
+describe('FileIO preview layout', () => {
+  const editor = () => screen.getByLabelText('File content') as HTMLTextAreaElement;
+  const before = (first: Node, second: Node) => Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  it('keeps every preview action and its outcome above the scrolling editor', async () => {
+    const implementation = api.getMockImplementation()!;
+    api.mockImplementation((key, method, path, options) => method === 'PUT'
+      ? Promise.reject(new Error('save rejected')) : implementation(key, method, path, options));
+    render(<FileIOPage />); await openPreview();
+    const toolbar = screen.getByRole('group', { name: 'File actions' });
+    for (const name of ['Reload latest', 'Restore as latest', 'Save']) {
+      expect(toolbar.contains(screen.getByRole('button', { name, exact: true }))).toBe(true);
+    }
+    expect(toolbar.contains(screen.getByLabelText('File history'))).toBe(true);
+    expect(before(toolbar, editor())).toBe(true);
+    expect(toolbar.closest('[data-preview-scroll]')).toBeNull();
+    expect(editor().closest('[data-preview-scroll]')).not.toBeNull();
+
+    input('File content', 'my edit');
+    expect(toolbar.contains(screen.getByText('Unsaved changes'))).toBe(true);
+    click('Save');
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('save rejected');
+    expect(before(alert, editor())).toBe(true);
+    expect(alert.closest('[data-preview-scroll]')).toBeNull();
+  });
+
+  it('sizes the editor to its content instead of a fixed row count', async () => {
+    render(<FileIOPage />); await openPreview();
+    // jsdom has no layout; these classes are the contract the browser check measured (fill the body, grow, no inner scroll).
+    expect(editor().hasAttribute('rows')).toBe(false);
+    expect(editor().className.split(/\s+/)).toEqual(expect.arrayContaining(['grow', 'shrink-0', '[field-sizing:content]']));
+  });
+});
