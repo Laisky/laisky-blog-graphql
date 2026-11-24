@@ -78,6 +78,12 @@ func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, project, fr
 	return p.inner.Rename(ctx, auth, project, fromPath, toPath, overwrite)
 }
 
+// RenameAcrossProjects delegates a cross-project file_rename to the wrapped file
+// service, which re-indexes moved files under the target project.
+func (p *Plugin) RenameAcrossProjects(ctx context.Context, auth files.AuthContext, project, fromPath, targetProject, toPath string, overwrite bool) (files.RenameResult, error) {
+	return p.inner.RenameAcrossProjects(ctx, auth, project, fromPath, targetProject, toPath, overwrite)
+}
+
 // List delegates file_list to the wrapped file service.
 func (p *Plugin) List(ctx context.Context, auth files.AuthContext, project, path string, depth, limit int) (files.ListResult, error) {
 	return p.inner.List(ctx, auth, project, path, depth, limit)
@@ -87,3 +93,6 @@ func (p *Plugin) List(ctx context.Context, auth files.AuthContext, project, path
 func (p *Plugin) Search(ctx context.Context, auth files.AuthContext, project, query, pathPrefix string, limit int) (files.SearchResult, error) {
 	return p.inner.Search(ctx, auth, project, query, pathPrefix, limit)
 }
+
+// Compile-time assertion that the rag plugin can move files across projects.
+var _ mcpplugin.CrossProjectRenamer = (*Plugin)(nil)

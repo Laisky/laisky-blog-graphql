@@ -145,7 +145,8 @@
       "TestProductionWiringRefusesDisabledValidationOutsideDebug",
       "TestRequestBodyPolicyCountsUnarmedDeadlines",
       "TestRequestBodySettingsLoadMCPInflightBudget",
-      "TestBalanceProxyBoundsTheKeyBeforeNormalizing"
+      "TestBalanceProxyBoundsTheKeyBeforeNormalizing",
+      "TestGraphQLFileRenameTargetProject"
     ]
   },
   {
@@ -493,7 +494,9 @@
       "TestFileMutationSchemasExposeCompleteUnionArguments",
       "TestFileMutationSchemasKeepPreconditions",
       "TestFileMutationAlternativesDeclareOnlyAcceptedArguments",
-      "TestFileAuthFromContextRefusesUnverifiedIdentity"
+      "TestFileAuthFromContextRefusesUnverifiedIdentity",
+      "TestFileRenameDefinitionAdvertisesOptionalTargetProject",
+      "TestFileRenameTargetProjectRouting"
     ]
   },
   {
@@ -536,7 +539,8 @@
       "TestIndexMarkdownStopsWhenCanceledMidParse",
       "TestIndexMarkdownEmptyHeadingKeepsTreeValid",
       "TestGoldmarkWorkBoundsRouteBeforeParsing",
-      "TestExtractHeadersMatchesFullGoldmarkParse"
+      "TestExtractHeadersMatchesFullGoldmarkParse",
+      "TestPageIndexMoveStateDocIDAllocation"
     ]
   }
 ]

@@ -370,6 +370,27 @@ func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, project, sr
 	return res, nil
 }
 
+// RenameAcrossProjects moves user files into targetProject and moves their
+// PageIndex trees and catalog entries into the target tenant namespace in the
+// same transaction, so the moved documents stay searchable without re-indexing.
+// It requires the transactional system handle: a non-atomic catalog could be
+// left describing files that already moved, so the move is refused instead.
+func (p *Plugin) RenameAcrossProjects(ctx context.Context, auth files.AuthContext, project, src, targetProject, dst string, overwrite bool) (files.RenameResult, error) {
+	if targetProject == "" || targetProject == project {
+		return p.Rename(ctx, auth, project, src, dst, overwrite)
+	}
+	atomicFS, ok := p.sysFS.(files.AtomicSystemFS)
+	if !ok {
+		return files.RenameResult{}, errors.WithStack(files.NewError(files.ErrCodeInvalidArgument,
+			"pageindex target_project moves require transactional catalog storage", false))
+	}
+	targetDocID := func(userPath string) string { return docIDFromAuth(auth, targetProject, userPath) }
+	return atomicFS.RenameAcrossProjectsWithState(ctx, auth,
+		project, PageIndexStorageProject(auth, project), src,
+		targetProject, PageIndexStorageProject(auth, targetProject), dst,
+		overwrite, pageIndexMoveState(src, dst, overwrite, targetDocID))
+}
+
 // List forwards to userFS unchanged.
 func (p *Plugin) List(ctx context.Context, auth files.AuthContext, project, path string, depth, limit int) (files.ListResult, error) {
 	return p.userFS.List(ctx, auth, project, path, depth, limit)
@@ -454,4 +475,7 @@ func docIDFromAuth(auth files.AuthContext, project, path string) string {
 }
 
 // Compile-time assertion that Plugin satisfies the manager interface.
-var _ mcpplugin.Plugin = (*Plugin)(nil)
+var (
+	_ mcpplugin.Plugin              = (*Plugin)(nil)
+	_ mcpplugin.CrossProjectRenamer = (*Plugin)(nil)
+)

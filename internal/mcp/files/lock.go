@@ -1,9 +1,11 @@
 package files
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"hash/fnv"
+	"slices"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
@@ -14,11 +16,30 @@ type LockProvider interface {
 	WithProjectLock(ctx context.Context, db *sql.DB, isPostgres bool, apiKeyHash, project string, timeout time.Duration, fn func(tx *sql.Tx) error) error
 }
 
+// MultiProjectLockProvider serializes one mutation that spans several project
+// scopes of the same caller, such as a cross-project rename. Implementations
+// must hold every scope for the whole callback transaction and acquire them in
+// one global order, so two opposite moves cannot each hold one project while
+// waiting for the other.
+type MultiProjectLockProvider interface {
+	WithProjectsLock(ctx context.Context, db *sql.DB, isPostgres bool, apiKeyHash string, projects []string, timeout time.Duration, fn func(tx *sql.Tx) error) error
+}
+
 // DefaultLockProvider implements advisory locks when available.
 type DefaultLockProvider struct{}
 
 // WithProjectLock acquires a scoped lock and executes the callback within a transaction.
 func (p DefaultLockProvider) WithProjectLock(ctx context.Context, db *sql.DB, isPostgres bool, apiKeyHash, project string, timeout time.Duration, fn func(tx *sql.Tx) error) error {
+	return p.WithProjectsLock(ctx, db, isPostgres, apiKeyHash, []string{project}, timeout, fn)
+}
+
+// WithProjectsLock acquires every project scope in ProjectLockOrder inside one
+// transaction and executes the callback while all of them are held.
+func (p DefaultLockProvider) WithProjectsLock(ctx context.Context, db *sql.DB, isPostgres bool, apiKeyHash string, projects []string, timeout time.Duration, fn func(tx *sql.Tx) error) error {
+	ordered := ProjectLockOrder(apiKeyHash, projects...)
+	if len(ordered) == 0 {
+		return errors.New("at least one project scope is required")
+	}
 	if db == nil {
 		return errors.New("db is required")
 	}
@@ -33,11 +54,13 @@ func (p DefaultLockProvider) WithProjectLock(ctx context.Context, db *sql.DB, is
 		return errors.Wrap(err, "begin transaction")
 	}
 
-	if err = acquireProjectLock(ctx, tx, isPostgres, apiKeyHash, project, timeout); err != nil {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
-			return errors.Wrap(rollbackErr, "rollback lock transaction")
+	for _, project := range ordered {
+		if err = acquireProjectLock(ctx, tx, isPostgres, apiKeyHash, project, timeout); err != nil {
+			if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+				return errors.Wrap(rollbackErr, "rollback lock transaction")
+			}
+			return err
 		}
-		return err
 	}
 
 	if err = fn(tx); err != nil {
@@ -84,6 +107,25 @@ func acquireProjectLock(ctx context.Context, tx *sql.Tx, isPostgres bool, apiKey
 		case <-timer.C:
 		}
 	}
+}
+
+// ProjectLockOrder returns the distinct non-empty projects in the global lock
+// acquisition order: ascending advisory key, then name for equal keys. Every
+// multi-project mutation must lock in this order to avoid lock-order inversion.
+func ProjectLockOrder(apiKeyHash string, projects ...string) []string {
+	ordered := make([]string, 0, len(projects))
+	for _, project := range projects {
+		if project != "" && !slices.Contains(ordered, project) {
+			ordered = append(ordered, project)
+		}
+	}
+	slices.SortFunc(ordered, func(a, b string) int {
+		if c := cmp.Compare(hashLockKey(apiKeyHash, a), hashLockKey(apiKeyHash, b)); c != 0 {
+			return c
+		}
+		return cmp.Compare(a, b)
+	})
+	return ordered
 }
 
 // hashLockKey derives a stable int64 key from apiKeyHash and project.

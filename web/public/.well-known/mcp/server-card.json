@@ -438,7 +438,7 @@
     },
     {
       "name": "file_rename",
-      "description": "Rename one file using its source expected_version. The destination must be absent, or overwrite=true must include its reviewed expected_destination_version.",
+      "description": "Rename one file using its source expected_version. The destination must be absent, or overwrite=true must include its reviewed expected_destination_version. Set target_project to move the file into another project.",
       "inputSchema": {
         "type": "object",
         "required": [
@@ -457,6 +457,10 @@
           },
           "to_path": {
             "type": "string"
+          },
+          "target_project": {
+            "type": "string",
+            "description": "Optional destination project for a cross-project move; omit or leave empty to rename within project."
           },
           "overwrite": {
             "type": "boolean"

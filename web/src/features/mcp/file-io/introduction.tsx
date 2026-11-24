@@ -12,7 +12,7 @@ const descriptions = [
   ['file_stat', 'Inspect metadata and the current file version. Do not pair a later stat version with earlier read content.'],
   ['file_search', 'Find relevant indexed content. Read the live file before editing; search chunks are not an edit base.'],
   ['file_delete', 'Delete one file with its expected_version. Recursive directory deletion is not supported by this versioned client contract.'],
-  ['file_rename', 'Move one file with its source version. Require an absent destination, or protect an existing destination with its own version.'],
+  ['file_rename', 'Move one file with its source version, optionally into another project with target_project. Require an absent destination, or protect an existing destination with its own version.'],
 ];
 
 /** FileIOIntroduction explains the FileIO contract, including the mandatory version preconditions, before the workspace loads. */

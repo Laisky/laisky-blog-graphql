@@ -207,8 +207,53 @@ func (s *Service) RenameWithSystemState(
 	if owner == "" {
 		return RenameResult{}, errors.New("system_owner is required")
 	}
+	if err := ValidateProject(systemProject); err != nil {
+		return RenameResult{}, errors.WithStack(err)
+	}
 	userCtx := contextWithSystemOwner(ctx, "")
-	return s.renameWithSystemState(userCtx, auth, project, fromPath, toPath, overwrite, systemProject, owner, mutate)
+	req := renameRequest{project: project, fromPath: fromPath, targetProject: project, toPath: toPath, overwrite: overwrite}
+	return s.rename(userCtx, auth, req, func(ctx context.Context, tx *sql.Tx) error {
+		return s.mutateRenameSystemStateTx(ctx, tx, systemProject, owner, mutate)
+	})
+}
+
+// SystemStateMoveMutator moves entries between the source and target namespaces
+// of one system owner. Both maps are loaded and persisted inside the caller's
+// cross-project rename transaction.
+type SystemStateMoveMutator func(source, target map[string][]byte) error
+
+// RenameAcrossProjectsWithSystemState moves user files from project into
+// targetProject and lets mutate move the owner's state from systemProject to
+// targetSystemProject, all in one transaction that holds both project locks.
+func (s *Service) RenameAcrossProjectsWithSystemState(
+	ctx context.Context,
+	auth AuthContext,
+	project, systemProject, fromPath string,
+	targetProject, targetSystemProject, toPath string,
+	overwrite bool,
+	mutate SystemStateMoveMutator,
+) (RenameResult, error) {
+	if mutate == nil {
+		return RenameResult{}, errors.New("system state mutator is nil")
+	}
+	owner := systemOwnerFromContext(ctx)
+	if owner == "" {
+		return RenameResult{}, errors.New("system_owner is required")
+	}
+	if err := ValidateProject(systemProject); err != nil {
+		return RenameResult{}, errors.WithStack(err)
+	}
+	if err := ValidateProject(targetSystemProject); err != nil {
+		return RenameResult{}, errors.WithStack(err)
+	}
+	if project == targetProject || systemProject == targetSystemProject {
+		return RenameResult{}, errors.New("cross-project rename requires distinct projects and system namespaces")
+	}
+	userCtx := contextWithSystemOwner(ctx, "")
+	req := renameRequest{project: project, fromPath: fromPath, targetProject: targetProject, toPath: toPath, overwrite: overwrite}
+	return s.rename(userCtx, auth, req, func(ctx context.Context, tx *sql.Tx) error {
+		return s.mutateMoveSystemStateTx(ctx, tx, owner, systemProject, targetSystemProject, mutate)
+	})
 }
 
 func (s *Service) activeContentHashTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) (string, error) {
