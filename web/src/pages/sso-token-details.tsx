@@ -59,7 +59,7 @@ export function SsoTokenDetailsPage({ ssoJwt = null }: SsoTokenDetailsPageProps)
           </span>
         </div>
 
-        <Card className="border-border/60 bg-card/80 text-card-foreground shadow-2xl backdrop-blur-sm transition-colors">
+        <Card className="border-border/60 bg-card/80 text-card-foreground shadow-2xl backdrop-blur-xs transition-colors">
           <CardHeader className="gap-3 border-b border-border/40 pb-6 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1">
               <h1 className="text-lg font-semibold tracking-tight">SSO JWT Token</h1>

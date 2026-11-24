@@ -492,7 +492,7 @@ function SsoProfileAccount({ token, authReady, githubOAuthEnabled }: SsoProfileA
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border bg-card/80 backdrop-blur">
+      <header className="border-b border-border bg-card/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
           <Link to="/" className="flex items-center gap-2 font-semibold text-foreground hover:text-primary">
             <Lock className="h-5 w-5 text-primary" />

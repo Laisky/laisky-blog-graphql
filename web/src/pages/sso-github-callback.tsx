@@ -85,7 +85,7 @@ export function SsoGithubCallbackPage() {
         <ThemeToggle />
       </div>
       <main className="z-10 w-full max-w-lg">
-        <Card className="border-border/60 bg-card/80 text-card-foreground shadow-2xl backdrop-blur-sm">
+        <Card className="border-border/60 bg-card/80 text-card-foreground shadow-2xl backdrop-blur-xs">
           <CardHeader className="space-y-4 border-b border-border/40 pb-6">
             <Link to="/" className="flex items-center justify-center gap-2 font-semibold text-foreground hover:text-primary">
               <Lock className="h-5 w-5 text-primary" />

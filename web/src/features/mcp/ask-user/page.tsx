@@ -190,7 +190,7 @@ function PendingRequestCard({
 }) {
   const questionId = `ask-user-question-${request.id}`;
   return (
-    <Card className="border border-primary/30 bg-card shadow-sm">
+    <Card className="border border-primary/30 bg-card shadow-xs">
       <CardHeader className="gap-2">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span>ID: {request.id}</span>

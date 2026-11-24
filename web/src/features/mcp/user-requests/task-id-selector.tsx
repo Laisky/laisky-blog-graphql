@@ -362,10 +362,10 @@ export function TaskIdSelector({
                 onMouseEnter={() => setHighlightedIndex(index)}
               >
                 <div className="flex min-w-0 flex-1 items-center gap-2">
-                  {entry.pinned && <Pin className="h-3 w-3 flex-shrink-0 text-primary" />}
+                  {entry.pinned && <Pin className="h-3 w-3 shrink-0 text-primary" />}
                   <span className="truncate">{entry.value}</span>
                 </div>
-                <div className="ml-2 flex flex-shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="ml-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                   <button
                     type="button"
                     onClick={(e) => handleTogglePin(e, entry.id)}

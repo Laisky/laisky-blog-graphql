@@ -335,7 +335,7 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
   );
 
   return (
-    <Card className="border border-border/60 bg-card shadow-sm">
+    <Card className="border border-border/60 bg-card shadow-xs">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <button
@@ -345,7 +345,7 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
               setIsExpanded(newValue);
               setSavedCommandsExpanded(newValue);
             }}
-            className="flex items-center gap-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+            className="flex items-center gap-2 text-left focus:outline-hidden focus-visible:ring-2 focus-visible:ring-ring rounded-md"
             aria-expanded={isExpanded}
             // The list is not rendered while collapsed, so only an expanded toggle references it.
             aria-controls={isExpanded ? contentId : undefined}
@@ -665,7 +665,7 @@ function SavedCommandItem({
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <Star className="h-4 w-4 text-amber-500 flex-shrink-0" />
+          <Star className="h-4 w-4 text-amber-500 shrink-0" />
           <span className="font-medium text-foreground truncate">{command.label}</span>
         </div>
         <p className="mt-1 text-sm text-muted-foreground line-clamp-2 whitespace-pre-wrap">{command.content}</p>

@@ -76,7 +76,7 @@ function AttachmentTile({
       aria-label={`${attachment.kind === 'file' ? 'File' : 'URL'} attachment ${attachment.label}`}
       onKeyDown={handleKey}
       className={cn(
-        'group relative h-16 w-16 overflow-hidden rounded-lg border border-border bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+        'group relative h-16 w-16 overflow-hidden rounded-lg border border-border bg-muted/40 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary',
         attachment.status === 'error' && 'border-destructive'
       )}
       title={attachment.errorMessage ?? attachment.label}
@@ -104,7 +104,7 @@ function AttachmentTile({
         type="button"
         variant="ghost"
         size="icon"
-        className="absolute right-1 top-1 h-6 w-6 rounded-full bg-background/80 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+        className="absolute right-1 top-1 h-6 w-6 rounded-full bg-background/80 opacity-0 shadow-xs transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
         onClick={() => onRemove(attachment.clientId)}
         aria-label={`Remove attachment ${attachment.label}`}
         disabled={disabled}

@@ -184,7 +184,7 @@ export function SettingsPage() {
       </section>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Card className="border border-border/60 bg-card shadow-sm">
+        <Card className="border border-border/60 bg-card shadow-xs">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Key className="h-5 w-5 text-primary" />
@@ -270,8 +270,8 @@ export function SettingsPage() {
                           className={cn(
                             'group relative flex flex-col gap-3 rounded-lg border p-3 transition-all duration-200 sm:flex-row sm:items-center sm:justify-between',
                             isActive
-                              ? 'border-primary/30 bg-primary/5 shadow-sm'
-                              : 'border-border/50 bg-card hover:border-border hover:shadow-sm'
+                              ? 'border-primary/30 bg-primary/5 shadow-xs'
+                              : 'border-border/50 bg-card hover:border-border hover:shadow-xs'
                           )}
                         >
                           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -339,7 +339,7 @@ export function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border border-border/60 bg-card shadow-sm">
+        <Card className="border border-border/60 bg-card shadow-xs">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg text-foreground">
               <User className="h-5 w-5 text-primary" />
@@ -360,7 +360,7 @@ export function SettingsPage() {
         </Card>
       </div>
 
-      <Card className="border border-border/60 bg-card shadow-sm">
+      <Card className="border border-border/60 bg-card shadow-xs">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Wrench className="h-5 w-5 text-primary" />

@@ -66,7 +66,7 @@ export function AppLayout() {
     <div className="flex min-h-dvh w-full max-w-full flex-col overflow-x-clip bg-background text-foreground">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-md focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-foreground focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-ring"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-md focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-foreground focus:shadow-lg focus:outline-hidden focus:ring-2 focus:ring-ring"
       >
         Skip to main content
       </a>
@@ -103,7 +103,7 @@ export function AppLayout() {
           </div>
         </div>
       )}
-      <header className="border-b border-border bg-card/80 backdrop-blur">
+      <header className="border-b border-border bg-card/80 backdrop-blur-sm">
         <div className="container mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-2 md:gap-4 md:px-6 md:py-4">
           <div className="flex shrink-0 items-center gap-1.5 text-base font-semibold tracking-tight text-foreground md:gap-2 md:text-lg">
             <Link
@@ -153,7 +153,7 @@ export function AppLayout() {
         </div>
       </header>
       </div>
-      <main id="main-content" tabIndex={-1} className="flex-1 bg-background focus:outline-none">
+      <main id="main-content" tabIndex={-1} className="flex-1 bg-background focus:outline-hidden">
         {isInspectorRoute ? (
           <div key={`${apiKey}:${sessionId}`}>
             <Outlet />

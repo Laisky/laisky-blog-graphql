@@ -636,7 +636,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
           </Button>
         </div>
 
-        <Card className="border-border/60 bg-card/80 text-card-foreground shadow-2xl backdrop-blur-sm transition-colors">
+        <Card className="border-border/60 bg-card/80 text-card-foreground shadow-2xl backdrop-blur-xs transition-colors">
           <CardHeader className="space-y-2 border-b border-border/40 pb-6">
             <StatusBanner status={redirectBanner.status} subtext={redirectBanner.subtext} />
           </CardHeader>
@@ -647,7 +647,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
               <button
                 type="button"
                 aria-pressed={mode === 'login'}
-                className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'login' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'login' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => {
                   setMode('login');
                   setLoginMethod('password');
@@ -660,7 +660,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
               <button
                 type="button"
                 aria-pressed={mode === 'register'}
-                className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'register' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'register' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => {
                   setMode('register');
                   setLoginMethod('password');
@@ -728,7 +728,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                   <button
                     type="button"
                     aria-pressed={loginMethod === 'password'}
-                    className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${loginMethod === 'password' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                    className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${loginMethod === 'password' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
                     onClick={() => {
                       setLoginMethod('password');
                       setEmailCode('');
@@ -739,7 +739,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                   <button
                     type="button"
                     aria-pressed={loginMethod === 'email_code'}
-                    className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${loginMethod === 'email_code' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                    className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${loginMethod === 'email_code' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
                     onClick={() => {
                       setLoginMethod('email_code');
                       setTotpRequired(false);
