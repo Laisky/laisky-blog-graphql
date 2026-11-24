@@ -1,4 +1,4 @@
-import { Github, Lock } from 'lucide-react';
+import { GitFork, Lock } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
@@ -94,7 +94,7 @@ export function SsoGithubCallbackPage() {
               </span>
             </Link>
             <h1 className="flex justify-center">
-              <Github className="h-8 w-8 text-primary" aria-hidden="true" />
+              <GitFork className="h-8 w-8 text-primary" aria-hidden="true" />
               <span className="sr-only">Signing in with GitHub</span>
             </h1>
           </CardHeader>

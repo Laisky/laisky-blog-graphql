@@ -352,6 +352,7 @@ function ConsoleMenu({ items, isActive }: ConsoleMenuProps) {
             <li key={item.to}>
               <NavLink
                 to={item.to}
+                aria-label={item.newTab ? `${item.label} (opens in a new tab)` : undefined}
                 target={item.newTab ? '_blank' : undefined}
                 rel={item.newTab ? 'noopener noreferrer' : undefined}
                 onPointerEnter={() => preloadConsoleRoute(item.to)}
@@ -366,7 +367,6 @@ function ConsoleMenu({ items, isActive }: ConsoleMenuProps) {
                 onClick={() => setOpen(false)}
               >
                 {item.label}
-                {item.newTab ? <span className="sr-only"> (opens in a new tab)</span> : null}
               </NavLink>
             </li>
           ))}

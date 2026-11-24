@@ -21,14 +21,12 @@ RUN if [ -d .docker-build-git ]; then mv .docker-build-git .git; fi \
     && go build -a -ldflags '-w -extldflags "-static"' -o main .
 
 # build front-end assets
-FROM node:24-bookworm AS webbuild
+FROM node:24.22.3-bookworm AS webbuild
 
 WORKDIR /web
-ARG PNPM_VERSION=10.19.0
-RUN corepack enable \
-    && corepack prepare pnpm@${PNPM_VERSION} --activate
+RUN npm install --global pnpm@12.23.0
 
-COPY web/package.json web/pnpm-lock.yaml ./
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY web/ ./

@@ -23,10 +23,10 @@ jobs:
           persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 12.23.0
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24.22.3'
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - name: Install locked dependencies

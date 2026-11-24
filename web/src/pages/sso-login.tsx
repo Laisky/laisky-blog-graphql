@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { ArrowRight, Github, Info, KeyRound, Lock } from 'lucide-react';
+import { ArrowRight, GitFork, Info, KeyRound, Lock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -680,7 +680,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                 disabled={!canStartGithub}
                 onClick={handleGithubOAuth}
               >
-                <Github className="mr-2 h-4 w-4" />
+                <GitFork className="mr-2 h-4 w-4" />
                 {isGithubSubmitting ? 'Opening GitHub...' : 'Continue with GitHub'}
               </Button>
             )}
