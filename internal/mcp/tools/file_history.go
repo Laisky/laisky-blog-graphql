@@ -44,7 +44,7 @@ func NewFileHistoryTools(writer FileService, history files.HistoryReader) ([]Too
 // Definition advertises exact string IDs and mandatory restore preconditions.
 func (t *FileHistoryTool) Definition() mcp.Tool {
 	options := []mcp.ToolOption{
-		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
+		mcp.WithString("project", mcp.Required(), mcp.Description(fileProjectDescription)),
 		mcp.WithString("path", mcp.Required(), mcp.Description("Exact logical file path, including deleted files with retained history.")),
 	}
 	if t.name == FileListVersionsToolName {

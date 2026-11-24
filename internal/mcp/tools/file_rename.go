@@ -24,7 +24,7 @@ func (t *FileRenameTool) Definition() mcp.Tool {
 	return mcp.NewTool("file_rename",
 		mcp.WithDescription("Rename one file using its required source expected_version. Non-overwriting moves require an absent destination. Overwriting moves also require "+
 			"expected_destination_version or destination_must_not_exist=true. Directory moves are not supported by file tokens."),
-		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
+		mcp.WithString("project", mcp.Required(), mcp.Description(fileProjectDescription)),
 		mcp.WithString("from_path", mcp.Required(), mcp.Description("Source file path.")),
 		mcp.WithString("to_path", mcp.Required(), mcp.Description("Destination file path.")),
 		mcp.WithBoolean("overwrite", mcp.Description("When true, a destination version or destination_must_not_exist=true is also required.")),

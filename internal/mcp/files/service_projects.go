@@ -29,8 +29,8 @@ func (s *Service) ListProjects(ctx context.Context, auth AuthContext, query, aft
 	}
 	query = strings.TrimSpace(query)
 	if query != "" {
-		if err := ValidateProject(query); err != nil {
-			return ProjectListResult{}, errors.WithStack(NewError(ErrCodeInvalidArgument, "invalid project search", false))
+		if err := ValidateProjectQuery(query); err != nil {
+			return ProjectListResult{}, errors.WithStack(err)
 		}
 	}
 	if after != "" {

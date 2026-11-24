@@ -2,7 +2,6 @@ package files
 
 // Shared wire-format and storage identifiers keep these contracts consistent.
 const (
-	chunkProjectPredicate = " AND c.project = ?"
 	indexOperationDelete  = "DELETE"
 	requiredTextColumn    = "TEXT NOT NULL DEFAULT ''"
 	indexOperationUpsert  = "UPSERT"

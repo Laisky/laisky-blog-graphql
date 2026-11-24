@@ -9,7 +9,11 @@ never creates a project or writes a file.
 
 Search is case-insensitive and matches characters in order, not only a prefix:
 `MCP` matches `my-chat-project`. Underscores, hyphens and dots are literal.
-Project IDs retain the server's existing 1–128 ASCII letter/digit/`._-` rule.
+Project IDs retain the server's existing 1–128 ASCII letter/digit/`._-` rule,
+plus the reserved shared-defaults project `@DEFAULT` (see
+[`mcp_files.md` §9](mcp_files.md#9-shared-defaults-the-default-project)). Searches may
+contain `@`, so `@def` finds it. Discovery lists `@DEFAULT` like any project once it
+holds live files.
 The browser debounces searches by 200 ms and requests 50 IDs per page. **Load more
 projects** retrieves another page. At 500 visible IDs, narrow the search; each new
 search covers the caller's entire project namespace, not just loaded suggestions.

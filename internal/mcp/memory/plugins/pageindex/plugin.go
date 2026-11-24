@@ -174,14 +174,20 @@ func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, pat
 	if err != nil {
 		return res, err
 	}
+	// A path that resolved to a DefaultProject file was written there, so its tree,
+	// catalog entry, and summary belong to that physical project.
+	layer := res.ResolvedProject
+	if layer == "" {
+		layer = project
+	}
 
 	// Re-read the complete post-write content so APPEND/OVERWRITE/TRUNCATE index and
 	// summarize the whole file, not just the request delta.
-	full, readErr := p.userFS.Read(ctx, auth, project, path, 0, -1)
+	full, readErr := p.userFS.Read(ctx, auth, layer, path, 0, -1)
 	if readErr != nil {
 		return res, errors.Wrap(readErr, "read post-write content for pageindex")
 	}
-	return res, p.indexAndPublish(ctx, auth, project, path, full.Content, 0)
+	return res, p.indexAndPublish(ctx, auth, layer, path, full.Content, 0)
 }
 
 // indexAndPublish builds the tree of content (the complete current file) and
@@ -314,7 +320,7 @@ func (p *Plugin) publishUserRowSummary(ctx context.Context, auth files.AuthConte
 // user files, so failures remain fail-closed and the same request can be retried.
 func (p *Plugin) Delete(ctx context.Context, auth files.AuthContext, project, path string, recursive bool) (files.DeleteResult, error) {
 	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
-		return atomicFS.DeleteWithState(ctx, auth, project, PageIndexStorageProject(auth, project), path, recursive, pageIndexDeleteState(path, recursive))
+		return atomicFS.DeleteWithState(ctx, auth, project, path, recursive, pageIndexStateHooks(auth))
 	}
 	storageProject := PageIndexStorageProject(auth, project)
 	entries, err := p.indexEntriesForPath(ctx, storageProject, path, recursive)
@@ -344,7 +350,7 @@ func (p *Plugin) Delete(ctx context.Context, auth files.AuthContext, project, pa
 // the user-file rename fails, the catalog move is rolled back when possible.
 func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, project, src, dst string, overwrite bool) (files.RenameResult, error) {
 	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
-		return atomicFS.RenameWithState(ctx, auth, project, PageIndexStorageProject(auth, project), src, dst, overwrite, pageIndexRenameState(src, dst, overwrite))
+		return atomicFS.RenameWithState(ctx, auth, project, src, dst, overwrite, pageIndexStateHooks(auth))
 	}
 	storageProject := PageIndexStorageProject(auth, project)
 	index, err := p.store.GetIndex(ctx, storageProject)
@@ -384,14 +390,25 @@ func (p *Plugin) Search(ctx context.Context, auth files.AuthContext, project, qu
 		return files.SearchResult{}, errors.New("pageindex search requires authenticated caller")
 	}
 	storageProject := PageIndexStorageProject(auth, project)
+	fallbackProject := ""
+	if project != files.DefaultProject && project != files.ProjectWildcard {
+		// Defaults are indexed under their own physical project. ValidateSource reads
+		// through the overlay, so a default the project hides never validates.
+		fallbackProject = PageIndexStorageProject(auth, files.DefaultProject)
+	}
 	return p.searcher.Run(ctx, SearchInput{
-		Project:    storageProject,
-		Query:      query,
-		PathPrefix: pathPrefix,
-		Limit:      limit,
-		Tenant:     pageIndexTenant(auth),
-		OnCandidate: func(userPath string, entry IndexEntry) {
-			p.maybeRefresh(auth, project, userPath, entry)
+		Project:         storageProject,
+		FallbackProject: fallbackProject,
+		Query:           query,
+		PathPrefix:      pathPrefix,
+		Limit:           limit,
+		Tenant:          pageIndexTenant(auth),
+		OnCandidate: func(userPath string, entry IndexEntry, fromFallback bool) {
+			layer := project
+			if fromFallback {
+				layer = files.DefaultProject
+			}
+			p.maybeRefresh(auth, layer, userPath, entry)
 		},
 		ValidateSource: func(validateCtx context.Context, userPath, expectedHash string) (bool, error) {
 			if expectedHash == "" {

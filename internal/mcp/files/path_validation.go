@@ -8,10 +8,14 @@ import (
 // It is accepted only by Service.Search; all other file operations reject it.
 const ProjectWildcard = "*"
 
-// ValidateProject verifies the project identifier against length and charset rules.
+// ValidateProject verifies the project identifier against length and charset
+// rules. DefaultProject is the only accepted name outside the ordinary charset.
 func ValidateProject(project string) error {
 	if strings.TrimSpace(project) == "" {
 		return NewError(ErrCodeInvalidPath, "project is required", false)
+	}
+	if project == DefaultProject {
+		return nil
 	}
 	if len(project) > 128 {
 		return NewError(ErrCodeInvalidPath, "project exceeds max length", false)
@@ -20,6 +24,22 @@ func ValidateProject(project string) error {
 		char := project[i]
 		if char != '_' && char != '-' && char != '.' && !isASCIILetterOrDigit(char) {
 			return NewError(ErrCodeInvalidPath, "project contains invalid characters", false)
+		}
+	}
+	return nil
+}
+
+// ValidateProjectQuery verifies a project discovery search fragment. It accepts
+// the ordinary project charset plus "@", so a fragment of DefaultProject such as
+// "@def" can find it.
+func ValidateProjectQuery(query string) error {
+	if query == "" || len(query) > 128 {
+		return NewError(ErrCodeInvalidArgument, "invalid project search", false)
+	}
+	for i := 0; i < len(query); i++ {
+		char := query[i]
+		if char != '_' && char != '-' && char != '.' && char != '@' && !isASCIILetterOrDigit(char) {
+			return NewError(ErrCodeInvalidArgument, "invalid project search", false)
 		}
 	}
 	return nil

@@ -13,7 +13,7 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
-const sqlAndFilePathLike = " AND c.file_path LIKE ?"
+const sqlAndFilePathLike = " AND c.file_path LIKE ?" + sqlLikeEscape
 
 type searchCandidate struct {
 	Chunk         FileChunk
@@ -44,9 +44,14 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 		return SearchResult{}, errors.WithStack(NewError(ErrCodeSearchBackend, "search disabled", false))
 	}
 
+	scope, err := s.resolveSearchScope(ctx, auth.APIKeyHash, project)
+	if err != nil {
+		return SearchResult{}, errors.WithStack(err)
+	}
+
 	lexicalEngine := s.lexicalSearchEngineName()
 	lexicalStartedAt := time.Now()
-	lexical, lexicalErr := s.fetchLexicalCandidates(ctx, auth.APIKeyHash, project, pathPrefix, query, s.settings.Search.LexicalCandidates)
+	lexical, lexicalErr := s.fetchLexicalCandidates(ctx, auth.APIKeyHash, scope, pathPrefix, query, s.settings.Search.LexicalCandidates)
 	s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
 		Stage:       "lexical_retrieve",
 		Engine:      lexicalEngine,
@@ -63,7 +68,7 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 		)
 	}
 
-	semantic, semanticErr := s.retrieveSemanticCandidates(ctx, auth, project, query, pathPrefix)
+	semantic, semanticErr := s.retrieveSemanticCandidates(ctx, auth, scope, query, pathPrefix)
 
 	if lexicalErr != nil && semanticErr != nil {
 		return SearchResult{}, errors.WithStack(NewError(ErrCodeSearchBackend, "search backends unavailable", true))
@@ -82,7 +87,7 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 	}
 	if len(merged) == 0 {
 		fallbackStartedAt := time.Now()
-		fallbackChunks, fallbackErr := s.searchFallbackFromRawFiles(ctx, auth.APIKeyHash, project, pathPrefix, query, limit)
+		fallbackChunks, fallbackErr := s.searchFallbackFromRawFiles(ctx, auth.APIKeyHash, scope, pathPrefix, query, limit)
 		s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
 			Stage:       "raw_file_fallback",
 			Engine:      "sql_raw_file_scan",
@@ -106,7 +111,7 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 			)
 			return SearchResult{Chunks: fallbackChunks}, nil
 		}
-		s.logEmptySearchDiagnostics(ctx, auth.APIKeyHash, project, pathPrefix, lexicalErr, semanticErr)
+		s.logEmptySearchDiagnostics(ctx, auth.APIKeyHash, scope, pathPrefix, lexicalErr, semanticErr)
 		return SearchResult{Chunks: nil}, nil
 	}
 
@@ -160,22 +165,22 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 }
 
 // searchFallbackFromRawFiles performs a best-effort lexical scan over active files when index rows are unavailable.
-func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash, project, pathPrefix, query string, limit int) ([]ChunkEntry, error) {
+func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash string, scope searchScope, pathPrefix, query string, limit int) ([]ChunkEntry, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
 
 	owner := systemOwnerFromContext(ctx)
-	crossProject := project == ProjectWildcard
+	crossProject := scope.project == ProjectWildcard
 	args := []any{apiKeyHash, owner}
-	statement := "SELECT path, content, size, project, content_hash, file_summary, summary_content_hash, summary_status FROM mcp_files WHERE apikey_hash = ? AND system_owner = ? AND deleted = FALSE"
-	if !crossProject {
-		statement += " AND project = ?"
-		args = append(args, project)
-	}
+	statement := `SELECT f.path, f.content, f.size, f.project, f.content_hash, f.file_summary, f.summary_content_hash, f.summary_status
+		FROM mcp_files f WHERE f.apikey_hash = ? AND f.system_owner = ? AND f.deleted = FALSE`
+	predicate, predicateArgs := scope.predicate("f.project", "f.path", "f.apikey_hash", "f.system_owner")
+	statement += predicate
+	args = append(args, predicateArgs...)
 	if strings.TrimSpace(pathPrefix) != "" {
-		statement += " AND path LIKE ?"
-		args = append(args, pathPrefix+"%")
+		statement += " AND f.path LIKE ?" + sqlLikeEscape
+		args = append(args, buildLikePrefix(pathPrefix))
 	}
 
 	rows, err := s.db.QueryContext(ctx, rebindSQL(statement, s.isPostgres), args...)
@@ -333,15 +338,16 @@ func searchFallbackSnippet(content, query string, maxBytes int) (int64, int64, s
 }
 
 // logEmptySearchDiagnostics emits DEBUG diagnostics for empty search results.
-func (s *Service) logEmptySearchDiagnostics(ctx context.Context, apiKeyHash, project, pathPrefix string, lexicalErr, semanticErr error) {
-	chunkCount := s.countRowsForSearch(ctx, "mcp_file_chunks c", apiKeyHash, project, pathPrefix)
+func (s *Service) logEmptySearchDiagnostics(ctx context.Context, apiKeyHash string, scope searchScope, pathPrefix string, lexicalErr, semanticErr error) {
+	chunkCount := s.countRowsForSearch(ctx, "mcp_file_chunks c", apiKeyHash, scope, pathPrefix)
 	// system_owner-checked: countRowsForSearch appends `c.system_owner = ?` to the WHERE clause for both call sites
-	embeddingCount := s.countRowsForSearch(ctx, "mcp_file_chunk_embeddings e JOIN mcp_file_chunks c ON c.id = e.chunk_id", apiKeyHash, project, pathPrefix)
-	pendingJobs := s.countPendingIndexJobs(ctx, apiKeyHash, project)
+	embeddingCount := s.countRowsForSearch(ctx, "mcp_file_chunk_embeddings e JOIN mcp_file_chunks c ON c.id = e.chunk_id", apiKeyHash, scope, pathPrefix)
+	pendingJobs := s.countPendingIndexJobs(ctx, apiKeyHash, scope)
 
 	logger := s.LoggerFromContext(ctx)
 	logger.Debug("file search returned no candidates",
-		zap.String("project", project),
+		zap.String("project", scope.project),
+		zap.Bool("default_layer", scope.overlay),
 		zap.String("path_prefix", pathPrefix),
 		zap.Int("lexical_candidates", 0),
 		zap.Int("semantic_candidates", 0),
@@ -354,17 +360,16 @@ func (s *Service) logEmptySearchDiagnostics(ctx context.Context, apiKeyHash, pro
 }
 
 // countRowsForSearch counts indexed rows by tenant/project with optional path prefix filtering.
-func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash, project, pathPrefix string) int64 {
+func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash string, scope searchScope, pathPrefix string) int64 {
 	owner := systemOwnerFromContext(ctx)
 	where := "c.apikey_hash = ? AND c.system_owner = ?"
 	args := []any{apiKeyHash, owner}
-	if project != ProjectWildcard {
-		where += chunkProjectPredicate
-		args = append(args, project)
-	}
+	predicate, predicateArgs := scope.chunkPredicate()
+	where += predicate
+	args = append(args, predicateArgs...)
 	if strings.TrimSpace(pathPrefix) != "" {
 		where += sqlAndFilePathLike
-		args = append(args, pathPrefix+"%")
+		args = append(args, buildLikePrefix(pathPrefix))
 	}
 
 	query := "SELECT COUNT(1) FROM " + source + " WHERE " + where
@@ -376,14 +381,14 @@ func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash, pr
 }
 
 // countPendingIndexJobs returns pending or processing index jobs for diagnostics.
-func (s *Service) countPendingIndexJobs(ctx context.Context, apiKeyHash, project string) int64 {
+func (s *Service) countPendingIndexJobs(ctx context.Context, apiKeyHash string, scope searchScope) int64 {
 	owner := systemOwnerFromContext(ctx)
-	args := []any{apiKeyHash, owner}
+	predicate, predicateArgs := scope.jobPredicate()
+	args := make([]any, 0, 4+len(predicateArgs))
+	args = append(args, apiKeyHash, owner)
 	statement := "SELECT COUNT(1) FROM mcp_file_index_jobs WHERE apikey_hash = ? AND system_owner = ?"
-	if project != ProjectWildcard {
-		statement += " AND project = ?"
-		args = append(args, project)
-	}
+	statement += predicate
+	args = append(args, predicateArgs...)
 	statement += " AND status IN (?, ?)"
 	args = append(args, indexStatusPending, "processing")
 
@@ -395,18 +400,18 @@ func (s *Service) countPendingIndexJobs(ctx context.Context, apiKeyHash, project
 }
 
 // fetchSemanticCandidates retrieves semantic candidates from the best backend.
-func (s *Service) fetchSemanticCandidates(ctx context.Context, apiKeyHash, project, pathPrefix string, queryVec pgvector.Vector, limit int) ([]searchCandidate, error) {
+func (s *Service) fetchSemanticCandidates(ctx context.Context, apiKeyHash string, scope searchScope, pathPrefix string, queryVec pgvector.Vector, limit int) ([]searchCandidate, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
 	if s.isPostgres {
-		return s.fetchSemanticCandidatesPostgres(ctx, apiKeyHash, project, pathPrefix, queryVec, limit)
+		return s.fetchSemanticCandidatesPostgres(ctx, apiKeyHash, scope, pathPrefix, queryVec, limit)
 	}
-	return s.fetchSemanticCandidatesInMemory(ctx, apiKeyHash, project, pathPrefix, queryVec, limit)
+	return s.fetchSemanticCandidatesInMemory(ctx, apiKeyHash, scope, pathPrefix, queryVec, limit)
 }
 
 // fetchSemanticCandidatesPostgres performs vector distance search via pgvector.
-func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHash, project, pathPrefix string, queryVec pgvector.Vector, limit int) ([]searchCandidate, error) {
+func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHash string, scope searchScope, pathPrefix string, queryVec pgvector.Vector, limit int) ([]searchCandidate, error) {
 	owner := systemOwnerFromContext(ctx)
 	args := []any{queryVec, apiKeyHash, owner}
 	query := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, c.chunk_content, f.size, c.file_content_hash, f.file_summary, f.summary_content_hash, f.summary_status, e.embedding <-> ? AS distance
@@ -414,13 +419,12 @@ func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHas
 		JOIN mcp_file_chunks c ON c.id = e.chunk_id
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
-	if project != ProjectWildcard {
-		query += chunkProjectPredicate
-		args = append(args, project)
-	}
+	predicate, predicateArgs := scope.chunkPredicate()
+	query += predicate
+	args = append(args, predicateArgs...)
 	if strings.TrimSpace(pathPrefix) != "" {
 		query += sqlAndFilePathLike
-		args = append(args, pathPrefix+"%")
+		args = append(args, buildLikePrefix(pathPrefix))
 	}
 	query += " ORDER BY e.embedding <-> ? LIMIT ?"
 	args = append(args, queryVec, limit)
@@ -476,8 +480,8 @@ func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHas
 }
 
 // fetchSemanticCandidatesInMemory computes similarity scores without pgvector.
-func (s *Service) fetchSemanticCandidatesInMemory(ctx context.Context, apiKeyHash, project, pathPrefix string, queryVec pgvector.Vector, limit int) ([]searchCandidate, error) {
-	rows, err := s.fetchChunkEmbeddings(ctx, apiKeyHash, project, pathPrefix)
+func (s *Service) fetchSemanticCandidatesInMemory(ctx context.Context, apiKeyHash string, scope searchScope, pathPrefix string, queryVec pgvector.Vector, limit int) ([]searchCandidate, error) {
+	rows, err := s.fetchChunkEmbeddings(ctx, apiKeyHash, scope, pathPrefix)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -514,18 +518,18 @@ func (s *Service) fetchSemanticCandidatesInMemory(ctx context.Context, apiKeyHas
 }
 
 // fetchLexicalCandidates routes lexical retrieval to the best available backend.
-func (s *Service) fetchLexicalCandidates(ctx context.Context, apiKeyHash, project, pathPrefix, query string, limit int) ([]searchCandidate, error) {
+func (s *Service) fetchLexicalCandidates(ctx context.Context, apiKeyHash string, scope searchScope, pathPrefix, query string, limit int) ([]searchCandidate, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
 	if s.isPostgres {
-		return s.fetchLexicalCandidatesPostgres(ctx, apiKeyHash, project, pathPrefix, query, limit)
+		return s.fetchLexicalCandidatesPostgres(ctx, apiKeyHash, scope, pathPrefix, query, limit)
 	}
-	return s.fetchLexicalCandidatesInMemory(ctx, apiKeyHash, project, pathPrefix, query, limit)
+	return s.fetchLexicalCandidatesInMemory(ctx, apiKeyHash, scope, pathPrefix, query, limit)
 }
 
 // fetchLexicalCandidatesPostgres uses tsvector ranking to score candidates.
-func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash, project, pathPrefix, query string, limit int) ([]searchCandidate, error) {
+func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash string, scope searchScope, pathPrefix, query string, limit int) ([]searchCandidate, error) {
 	owner := systemOwnerFromContext(ctx)
 	args := []any{query, apiKeyHash, owner}
 	statement := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, c.chunk_content, f.size, c.file_content_hash, f.file_summary, f.summary_content_hash, f.summary_status,
@@ -533,13 +537,12 @@ func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash
 		FROM mcp_file_chunks c
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
-	if project != ProjectWildcard {
-		statement += chunkProjectPredicate
-		args = append(args, project)
-	}
+	predicate, predicateArgs := scope.chunkPredicate()
+	statement += predicate
+	args = append(args, predicateArgs...)
 	if strings.TrimSpace(pathPrefix) != "" {
 		statement += sqlAndFilePathLike
-		args = append(args, pathPrefix+"%")
+		args = append(args, buildLikePrefix(pathPrefix))
 	}
 	statement += " ORDER BY score DESC LIMIT ?"
 	args = append(args, limit)
@@ -594,8 +597,8 @@ func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash
 }
 
 // fetchLexicalCandidatesInMemory computes lexical scores in-process.
-func (s *Service) fetchLexicalCandidatesInMemory(ctx context.Context, apiKeyHash, project, pathPrefix, query string, limit int) ([]searchCandidate, error) {
-	chunks, err := s.fetchChunkRows(ctx, apiKeyHash, project, pathPrefix)
+func (s *Service) fetchLexicalCandidatesInMemory(ctx context.Context, apiKeyHash string, scope searchScope, pathPrefix, query string, limit int) ([]searchCandidate, error) {
+	chunks, err := s.fetchChunkRows(ctx, apiKeyHash, scope, pathPrefix)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -727,7 +730,7 @@ type chunkEmbeddingRow struct {
 }
 
 // fetchChunkEmbeddings loads chunks and embeddings for in-memory similarity.
-func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash, project, pathPrefix string) ([]chunkEmbeddingRow, error) {
+func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash string, scope searchScope, pathPrefix string) ([]chunkEmbeddingRow, error) {
 	owner := systemOwnerFromContext(ctx)
 	args := []any{apiKeyHash, owner}
 	query := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, f.size, c.chunk_content, c.file_content_hash, f.file_summary, f.summary_content_hash, f.summary_status, e.embedding
@@ -735,13 +738,12 @@ func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash, project,
 		JOIN mcp_file_chunks c ON c.id = e.chunk_id
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
-	if project != ProjectWildcard {
-		query += chunkProjectPredicate
-		args = append(args, project)
-	}
+	predicate, predicateArgs := scope.chunkPredicate()
+	query += predicate
+	args = append(args, predicateArgs...)
 	if strings.TrimSpace(pathPrefix) != "" {
 		query += sqlAndFilePathLike
-		args = append(args, pathPrefix+"%")
+		args = append(args, buildLikePrefix(pathPrefix))
 	}
 
 	rows, err := s.db.QueryContext(ctx, rebindSQL(query, s.isPostgres), args...)
@@ -811,20 +813,19 @@ type chunkRow struct {
 	SummaryStatus      string
 }
 
-func (s *Service) fetchChunkRows(ctx context.Context, apiKeyHash, project, pathPrefix string) ([]chunkRow, error) {
+func (s *Service) fetchChunkRows(ctx context.Context, apiKeyHash string, scope searchScope, pathPrefix string) ([]chunkRow, error) {
 	owner := systemOwnerFromContext(ctx)
 	args := []any{apiKeyHash, owner}
 	query := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, f.size, c.chunk_content, c.file_content_hash, f.file_summary, f.summary_content_hash, f.summary_status
 		FROM mcp_file_chunks c
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
-	if project != ProjectWildcard {
-		query += chunkProjectPredicate
-		args = append(args, project)
-	}
+	predicate, predicateArgs := scope.chunkPredicate()
+	query += predicate
+	args = append(args, predicateArgs...)
 	if strings.TrimSpace(pathPrefix) != "" {
 		query += sqlAndFilePathLike
-		args = append(args, pathPrefix+"%")
+		args = append(args, buildLikePrefix(pathPrefix))
 	}
 
 	rows, err := s.db.QueryContext(ctx, rebindSQL(query, s.isPostgres), args...)
@@ -923,8 +924,9 @@ func normalizeScore(value, minVal, maxVal float64) float64 {
 
 // retrieveSemanticCandidates embeds the query, retrieves candidates, and records each stage's outcome.
 func (s *Service) retrieveSemanticCandidates(ctx context.Context, auth AuthContext,
-	project, query, pathPrefix string,
+	scope searchScope, query, pathPrefix string,
 ) ([]searchCandidate, error) {
+	project := scope.project
 	semantic := []searchCandidate{}
 	var semanticErr error
 	semanticEngine := s.semanticSearchEngineName()
@@ -967,7 +969,7 @@ func (s *Service) retrieveSemanticCandidates(ctx context.Context, auth AuthConte
 		} else {
 			queryVec := vectors[0]
 			semanticStartedAt := time.Now()
-			semantic, semanticErr = s.fetchSemanticCandidates(ctx, auth.APIKeyHash, project, pathPrefix, queryVec, s.settings.Search.VectorCandidates)
+			semantic, semanticErr = s.fetchSemanticCandidates(ctx, auth.APIKeyHash, scope, pathPrefix, queryVec, s.settings.Search.VectorCandidates)
 			s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
 				Stage:       "semantic_retrieve",
 				Engine:      semanticEngine,

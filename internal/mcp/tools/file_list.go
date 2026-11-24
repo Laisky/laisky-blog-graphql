@@ -27,7 +27,7 @@ func (t *FileListTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"file_list",
 		mcp.WithDescription("List files and directories under a path. Use this to browse, explore, or enumerate directory contents with configurable depth."),
-		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
+		mcp.WithString("project", mcp.Required(), mcp.Description(fileProjectDescription)),
 		mcp.WithString("path", mcp.Description("Directory path; empty string means project root.")),
 		mcp.WithNumber("depth", mcp.Description("Depth of traversal; 0 lists the path itself.")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of entries to return.")),

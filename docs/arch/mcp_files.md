@@ -395,6 +395,7 @@ ON mcp_file_index_jobs (status, available_at, id);
 
 - required, length `1..128`
 - recommended safe charset: `A-Z a-z 0-9 _-.`
+- the exact name `@DEFAULT` is reserved for the per-API-key default layer (§10.4)
 
 ### 8.2 Path Validation
 
@@ -637,6 +638,25 @@ Implementation detail:
 - `file_read` and `file_list` see committed writes only.
 - `file_search` is eventual due to async indexing.
 - PRD freshness SLO: `P95 <= 30s` mutation-commit to searchable visibility.
+
+### 10.4 Default Layer (`@DEFAULT`)
+
+Contract: [`docs/proposals/fileio_default_project.md`](../proposals/fileio_default_project.md).
+
+- `@DEFAULT` is a physical project per `apikey_hash`; every other user project
+  reads a merged view: its own live files, plus `@DEFAULT` files it does not hide
+  with a file at the same path, an ancestor, or below it.
+- Read paths (`overlay.go`): `resolveActiveFile` (file lookup with shadow check),
+  `visibleDescendants` (merged directory contents), the search `searchScope`
+  predicate (`overlay_search.go`), and union history (`historyProjects`).
+- Mutations (`runUserMutation`): take the project lock, probe the default layer for
+  the mutated paths inside that transaction, and either run the unchanged
+  single-project code or roll back and rerun in overlay mode under
+  `@DEFAULT` + project locks acquired in `ProjectLockOrder`
+  (`MultiProjectLockProvider`). Overlay mode resolves each path to its physical
+  layer and writes through to `@DEFAULT` rows (`overlay_mutations.go`).
+- Plugins: `WriteResult.ResolvedProject` and `SystemStateHooks` keep PageIndex
+  trees/catalogs with the physical project; RAG chunks are always physical.
 
 ## 11. Indexing Pipeline (Outbox + Worker)
 

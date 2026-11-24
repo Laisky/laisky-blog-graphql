@@ -30,7 +30,7 @@ func (s *Service) Stat(ctx context.Context, auth AuthContext, project, path stri
 		}
 		return StatResult{Exists: true, Type: FileTypeDirectory, Size: 0, CreatedAt: time.Time{}, UpdatedAt: updatedAt}, nil
 	}
-	file, err := s.findActiveFile(ctx, auth.APIKeyHash, project, path)
+	file, err := s.resolveActiveFile(ctx, s.db, auth.APIKeyHash, project, path)
 	if err == nil {
 		return StatResult{Exists: true, Type: FileTypeFile, Size: file.Size, CreatedAt: file.CreatedAt, UpdatedAt: file.UpdatedAt, Version: file.Version}, nil
 	}
@@ -69,7 +69,7 @@ func (s *Service) Read(ctx context.Context, auth AuthContext, project, path stri
 		return ReadResult{}, errors.WithStack(NewError(ErrCodeInvalidOffset, "length must be -1 or >= 0", false))
 	}
 	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationRead)
-	file, err := s.findActiveFile(ctx, auth.APIKeyHash, project, path)
+	file, err := s.resolveActiveFile(ctx, s.db, auth.APIKeyHash, project, path)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			if conditions.ExpectedVersion != "" {
@@ -106,44 +106,41 @@ func (s *Service) Read(ctx context.Context, auth AuthContext, project, path stri
 	return result, nil
 }
 
-// findActiveFile loads a non-deleted file row by path.
+// findActiveFile loads a non-deleted file row of one physical project by path.
 func (s *Service) findActiveFile(ctx context.Context, apiKeyHash, project, path string) (*File, error) {
-	owner := systemOwnerFromContext(ctx)
-	var file File
-	err := s.db.QueryRowContext(ctx,
-		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at,
-			content_hash, summary_content_hash, summary_status, summary_generation_key, incarnation_id || ':' || CAST(revision AS TEXT)
-			FROM mcp_files
-			WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?
-			LIMIT 1`, s.isPostgres),
-		apiKeyHash, project, path, owner,
-	).Scan(
-		&file.ID, &file.APIKeyHash, &file.Project, &file.Path, &file.Content,
-		&file.Size, &file.CreatedAt, &file.UpdatedAt, &file.Deleted, &file.DeletedAt,
-		&file.ContentHash, &file.SummaryContentHash, &file.SummaryStatus, &file.SummaryGenerationKey, &file.Version,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &file, nil
+	return s.findActiveFileQ(ctx, s.db, apiKeyHash, project, path)
 }
 
-// directoryExists reports whether the path has any active descendants.
+// directoryExists reports whether the path has any visible descendants.
 func (s *Service) directoryExists(ctx context.Context, apiKeyHash, project, path string) (bool, error) {
 	_, exists, err := s.findDirectoryUpdatedAt(ctx, apiKeyHash, project, path)
 	return exists, err
 }
 
-// findDirectoryUpdatedAt returns the latest update time for descendants, if any.
+// findDirectoryUpdatedAt returns the latest update time of the visible
+// descendants, if any. A project overlays DefaultProject only when a bounded
+// probe finds default descendants here; otherwise the single-project aggregate
+// runs unchanged.
 func (s *Service) findDirectoryUpdatedAt(ctx context.Context, apiKeyHash, project, path string) (time.Time, bool, error) {
 	owner := systemOwnerFromContext(ctx)
-	prefix := buildPathPrefix(path)
+	query := `SELECT MAX(f.updated_at) FROM mcp_files f
+		WHERE f.apikey_hash = ? AND f.project = ? AND f.path LIKE ? ESCAPE '\' AND f.deleted = FALSE AND f.system_owner = ?`
+	args := []any{apiKeyHash, project, buildPathPrefix(path), owner}
+	if overlayApplies(ctx, project) {
+		hasDefaults, err := s.layerHasDescendants(ctx, s.db, apiKeyHash, DefaultProject, path)
+		if err != nil {
+			return time.Time{}, false, err
+		}
+		if hasDefaults {
+			// The overlay predicate admits exactly the visible default rows.
+			predicate, predicateArgs := searchScope{project: project, overlay: true}.predicate("f.project", "f.path", "f.apikey_hash", "f.system_owner")
+			query = `SELECT MAX(f.updated_at) FROM mcp_files f
+				WHERE f.apikey_hash = ? AND f.path LIKE ? ESCAPE '\' AND f.deleted = FALSE AND f.system_owner = ?` + predicate
+			args = append([]any{apiKeyHash, buildPathPrefix(path), owner}, predicateArgs...)
+		}
+	}
 	var rawValue any
-	err := s.db.QueryRowContext(ctx,
-		rebindSQL(`SELECT MAX(updated_at) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash, project, prefix, owner,
-	).Scan(&rawValue)
-	if err != nil {
+	if err := s.db.QueryRowContext(ctx, rebindSQL(query, s.isPostgres), args...).Scan(&rawValue); err != nil {
 		return time.Time{}, false, errors.Wrap(err, "query directory updated_at")
 	}
 	if rawValue == nil {

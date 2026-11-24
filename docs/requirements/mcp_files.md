@@ -46,7 +46,9 @@ The design intentionally excludes kernel-level complexity (file descriptors, per
 
 All paths are relative to project root.
 
-- `project` length: `1..128`
+- `project` length: `1..128`, charset `A-Z a-z 0-9 _ - .`; the exact name
+  `@DEFAULT` is additionally reserved as the API key's shared default layer
+  ([`docs/proposals/fileio_default_project.md`](../proposals/fileio_default_project.md)).
 - `path` length: `0..512`
 - Empty path `""` means project root.
 - `/` is the only separator.

@@ -26,8 +26,8 @@ type SystemFS interface {
 type AtomicSystemFS interface {
 	SystemFS
 	PublishPluginSummaryAndState(ctx context.Context, auth AuthContext, project, systemProject, path string, in PluginSummaryInput, mutate SystemStateMutator) (bool, error)
-	DeleteWithState(ctx context.Context, auth AuthContext, project, systemProject, path string, recursive bool, mutate SystemStateMutator) (DeleteResult, error)
-	RenameWithState(ctx context.Context, auth AuthContext, project, systemProject, fromPath, toPath string, overwrite bool, mutate SystemStateMutator) (RenameResult, error)
+	DeleteWithState(ctx context.Context, auth AuthContext, project, path string, recursive bool, hooks SystemStateHooks) (DeleteResult, error)
+	RenameWithState(ctx context.Context, auth AuthContext, project, fromPath, toPath string, overwrite bool, hooks SystemStateHooks) (RenameResult, error)
 }
 
 // systemFS is the concrete implementation. The owner string is captured at
@@ -116,9 +116,9 @@ func (s *systemFS) PublishPluginSummaryAndState(ctx context.Context, auth AuthCo
 }
 
 // DeleteWithState atomically deletes user files and system-owned plugin state.
-func (s *systemFS) DeleteWithState(ctx context.Context, auth AuthContext, project, systemProject, path string, recursive bool, mutate SystemStateMutator) (DeleteResult, error) {
+func (s *systemFS) DeleteWithState(ctx context.Context, auth AuthContext, project, path string, recursive bool, hooks SystemStateHooks) (DeleteResult, error) {
 	ctx = contextWithSystemOwner(ctx, s.owner)
-	result, err := s.svc.DeleteWithSystemState(ctx, auth, project, systemProject, path, recursive, mutate)
+	result, err := s.svc.DeleteWithSystemState(ctx, auth, project, path, recursive, hooks)
 	if err != nil {
 		return DeleteResult{}, errors.WithStack(err)
 	}
@@ -126,9 +126,9 @@ func (s *systemFS) DeleteWithState(ctx context.Context, auth AuthContext, projec
 }
 
 // RenameWithState atomically renames user files and system-owned plugin state.
-func (s *systemFS) RenameWithState(ctx context.Context, auth AuthContext, project, systemProject, fromPath, toPath string, overwrite bool, mutate SystemStateMutator) (RenameResult, error) {
+func (s *systemFS) RenameWithState(ctx context.Context, auth AuthContext, project, fromPath, toPath string, overwrite bool, hooks SystemStateHooks) (RenameResult, error) {
 	ctx = contextWithSystemOwner(ctx, s.owner)
-	result, err := s.svc.RenameWithSystemState(ctx, auth, project, systemProject, fromPath, toPath, overwrite, mutate)
+	result, err := s.svc.RenameWithSystemState(ctx, auth, project, fromPath, toPath, overwrite, hooks)
 	if err != nil {
 		return RenameResult{}, errors.WithStack(err)
 	}

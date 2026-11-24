@@ -14,7 +14,7 @@ func (s *Service) ensureNoDescendantFile(ctx context.Context, tx *sql.Tx, apiKey
 	prefix := buildPathPrefix(path)
 	var count int64
 	if err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
+		rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? ESCAPE '\' AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
 		apiKeyHash, project, prefix, owner,
 	).Scan(&count); err != nil {
 		return errors.Wrap(err, "check descendant files")
@@ -125,7 +125,7 @@ func (s *Service) listDescendantPaths(ctx context.Context, tx *sql.Tx, apiKeyHas
 	owner := systemOwnerFromContext(ctx)
 	prefix := buildPathPrefix(path)
 	rows, err := tx.QueryContext(ctx,
-		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
+		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? ESCAPE '\' AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
 		apiKeyHash, project, prefix, owner,
 	)
 	if err != nil {
@@ -219,26 +219,10 @@ func (s *Service) loadFilesForSnapshotTx(ctx context.Context, tx *sql.Tx, apiKey
 	return files, nil
 }
 
-// findActiveFileTx loads one non-deleted file row and its generation in a transaction.
+// findActiveFileTx loads one non-deleted file row of one physical project and
+// its generation in a transaction.
 func (s *Service) findActiveFileTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) (*File, error) {
-	owner := systemOwnerFromContext(ctx)
-	var file File
-	err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at,
-			content_hash, summary_content_hash, summary_status, summary_generation_key, incarnation_id || ':' || CAST(revision AS TEXT)
-		FROM mcp_files
-		WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?
-		LIMIT 1`, s.isPostgres),
-		apiKeyHash, project, path, owner,
-	).Scan(
-		&file.ID, &file.APIKeyHash, &file.Project, &file.Path, &file.Content,
-		&file.Size, &file.CreatedAt, &file.UpdatedAt, &file.Deleted, &file.DeletedAt,
-		&file.ContentHash, &file.SummaryContentHash, &file.SummaryStatus, &file.SummaryGenerationKey, &file.Version,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &file, nil
+	return s.findActiveFileQ(ctx, tx, apiKeyHash, project, path)
 }
 
 // buildInClause returns a placeholder list and positional args for IN clauses.

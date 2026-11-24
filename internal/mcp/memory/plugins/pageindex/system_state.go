@@ -2,7 +2,6 @@ package pageindex
 
 import (
 	"encoding/json"
-	"strings"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
@@ -59,15 +58,26 @@ func pageIndexWriteState(docID, userPath string, tree *Tree, entry IndexEntry) f
 	}
 }
 
-func pageIndexDeleteState(target string, recursive bool) files.SystemStateMutator {
+// pageIndexStateHooks keeps each physical project's catalog in step with the
+// user files a transactional delete or rename changed in that project.
+func pageIndexStateHooks(auth files.AuthContext) files.SystemStateHooks {
+	return files.SystemStateHooks{
+		SystemProject: func(userProject string) string { return PageIndexStorageProject(auth, userProject) },
+		Deleted:       pageIndexDeletePathsState,
+		Moved:         pageIndexMovePathsState,
+	}
+}
+
+// pageIndexDeletePathsState removes the catalog entries and trees of deleted user files.
+func pageIndexDeletePathsState(paths []string) files.SystemStateMutator {
 	return func(state map[string][]byte) error {
 		index, err := pageIndexDecodeState(state)
 		if err != nil {
 			return err
 		}
-		prefix := strings.TrimSuffix(target, "/") + "/"
-		for userPath, entry := range index {
-			if userPath != target && (!recursive || !strings.HasPrefix(userPath, prefix)) {
+		for _, userPath := range paths {
+			entry, ok := index[userPath]
+			if !ok {
 				continue
 			}
 			delete(state, treePath(entry.DocID))
@@ -77,44 +87,26 @@ func pageIndexDeleteState(target string, recursive bool) files.SystemStateMutato
 	}
 }
 
-func pageIndexRenameState(src, dst string, overwrite bool) files.SystemStateMutator {
+// pageIndexMovePathsState re-keys the catalog entries of renamed user files. A
+// stale entry already at a destination is replaced together with its tree.
+func pageIndexMovePathsState(moves []files.PathMove) files.SystemStateMutator {
 	return func(state map[string][]byte) error {
 		index, err := pageIndexDecodeState(state)
 		if err != nil {
 			return err
 		}
-		prefix := strings.TrimSuffix(src, "/") + "/"
-		type move struct {
-			from string
-			to   string
-			row  IndexEntry
-		}
-		moves := make([]move, 0)
-		for userPath, entry := range index {
-			if userPath == src {
-				moves = append(moves, move{from: userPath, to: dst, row: entry})
-				continue
-			}
-			if strings.HasPrefix(userPath, prefix) {
-				moves = append(moves, move{from: userPath, to: dst + strings.TrimPrefix(userPath, src), row: entry})
+		moved := make(map[string]IndexEntry, len(moves))
+		for _, move := range moves {
+			if entry, ok := index[move.From]; ok {
+				moved[move.To] = entry
+				delete(index, move.From)
 			}
 		}
-		if overwrite {
-			for userPath, entry := range index {
-				for _, candidate := range moves {
-					if userPath == candidate.to || strings.HasPrefix(userPath, strings.TrimSuffix(candidate.to, "/")+"/") {
-						delete(state, treePath(entry.DocID))
-						delete(index, userPath)
-						break
-					}
-				}
+		for userPath, entry := range moved {
+			if stale, ok := index[userPath]; ok && stale.DocID != entry.DocID {
+				delete(state, treePath(stale.DocID))
 			}
-		}
-		for _, item := range moves {
-			delete(index, item.from)
-		}
-		for _, item := range moves {
-			index[item.to] = item.row
+			index[userPath] = entry
 		}
 		return pageIndexWriteIndexState(state, index)
 	}

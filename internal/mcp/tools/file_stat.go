@@ -23,7 +23,7 @@ func NewFileStatTool(svc FileService) (*FileStatTool, error) {
 func (t *FileStatTool) Definition() mcp.Tool {
 	return mcp.NewTool("file_stat",
 		mcp.WithDescription("Return metadata and the live version for a file. Directories have no file version. For editing, use the version returned with file_read content, not a later independent stat."),
-		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
+		mcp.WithString("project", mcp.Required(), mcp.Description(fileProjectDescription)),
 		mcp.WithString("path", mcp.Description("File path; empty string means project root.")),
 		fileToolPluginOption(), mcp.WithReadOnlyHintAnnotation(true), mcp.WithIdempotentHintAnnotation(true),
 	)

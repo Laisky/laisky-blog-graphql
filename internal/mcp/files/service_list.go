@@ -89,7 +89,7 @@ func (s *Service) listSelfEntry(ctx context.Context, apiKeyHash, project, path s
 		}, true, nil
 	}
 
-	file, err := s.findActiveFile(ctx, apiKeyHash, project, path)
+	file, err := s.resolveActiveFile(ctx, s.db, apiKeyHash, project, path)
 	if err == nil {
 		return fileToEntry(*file), true, nil
 	}
@@ -121,36 +121,20 @@ func (s *Service) listSelfEntry(ctx context.Context, apiKeyHash, project, path s
 	}, true, nil
 }
 
-// listDescendants builds file and directory entries under a prefix.
+// listDescendants builds file and directory entries from the visible files under
+// path, which for an overlaid project include DefaultProject files it does not hide.
 func (s *Service) listDescendants(ctx context.Context, apiKeyHash, project, path string, depth int) ([]FileEntry, error) {
-	owner := systemOwnerFromContext(ctx)
-	prefix := buildPathPrefix(path)
-	rows, err := s.db.QueryContext(ctx,
-		rebindSQL(`SELECT path, size, created_at, updated_at
-		FROM mcp_files
-		WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash,
-		project,
-		prefix,
-		owner,
-	)
+	visible, err := s.visibleDescendants(ctx, s.db, apiKeyHash, project, path)
 	if err != nil {
-		return nil, errors.Wrap(err, "query descendant files")
+		return nil, errors.WithStack(err)
 	}
-	defer func() { _ = rows.Close() }()
 
 	entries := make(map[string]FileEntry)
 	dirUpdated := make(map[string]time.Time)
 
-	for rows.Next() {
-		var p string
-		var size int64
-		var createdAt time.Time
-		var updatedAt time.Time
-		if err := rows.Scan(&p, &size, &createdAt, &updatedAt); err != nil {
-			return nil, errors.Wrap(err, "scan file row")
-		}
-		rel := strings.TrimPrefix(p, path)
+	for _, file := range visible {
+		size, createdAt, updatedAt := file.Size, file.CreatedAt, file.UpdatedAt
+		rel := strings.TrimPrefix(file.Path, path)
 		rel = strings.TrimPrefix(rel, "/")
 		if rel == "" {
 			continue
@@ -186,9 +170,6 @@ func (s *Service) listDescendants(ctx context.Context, apiKeyHash, project, path
 				}
 			}
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "iterate descendant files")
 	}
 
 	result := make([]FileEntry, 0, len(entries))

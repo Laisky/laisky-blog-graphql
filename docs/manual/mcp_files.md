@@ -33,6 +33,11 @@ This manual is for end users and integrators who want to call `file_stat`, `file
   - [6. Common error codes](#6-common-error-codes)
   - [7. Minimal end-to-end flow](#7-minimal-end-to-end-flow)
   - [8. Integration best practices](#8-integration-best-practices)
+  - [9. Shared defaults: the `@DEFAULT` project](#9-shared-defaults-the-default-project)
+    - [9.1 How a project sees `@DEFAULT`](#91-how-a-project-sees-default)
+    - [9.2 What changes are global](#92-what-changes-are-global)
+    - [9.3 Recipes](#93-recipes)
+    - [9.4 Search, history and isolation](#94-search-history-and-isolation)
 
 ## 1. What FileIO is for
 
@@ -129,6 +134,9 @@ Tool output is typically in `result.content[0].text` (as JSON string). Error pay
 
 - Required, length `1..128`
 - Allowed characters: `a-z A-Z 0-9 _ - .`
+- The reserved name `@DEFAULT` (exact case) is also accepted. It holds files
+  shared by every project of your API key; see [section 9](#9-shared-defaults-the-default-project).
+  Any other name containing `@` is rejected.
 
 ### 4.2 `path`
 
@@ -561,4 +569,96 @@ mcp_call '{"jsonrpc":"2.0","id":206,"method":"tools/call","params":{"name":"file
 - For write retries, use an idempotent pattern (for example `file_stat` + conditional write).
 - For `file_search`, allow a short delay after writes for indexing visibility.
 
-If you want, I can also add a compact ~30-line Bash wrapper that handles session bootstrap and unified error parsing automatically.
+## 9. Shared defaults: the `@DEFAULT` project
+
+Every API key has a built-in project named `@DEFAULT`. Files you put there show
+up in **all** of your other projects, like the lower layer of an overlay
+filesystem. Use it for context every agent should share, such as user
+preferences or coding conventions, instead of copying the same file into every
+project. Design and exact rules: [`docs/proposals/fileio_default_project.md`](../proposals/fileio_default_project.md).
+
+### 9.1 How a project sees `@DEFAULT`
+
+- If the project has its own file at a path, you see the project's file.
+- Otherwise, if `@DEFAULT` has a file at that path, you see the default.
+- Names win as a whole: a project file `/notes` hides a default directory
+  `/notes/...`, and any project file below `/notes/` hides a default file `/notes`.
+
+Inside a project you never need to know where a file comes from. `file_read`,
+`file_stat`, `file_list`, `file_search` and the history tools treat inherited files
+exactly like the project's own files. They return no extra field, and `file_list`
+shows each name once.
+
+`@DEFAULT` itself is an ordinary project. Addressing it shows only its own files.
+
+### 9.2 What changes are global
+
+| You do this in a project | Result |
+| --- | --- |
+| Edit (any write mode) a file that comes from `@DEFAULT` | The default changes for **every** project. |
+| Create a new file | The file is created in that project only. |
+| Delete a file that comes from `@DEFAULT` | The default is deleted for every project that does not override it. Its history is kept. |
+| Delete the project's own override of a default | The default becomes visible again. |
+| Rename a file that comes from `@DEFAULT` | It is renamed for every project. |
+| Rename a project file onto a default's path with `overwrite=true` | The project file overrides the default in that project only. |
+
+All the usual version rules apply. A version from `file_read`/`file_stat` names
+the exact file you saw, so an edit fails with `VERSION_CONFLICT` if another
+project changed the default in the meantime.
+
+### 9.3 Recipes
+
+Seed a default (once, from anywhere):
+
+```bash
+mcp_call '{"jsonrpc":"2.0","id":301,"method":"tools/call","params":{"name":"file_write","arguments":{
+  "project":"@DEFAULT","path":"/users.md","content":"Prefers concise English answers.\n","create_only":true}}}'
+```
+
+Every project now reads it:
+
+```bash
+mcp_call '{"jsonrpc":"2.0","id":302,"method":"tools/call","params":{"name":"file_read","arguments":{
+  "project":"graphql","path":"/users.md"}}}'
+# {"content":"Prefers concise English answers.\n","content_encoding":"utf-8","version":"<V_DEFAULT>"}
+```
+
+Editing it through a project edits the shared default:
+
+```bash
+mcp_call '{"jsonrpc":"2.0","id":303,"method":"tools/call","params":{"name":"file_write","arguments":{
+  "project":"graphql","path":"/users.md","mode":"APPEND","content":"Uses tabs.\n",
+  "expected_version":"<V_DEFAULT>"}}}'
+```
+
+Override the default in one project only. Write the project version under a
+temporary name, then move it onto the default's path:
+
+```bash
+mcp_call '{"jsonrpc":"2.0","id":304,"method":"tools/call","params":{"name":"file_write","arguments":{
+  "project":"web","path":"/users.md.web","content":"Uses two spaces.\n","create_only":true}}}'
+# -> {"version":"<V_DRAFT>", ...}
+mcp_call '{"jsonrpc":"2.0","id":305,"method":"tools/call","params":{"name":"file_rename","arguments":{
+  "project":"web","from_path":"/users.md.web","to_path":"/users.md","overwrite":true,
+  "expected_version":"<V_DRAFT>","expected_destination_version":"<V_DEFAULT_LATEST>"}}}'
+```
+
+Writing straight to `/users.md` in `web` would edit the shared default instead.
+To return `web` to the default later, delete its override with the override's
+version. The default appears again.
+
+### 9.4 Search, history and isolation
+
+- `file_search` in a project searches its own files plus the defaults it does not
+  override. With `project="*"`, results are per physical project and defaults are
+  labelled `"project": "@DEFAULT"`.
+- `file_list_versions` for a path in a project lists the history of both the
+  project's file and the default at that path. A deleted default stays
+  recoverable: `file_restore_version` through a project creates the file in that
+  project (no file is visible there any more), while restoring through `@DEFAULT`
+  brings the default back for every project.
+- The console's project picker lists `@DEFAULT` once it holds files. You can also
+  type it manually.
+- "Global" always means one API key. Defaults of one key are invisible to every
+  other key.
+- The memory tools' default project name `default` is unrelated to `@DEFAULT`.

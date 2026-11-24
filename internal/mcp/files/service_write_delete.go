@@ -69,16 +69,27 @@ func (s *Service) WriteWith(ctx context.Context, auth AuthContext, project, path
 	opts.ExpectedVersion, opts.CreateOnly = conditions.ExpectedVersion, conditions.CreateOnly
 
 	var result WriteResult
-	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
-		n, err := s.writeWithinTx(ctx, tx, auth, project, path, []byte(content), mode, offset, payloadBytes, opts)
+	err := s.runUserMutation(ctx, auth.APIKeyHash, project, []string{path}, func(tx *sql.Tx, overlay bool) error {
+		layer := project
+		if overlay {
+			// Conditions are judged before namespace conflicts, as in physical mode.
+			if err := s.checkEffectiveVersionTx(ctx, tx, auth.APIKeyHash, project, path, opts.ExpectedVersion, opts.CreateOnly); err != nil {
+				return err
+			}
+			var resolveErr error
+			if layer, resolveErr = s.resolveWriteLayerTx(ctx, tx, auth.APIKeyHash, project, path); resolveErr != nil {
+				return resolveErr
+			}
+		}
+		n, err := s.writeWithinTx(ctx, tx, auth, layer, path, []byte(content), mode, offset, payloadBytes, opts)
 		if err != nil {
 			return err
 		}
-		version, err := s.fileVersionTx(ctx, tx, auth, project, path)
+		version, err := s.fileVersionTx(ctx, tx, auth, layer, path)
 		if err != nil {
 			return err
 		}
-		result = WriteResult{BytesWritten: n, Version: version}
+		result = WriteResult{BytesWritten: n, Version: version, ResolvedProject: layer}
 		return nil
 	})
 	if err != nil {
@@ -223,11 +234,15 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 	owner := systemOwnerFromContext(ctx)
 	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationDelete)
 	var deletedCount int
-	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
+	err := s.runUserMutation(ctx, auth.APIKeyHash, project, []string{path}, func(tx *sql.Tx, overlay bool) error {
+		if overlay {
+			var err error
+			deletedCount, err = s.deleteOverlayTx(ctx, tx, auth, project, path, recursive, conditions, nil)
+			return err
+		}
 		if err := s.checkPathVersionTx(ctx, tx, auth, project, path, conditions.ExpectedVersion, false); err != nil {
 			return err
 		}
-		now := s.clock()
 		paths, err := s.resolveDeleteTargets(ctx, tx, auth.APIKeyHash, project, path, recursive)
 		if err != nil {
 			return err
@@ -235,38 +250,8 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 		if len(paths) == 0 {
 			return errors.WithStack(NewError(ErrCodeNotFound, "path not found", false))
 		}
-		snapshots, err := s.loadFilesForSnapshotTx(ctx, tx, auth.APIKeyHash, project, paths)
-		if err != nil {
+		if err := s.softDeletePathsTx(ctx, tx, auth, project, paths, s.clock(), owner == ""); err != nil {
 			return err
-		}
-		for _, snap := range snapshots {
-			if err := s.snapshotFileVersionTx(ctx, tx, auth.APIKeyHash, project, snap.Path, snap.Content, snap.Size, snap.ID, now); err != nil {
-				return err
-			}
-		}
-		query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
-		inClause, inArgs := buildInClause(paths, s.isPostgres, 6)
-		args := make([]any, 0, 5+len(inArgs))
-		args = append(args, now, now, auth.APIKeyHash, project, owner)
-		args = append(args, inArgs...)
-		if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
-			return errors.Wrap(err, "soft delete files")
-		}
-		for _, snap := range snapshots {
-			if err := s.pruneVersionsTx(ctx, tx, auth.APIKeyHash, project, snap.Path, now); err != nil {
-				return err
-			}
-		}
-		if owner == "" {
-			for _, p := range paths {
-				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-					APIKeyHash: auth.APIKeyHash, Project: project, FilePath: p,
-					Operation: indexOperationDelete, FileUpdatedAt: &now, Status: indexStatusPending, RetryCount: 0,
-					AvailableAt: now, CreatedAt: now, UpdatedAt: now,
-				}); err != nil {
-					return errors.Wrap(err, "enqueue delete job")
-				}
-			}
 		}
 		deletedCount = len(paths)
 		return nil
@@ -275,6 +260,48 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 		return DeleteResult{}, errors.WithStack(err)
 	}
 	return DeleteResult{DeletedCount: deletedCount}, nil
+}
+
+// softDeletePathsTx deletes live files of one physical project: it snapshots
+// their history, soft-deletes the rows, prunes history, and optionally enqueues
+// RAG delete jobs, all inside the caller's mutation transaction.
+func (s *Service) softDeletePathsTx(ctx context.Context, tx *sql.Tx, auth AuthContext, project string, paths []string, now time.Time, enqueueIndex bool) error {
+	owner := systemOwnerFromContext(ctx)
+	snapshots, err := s.loadFilesForSnapshotTx(ctx, tx, auth.APIKeyHash, project, paths)
+	if err != nil {
+		return err
+	}
+	for _, snap := range snapshots {
+		if err := s.snapshotFileVersionTx(ctx, tx, auth.APIKeyHash, project, snap.Path, snap.Content, snap.Size, snap.ID, now); err != nil {
+			return err
+		}
+	}
+	query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
+	inClause, inArgs := buildInClause(paths, s.isPostgres, 6)
+	args := make([]any, 0, 5+len(inArgs))
+	args = append(args, now, now, auth.APIKeyHash, project, owner)
+	args = append(args, inArgs...)
+	if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
+		return errors.Wrap(err, "soft delete files")
+	}
+	for _, snap := range snapshots {
+		if err := s.pruneVersionsTx(ctx, tx, auth.APIKeyHash, project, snap.Path, now); err != nil {
+			return err
+		}
+	}
+	if !enqueueIndex {
+		return nil
+	}
+	for _, p := range paths {
+		if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
+			APIKeyHash: auth.APIKeyHash, Project: project, FilePath: p,
+			Operation: indexOperationDelete, FileUpdatedAt: &now, Status: indexStatusPending, RetryCount: 0,
+			AvailableAt: now, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			return errors.Wrap(err, "enqueue delete job")
+		}
+	}
+	return nil
 }
 
 // applyWriteModeBytes merges complete UTF-8 units and rejects corrupt results.

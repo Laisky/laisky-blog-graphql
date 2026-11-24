@@ -14,6 +14,11 @@ import (
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 )
 
+// fileProjectDescription documents the project argument of every FileIO tool,
+// including the reserved per-API-key default layer.
+const fileProjectDescription = "Target project namespace. Files in the reserved project \"@DEFAULT\" appear in every project of this API key " +
+	"unless that project has its own file at the path; editing, renaming, or deleting such a file from any project changes the shared default."
+
 // Shared field names used across tool responses and JSON Schema fragments.
 // Declared once so the redaction, encoding and schema paths cannot drift.
 const (

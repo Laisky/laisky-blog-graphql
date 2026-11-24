@@ -54,9 +54,13 @@ func (s *Service) ListVersionPage(ctx context.Context, auth AuthContext, project
 	if path == "" || limit < 1 || limit > 200 || beforeID > uint64(1<<63-1) {
 		return HistoryPage{}, errors.WithStack(NewError(ErrCodeInvalidArgument, "history requires a file path, limit 1..200 and a valid cursor", false))
 	}
+	layers := historyProjects(ctx, project)
 	query := `SELECT id, size, created_at FROM mcp_file_versions
-		WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ?`
-	args := []any{auth.APIKeyHash, project, path, systemOwnerFromContext(ctx)}
+		WHERE apikey_hash = ? AND path = ? AND system_owner = ? AND project IN (` + placeholders(len(layers)) + `)`
+	args := []any{auth.APIKeyHash, path, systemOwnerFromContext(ctx)}
+	for _, layer := range layers {
+		args = append(args, layer)
+	}
 	if beforeID != 0 {
 		query += ` AND id < ?`
 		args = append(args, beforeID)

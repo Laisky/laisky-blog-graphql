@@ -44,6 +44,10 @@ export function FileIOIntroduction() {
           <p>All mutations require conditions, including APPEND. On VERSION_CONFLICT (HTTP 412), keep your draft, read the latest content, and recompute the change. Do not just swap in a new token.</p>
           <p>PRECONDITION_REQUIRED (HTTP 428) means the condition is missing. Writes and byte ranges must preserve valid UTF-8 boundaries. No force-write, automatic merge, or success replay is provided.</p>
         </div>
+        <div className="rounded-lg border border-border/60 p-4 text-sm space-y-2">
+          <p><strong><code>@DEFAULT</code> holds shared defaults for this API key.</strong> Its files appear in every other project, read and edited like the project&apos;s own files, unless that project has its own file at the same path.</p>
+          <p>Editing, renaming, or deleting a default from any project changes it for all projects. New files stay in the project you write to. Other API keys never see these files.</p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {descriptions.map(([name, text]) => <div key={name} className="rounded-lg border border-border/50 bg-card/50 p-4">
             <div className="mb-2 font-mono text-sm font-semibold text-primary">{name}</div>

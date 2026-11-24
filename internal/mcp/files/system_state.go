@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"strings"
 
 	errors "github.com/Laisky/errors/v2"
 )
@@ -12,6 +11,73 @@ import (
 // SystemStateMutator updates the active files owned by one system namespace.
 // The map is loaded and persisted inside the caller's user-project transaction.
 type SystemStateMutator func(map[string][]byte) error
+
+// PathMove is one user file moved within a single physical project.
+type PathMove struct {
+	From string
+	To   string
+}
+
+// SystemStateHooks mirror user-file deletions and moves into plugin-owned system
+// state. Each hook runs inside the user mutation transaction, once for every
+// physical user project the mutation changed, against the state stored under
+// SystemProject(thatProject). A mutation of an overlaid project can change files
+// of DefaultProject, so a plugin must never assume the addressed project.
+type SystemStateHooks struct {
+	// SystemProject maps a physical user project to its system-namespace project.
+	SystemProject func(userProject string) string
+	// Deleted returns the state change for user files removed from one project,
+	// including destinations replaced by an overwriting rename.
+	Deleted func(paths []string) SystemStateMutator
+	// Moved returns the state change for user files renamed within one project.
+	Moved func(moves []PathMove) SystemStateMutator
+}
+
+// validate rejects incomplete hooks before any user file is changed.
+func (h SystemStateHooks) validate() error {
+	if h.SystemProject == nil || h.Deleted == nil || h.Moved == nil {
+		return errors.New("system state hooks are incomplete")
+	}
+	return nil
+}
+
+// systemStateRun binds hooks to the system owner whose state they mutate.
+type systemStateRun struct {
+	owner string
+	hooks SystemStateHooks
+}
+
+// deleted mirrors user files removed from one physical project.
+func (r *systemStateRun) deleted(ctx context.Context, s *Service, tx *sql.Tx, project string, paths []string) error {
+	if r == nil || len(paths) == 0 {
+		return nil
+	}
+	return s.mutateSystemStateTx(ctx, tx, r.owner, r.hooks.SystemProject(project), r.hooks.Deleted(paths))
+}
+
+// moved mirrors user files renamed within one physical project.
+func (r *systemStateRun) moved(ctx context.Context, s *Service, tx *sql.Tx, project string, moves []PathMove) error {
+	if r == nil || len(moves) == 0 {
+		return nil
+	}
+	return s.mutateSystemStateTx(ctx, tx, r.owner, r.hooks.SystemProject(project), r.hooks.Moved(moves))
+}
+
+// mutateSystemStateTx loads, mutates, and persists one system project's state.
+func (s *Service) mutateSystemStateTx(ctx context.Context, tx *sql.Tx, owner, systemProject string, mutate SystemStateMutator) error {
+	if err := ValidateProject(systemProject); err != nil {
+		return errors.Wrap(err, "validate system project")
+	}
+	stateCtx := contextWithSystemOwner(ctx, owner)
+	state, err := s.loadSystemStateTx(stateCtx, tx, owner, systemProject)
+	if err != nil {
+		return err
+	}
+	if err := mutate(state); err != nil {
+		return errors.Wrap(err, "mutate plugin system state")
+	}
+	return s.persistSystemStateTx(stateCtx, tx, owner, systemProject, state)
+}
 
 // PublishPluginSummaryAndState atomically publishes plugin summary metadata and
 // a system namespace state mutation under the authenticated project's mutation
@@ -105,22 +171,21 @@ func (s *Service) PublishPluginSummaryAndState(
 	return published, nil
 }
 
-// DeleteWithSystemState deletes user files and the corresponding system state
-// mutation in one transaction. It is used by transactional PageIndex handles.
+// DeleteWithSystemState deletes user files and mirrors the deletion into the
+// owner's system state in one transaction. It is used by transactional PageIndex
+// handles. Files deleted from DefaultProject through an overlaid project update
+// the DefaultProject state, never the addressed project's state.
 func (s *Service) DeleteWithSystemState(
 	ctx context.Context,
 	auth AuthContext,
-	project, systemProject, path string,
+	project, path string,
 	recursive bool,
-	mutate SystemStateMutator,
+	hooks SystemStateHooks,
 ) (DeleteResult, error) {
 	if err := s.validateAuth(auth); err != nil {
 		return DeleteResult{}, errors.WithStack(err)
 	}
 	if err := ValidateProject(project); err != nil {
-		return DeleteResult{}, errors.WithStack(err)
-	}
-	if err := ValidateProject(systemProject); err != nil {
 		return DeleteResult{}, errors.WithStack(err)
 	}
 	if err := ValidatePath(path); err != nil {
@@ -129,18 +194,24 @@ func (s *Service) DeleteWithSystemState(
 	if path == "" {
 		return DeleteResult{}, errors.WithStack(NewError(ErrCodePermissionDenied, "root directory cannot be deleted", false))
 	}
-	if mutate == nil {
-		return DeleteResult{}, errors.New("system state mutator is nil")
+	if err := hooks.validate(); err != nil {
+		return DeleteResult{}, errors.WithStack(err)
 	}
 
 	owner := systemOwnerFromContext(ctx)
 	if owner == "" {
 		return DeleteResult{}, errors.New("system_owner is required")
 	}
+	state := &systemStateRun{owner: owner, hooks: hooks}
 	userCtx := contextWithSystemOwner(ctx, "")
 	var deletedCount int
-	err := s.lockProvider.WithProjectLock(userCtx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
-		now := s.clock()
+	err := s.runUserMutation(userCtx, auth.APIKeyHash, project, []string{path}, func(tx *sql.Tx, overlay bool) error {
+		if overlay {
+			conditions := filePreconditionsFromContext(userCtx, auth, project, path, FileOperationDelete)
+			var err error
+			deletedCount, err = s.deleteOverlayTx(userCtx, tx, auth, project, path, recursive, conditions, state)
+			return err
+		}
 		paths, err := s.resolveDeleteTargets(userCtx, tx, auth.APIKeyHash, project, path, recursive)
 		if err != nil {
 			return err
@@ -148,37 +219,10 @@ func (s *Service) DeleteWithSystemState(
 		if len(paths) == 0 {
 			return errors.WithStack(NewError(ErrCodeNotFound, "path not found", false))
 		}
-		snapshots, err := s.loadFilesForSnapshotTx(userCtx, tx, auth.APIKeyHash, project, paths)
-		if err != nil {
+		if err := s.softDeletePathsTx(userCtx, tx, auth, project, paths, s.clock(), false); err != nil {
 			return err
 		}
-		for _, snap := range snapshots {
-			if err := s.snapshotFileVersionTx(userCtx, tx, auth.APIKeyHash, project, snap.Path, snap.Content, snap.Size, snap.ID, now); err != nil {
-				return err
-			}
-		}
-		inClause, inArgs := buildInClause(paths, s.isPostgres, 6)
-		query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ?
-			WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
-		args := make([]any, 0, 5+len(inArgs))
-		args = append(args, now, now, auth.APIKeyHash, project, systemOwnerFromContext(userCtx))
-		args = append(args, inArgs...)
-		if _, err := tx.ExecContext(userCtx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
-			return errors.Wrap(err, "soft delete files with system state")
-		}
-		for _, snap := range snapshots {
-			if err := s.pruneVersionsTx(userCtx, tx, auth.APIKeyHash, project, snap.Path, now); err != nil {
-				return err
-			}
-		}
-		state, err := s.loadSystemStateTx(ctx, tx, owner, systemProject)
-		if err != nil {
-			return err
-		}
-		if err := mutate(state); err != nil {
-			return errors.Wrap(err, "mutate delete system state")
-		}
-		if err := s.persistSystemStateTx(ctx, tx, owner, systemProject, state); err != nil {
+		if err := state.deleted(ctx, s, tx, project, paths); err != nil {
 			return err
 		}
 		deletedCount = len(paths)
@@ -190,25 +234,25 @@ func (s *Service) DeleteWithSystemState(
 	return DeleteResult{DeletedCount: deletedCount}, nil
 }
 
-// RenameWithSystemState renames user files and mutates the corresponding system
-// state in one transaction. The existing rename validation and index-job logic
-// are reused by the system-state variant.
+// RenameWithSystemState renames user files and mirrors the moves into the
+// owner's system state in one transaction. The existing rename validation and
+// index-job logic are reused by the system-state variant.
 func (s *Service) RenameWithSystemState(
 	ctx context.Context,
 	auth AuthContext,
-	project, systemProject, fromPath, toPath string,
+	project, fromPath, toPath string,
 	overwrite bool,
-	mutate SystemStateMutator,
+	hooks SystemStateHooks,
 ) (RenameResult, error) {
-	if mutate == nil {
-		return RenameResult{}, errors.New("system state mutator is nil")
+	if err := hooks.validate(); err != nil {
+		return RenameResult{}, errors.WithStack(err)
 	}
 	owner := systemOwnerFromContext(ctx)
 	if owner == "" {
 		return RenameResult{}, errors.New("system_owner is required")
 	}
 	userCtx := contextWithSystemOwner(ctx, "")
-	return s.renameWithSystemState(userCtx, auth, project, fromPath, toPath, overwrite, systemProject, owner, mutate)
+	return s.renameWithSystemState(userCtx, auth, project, fromPath, toPath, overwrite, &systemStateRun{owner: owner, hooks: hooks})
 }
 
 func (s *Service) activeContentHashTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) (string, error) {
