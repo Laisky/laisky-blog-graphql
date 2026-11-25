@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
@@ -12,6 +12,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    // Real-browser tests run with `pnpm run test:browser` (vitest.browser.config.ts).
+    exclude: [...configDefaults.exclude, 'src/**/*.browser.test.{ts,tsx}'],
     restoreMocks: true,
     setupFiles: ['./src/test-utils/setup.ts'],
   },

@@ -281,6 +281,9 @@ pnpm install --frozen-lockfile
 pnpm test
 pnpm lint
 pnpm build
+# Real-browser tests (*.browser.test.tsx) need a local Google Chrome; set
+# VITEST_BROWSER_CHANNEL=chromium after `pnpm exec playwright install chromium` otherwise.
+pnpm run test:browser
 ```
 
 An environment-dependent suite can skip when its URI is absent. Such a local
@@ -336,9 +339,14 @@ manual-execution limitation, not changed by this repository patch.
 warns that removing a required workflow trigger can otherwise leave a check
 pending. Recheck protection before any later merge; this PR does not change it.
 
-The complete frontend `pnpm test` suite and `pnpm build` production build run in
-the `project-quality / frontend-acceptance` job only on `workflow_dispatch`, or
-locally using the commands above. Its locked dependencies, tool versions and
+The complete frontend `pnpm test` suite, the real-browser `pnpm run test:browser`
+suite and the `pnpm build` production build run in the
+`project-quality / frontend-acceptance` job only on `workflow_dispatch`, or
+locally using the commands above. The real-browser suite covers what jsdom cannot
+model: layout, scrolling and the browser's own focus rules (for example the File
+Preview cases in `web/src/features/mcp/file-io/preview.browser.test.tsx`). It
+drives the runner's preinstalled Google Chrome through Vitest Browser Mode and
+Playwright, so it downloads no browser. Its locked dependencies, tool versions and
 test/build commands are preserved. `frontend-quality` keeps `pnpm lint` and the
 all-severity dependency audit in the same manual workflow; Go quality and
 security commands are unchanged. Manual dispatch runs qualification and the
