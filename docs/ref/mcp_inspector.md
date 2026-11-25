@@ -641,3 +641,29 @@ export default App;
 - [Vite + React Integration Guides](https://egghead.io/create-a-vite-app-with-the-react-type-script-preset~1yswb), [GitHub example](https://github.com/Mickey-Zhaang/vite-react-ts-template)
 
 **The above analysis and implementation steps ensure both a high-level understanding and low-level implementation reference for integrating the MCP Inspector as a remote HTTP debugging tool in a React, Vite, and pnpm environment.**
+
+## This Repository's Integration: srcdoc History Constraint (verified 2026-11-25)
+
+`web/src/features/mcp/inspector/page.tsx` does not mount an `InspectorApp`
+component. It loads the precompiled `@modelcontextprotocol/inspector-client`
+bundle (1.0.6) into an `<iframe srcdoc>` built by `inspector-document.ts`, in
+direct Streamable HTTP mode, with no Node proxy.
+
+- An `about:srcdoc` document may only change the fragment of its URL with
+  `history.replaceState`/`pushState`. Relative URLs resolve against the
+  embedding page's base URL, so even `'#tab'` resolves to an `http(s):` URL and
+  is rejected with a `SecurityError`.
+- On every disconnect, including Reconnect, the Inspector clears its tab hash with
+  `history.replaceState(null, '', location.pathname + location.search)`. In
+  srcdoc this resolves to `<embedder>/srcdoc` and throws inside a React effect.
+  The whole Inspector then unmounts to a blank frame. 0.21.2 and 1.0.6 behave
+  the same way.
+- `inspector-document.ts` installs `SRCDOC_HISTORY_GUARD` before the bundle. It
+  keeps the native call when that call succeeds. Only when the call throws a
+  `SecurityError` in an `about:` document does it retry with
+  `about:srcdoc` plus the requested fragment. `location.hash = ...`
+  assignments are unaffected.
+- Acceptance (Chrome, production build, real Go `/mcp` handler): Connect, then
+  Tools, then Reconnect and Disconnect/Connect keep the Inspector rendered and
+  connected. Without the guard, the first Reconnect blanks the frame with the
+  error above.
