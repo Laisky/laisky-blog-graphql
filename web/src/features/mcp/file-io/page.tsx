@@ -190,6 +190,7 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
   const writeBaseWarned = useRef(false);
   const [busy, setBusy] = useState(false);
   const unavailable = !apiKey || !project.trim();
+  const historyUnavailable = !apiKey || !base || busy || reading || loadingVersions;
   useEffect(() => { onDirtyChange(draft !== loadedContent || writeContent.length > 0); }, [draft, loadedContent, writeContent, onDirtyChange]);
 
   // Persist drafts/paths only. Restored text is never paired with a fresh token automatically.
@@ -449,24 +450,32 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
       setPreviewOpen(open);
     }}>
       <DialogContent className="flex h-[90vh] w-[95vw] max-w-5xl flex-col overflow-hidden p-0">
-        <DialogHeader className="border-b border-border/60 px-6 py-4"><DialogTitle>File Preview</DialogTitle><DialogDescription className="break-all">{previewPath || 'No file selected'}</DialogDescription></DialogHeader>
-        {/* Actions and their outcome stay above the scroller, so a long file never pushes them out of reach. */}
-        <div className="space-y-2 border-b bg-muted/20 px-6 py-3">
-          <div role="group" aria-label="File actions" className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" disabled={!apiKey || busy || reading} onClick={() => void loadPreview(previewPath)}><RefreshCw className="mr-2 h-4 w-4" />Reload latest</Button>
+        {/* The header and the compact action bar are pinned above the scroller while there is room for them, so a long
+            file never pushes the actions out of reach. Feedback can be any length, so it opens the scrolled body instead:
+            a long message scrolls away like the file and never takes the editor's room. Controls whose availability
+            changes while a request runs stay focusable (aria-disabled), so the request never drops the user's focus. */}
+        <PreviewScrollRegion header={<>
+          <DialogHeader className="border-b border-border/60 px-6 py-4"><DialogTitle>File Preview</DialogTitle><DialogDescription className="break-all">{previewPath || 'No file selected'}</DialogDescription></DialogHeader>
+          <div role="group" aria-label="File actions" className="flex flex-wrap items-center gap-2 border-b bg-muted/20 px-6 py-3">
+            <Button variant="outline" size="sm" focusableWhenDisabled disabled={!apiKey || busy || reading} onClick={() => void loadPreview(previewPath)}><RefreshCw className="mr-2 h-4 w-4" />Reload latest</Button>
             <History className="h-4 w-4" />
-            <select aria-label="File history" value={historyId === null ? 'current' : String(historyId)} disabled={!apiKey || !base || busy || reading || loadingVersions} className={cn(selectClass, 'w-auto')}
-              onChange={(event) => event.target.value === 'current' ? void loadPreview(previewPath) : void loadHistory(event.target.value)}>
+            <select aria-label="File history" value={historyId === null ? 'current' : String(historyId)} aria-disabled={historyUnavailable || undefined}
+              className={cn(selectClass, 'w-auto max-w-full aria-disabled:cursor-not-allowed aria-disabled:opacity-60')}
+              onMouseDown={(event) => { if (historyUnavailable) event.preventDefault(); }}
+              onChange={(event) => {
+                if (historyUnavailable) return; // Controlled: an ignored change snaps back to the current value.
+                if (event.target.value === 'current') void loadPreview(previewPath); else void loadHistory(event.target.value);
+              }}>
               <option value="current">Current</option>{versions.map((item) => <option key={item.id} value={String(item.id)}>{formatTimestamp(item.created_at)} · {item.size} bytes</option>)}
             </select>
-            <Button variant="outline" size="sm" disabled={!apiKey || !base || historyId === null || busy || reading || encoding !== 'utf-8'} onClick={() => void restoreVersion()}><History className="mr-2 h-4 w-4" />Restore as latest</Button>
-            <Button size="sm" disabled={!apiKey || !base || historyId !== null || draft === loadedContent || busy || reading || encoding !== 'utf-8'} onClick={() => void saveFile()}><Save className="mr-2 h-4 w-4" />Save</Button>
+            <Button variant="outline" size="sm" focusableWhenDisabled disabled={!apiKey || !base || historyId === null || busy || reading || encoding !== 'utf-8'} onClick={() => void restoreVersion()}><History className="mr-2 h-4 w-4" />Restore as latest</Button>
+            <Button size="sm" focusableWhenDisabled disabled={!apiKey || !base || historyId !== null || draft === loadedContent || busy || reading || encoding !== 'utf-8'} onClick={() => void saveFile()}><Save className="mr-2 h-4 w-4" />Save</Button>
             {draft !== loadedContent && <p className="text-sm text-amber-600">Unsaved changes</p>}
           </div>
+        </>} notice={<>
           <Feedback error={readError} info={readInfo} />
           {metadataWarning && <p role="note" className="text-xs text-muted-foreground">{metadataWarning}</p>}
-        </div>
-        <PreviewScrollRegion>
+        </>}>
           {reading && <p className="text-sm text-muted-foreground">Loading file content...</p>}
           {base && <div className="space-y-1 rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
             <p className="break-all">Live edit base: <code>{base.version}</code></p>
