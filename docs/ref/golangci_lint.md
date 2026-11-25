@@ -1,7 +1,7 @@
 # golangci-lint configuration notes
 
 Facts about `.golangci.lint.yml` that are not obvious from the file itself.
-Measured with golangci-lint v2.15.0 locally; CI pins v2.14.0 in
+Measured with golangci-lint v2.15.0, the version CI pins in
 `.github/workflows/project-quality.yml`.
 
 ## Deprecations
