@@ -1079,7 +1079,7 @@ function UserRequestsSession() {
             Draft a new instruction for your AI agent. Requests are delivered in FIFO order (oldest first) when they call{' '}
             <code>get_user_request</code>.
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span id="user-requests-return-mode-label" className="text-sm text-muted-foreground">
               Return mode:
             </span>
@@ -1581,7 +1581,7 @@ function UserRequestsSession() {
                   <p className="text-lg">
                     No matches found for <span className="font-semibold text-foreground">"{searchQuery}"</span>
                   </p>
-                  <Button variant="outline" size="sm" onClick={() => handleSearch('')} className="mt-4" disabled={isInteractionDisabled}>
+                  <Button variant="outline" size="sm" onClick={() => handleSearch('')} disabled={isInteractionDisabled}>
                     Clear search
                   </Button>
                 </div>

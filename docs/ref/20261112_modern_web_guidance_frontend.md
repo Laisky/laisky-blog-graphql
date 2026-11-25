@@ -59,9 +59,10 @@ defined for this repository.
   hides the bearer token at once. Other browsers may still refuse `no-store` pages, which the
   header keeps as defense in depth. Switching the entry document to `no-cache` would let console
   pages use the bfcache in every browser; that is a separate decision.
-- **`<meta name="text-scale">`** (`respect-os-text-scale`). The header uses px-based Tailwind
-  breakpoints and has no collapsed navigation, so large OS text scales would clip it. Opt in
-  after switching the breakpoints to `em`.
+- **`<meta name="text-scale">`** (`respect-os-text-scale`). Since the Tailwind 4 upgrade the
+  default breakpoints are rem-based (`sm` is `40rem`), so they already follow the user's default
+  font size. The header still has no collapsed navigation, so large OS text scales would clip it.
+  Opt in after the header can collapse.
 - **View transitions between routes** (`same-document-transitions`). Optional polish, not
   needed for correctness.
 - **Splitting the largest console components** (`user-requests/page.tsx` ≈1.5k lines, `sso-login.tsx`, `sso-profile.tsx`,

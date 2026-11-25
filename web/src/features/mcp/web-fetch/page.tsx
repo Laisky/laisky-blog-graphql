@@ -222,7 +222,7 @@ function WebFetchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; is
                 )}
 
                 {lastResult && (
-                  <div className="mt-6 space-y-4">
+                  <div className="space-y-4">
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-medium text-foreground">Fetched Content:</h3>
                       <Badge variant="outline" className="font-mono text-xs">

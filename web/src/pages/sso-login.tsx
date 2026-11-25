@@ -676,7 +676,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,transform] active:scale-95"
+                className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,scale] active:scale-95"
                 disabled={!canStartGithub}
                 onClick={handleGithubOAuth}
               >
@@ -688,7 +688,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
             <Button
               type="button"
               variant="outline"
-              className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,transform] active:scale-95"
+              className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,scale] active:scale-95"
               disabled={!canStartPasskey}
               onClick={handlePasskeyLogin}
             >
@@ -868,7 +868,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
 
               <Button
                 type="submit"
-                className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,transform] active:scale-95"
+                className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,scale] active:scale-95"
                 disabled={!canSubmit}
               >
                 {isSubmitting
