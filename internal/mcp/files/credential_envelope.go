@@ -2,9 +2,8 @@ package files
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
+	"encoding/base64"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
@@ -33,12 +32,14 @@ func openCredentialEnvelopes(db *sql.DB, clock func() time.Time) (*kv.Kv, error)
 	return store, nil
 }
 
-// credentialKey returns the kv key of the envelope: a digest of the tenant,
-// project, path and generation time. The envelope's AAD binds the same fields,
-// so an envelope copied under another reference never decrypts.
+// credentialKey returns the kv key of the envelope: the reference (tenant
+// hash, project, path and generation time) in unpadded base64url, so any bytes
+// they hold fit the key alphabet. It is an encoding, not a digest: these fields
+// are no secrets and the file tables store them in clear. The envelope's AAD
+// binds the same fields, so an envelope copied under another reference never
+// decrypts.
 func (c CredentialReference) credentialKey() string {
-	sum := sha256.Sum256(c.AAD())
-	return envelopeKeyPrefix + hex.EncodeToString(sum[:])
+	return envelopeKeyPrefix + base64.RawURLEncoding.EncodeToString(c.AAD())
 }
 
 // storeCredentialEnvelopeTx encrypts the caller's key for the index worker and
