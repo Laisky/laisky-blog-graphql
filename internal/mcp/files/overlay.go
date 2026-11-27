@@ -21,7 +21,8 @@ import (
 // DefaultProject file of the same name. The same view resolves the existing
 // file a write, delete, restore or same-project rename addresses, so changing
 // an inherited file changes it in DefaultProject for every project, while a new
-// name is created in P.
+// name is created in P. History is that resolved file's own physical history,
+// never a union of the layers.
 //
 // Retrieval is physical: file_search reads P and DefaultProject as two physical
 // projects, including documents the view hides, and every hit names the
@@ -410,16 +411,36 @@ func (s *Service) visibleFileAtAncestor(ctx context.Context, q sqlQueryer, apiKe
 	return false, nil
 }
 
-// resolveWriteLayerTx selects the physical project an overlay write changes: the
-// project of the visible file at path, otherwise the addressed project. A new
-// file must also be a legal name in the merged view.
-func (s *Service) resolveWriteLayerTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) (string, error) {
-	file, err := s.resolveActiveFile(ctx, tx, apiKeyHash, project, path, true)
-	if err == nil {
-		return file.Project, nil
+// fileNamespaceQ returns the physical project of the file a path of project
+// addresses, resolved like a normal read (resolveActiveFile), and that file;
+// the file's history belongs to the same physical project. With overlay a
+// visible file names its own project: a project file overriding a default, or
+// an inherited default. Without a visible file (an absent or deleted path, or a
+// directory) and without overlay it is the addressed project, so a write
+// creates the name there and a deleted file stays recoverable from its own
+// history without falling back to unrelated default history. current is nil
+// when no file is visible or overlay is off.
+func (s *Service) fileNamespaceQ(ctx context.Context, q sqlQueryer, apiKeyHash, project, path string, overlay bool) (string, *File, error) {
+	if !overlay {
+		return project, nil, nil
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return "", errors.Wrap(err, "resolve overlay write target")
+	current, err := s.resolveActiveFile(ctx, q, apiKeyHash, project, path, true)
+	switch {
+	case err == nil:
+		return current.Project, current, nil
+	case errors.Is(err, sql.ErrNoRows):
+		return project, nil, nil
+	}
+	return "", nil, errors.Wrap(err, "resolve file namespace")
+}
+
+// resolveWriteLayerTx selects the physical project an overlay write changes:
+// fileNamespaceQ's project. A new file must also be a legal name in the merged
+// view.
+func (s *Service) resolveWriteLayerTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) (string, error) {
+	layer, current, err := s.fileNamespaceQ(ctx, tx, apiKeyHash, project, path, true)
+	if err != nil || current != nil {
+		return layer, err
 	}
 	descendants, err := s.visibleDescendants(ctx, tx, apiKeyHash, project, path, true)
 	if err != nil {

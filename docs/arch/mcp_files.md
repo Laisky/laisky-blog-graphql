@@ -695,8 +695,17 @@ Contract: [`docs/proposals/fileio_default_project.md`](../proposals/fileio_defau
 - The name-conflict rule lives only in the FileIO namespace resolver, `internal/mcp/files/overlay.go`:
   `resolveFile` resolves one path in a single statement; `visibleDescendants` reads both layers below a path in a
   single statement and merges them with `upperShadow`; `withReadSnapshot` runs a multi-statement stat or list in
-  one read-only transaction (`REPEATABLE READ` on PostgreSQL). History is the union of both layers
-  (`historyProjects`). Retrieval code never applies the rule.
+  one read-only transaction (`REPEATABLE READ` on PostgreSQL). Retrieval code never applies the rule.
+- History is the resolved file's own physical history, never a union of the layers. `fileNamespaceQ` resolves
+  the path with `resolveActiveFile` and returns the visible file's physical project, or the addressed project when
+  no file is visible (a deleted path or a directory) or the address is physical. `ListVersions`, `ReadVersion` and
+  `ListVersionPage` resolve and query in one `withReadSnapshot`, with `project = ?` on that physical project;
+  `FileVersion.Project` names it. `RestoreVersion` checks the condition, resolves the target with
+  `resolveWriteLayerTx` (the same `fileNamespaceQ`) and selects the snapshot from that project inside its
+  `runUserMutation` transaction, so another layer's ID is `NOT_FOUND` before any change. Two-step restores (MCP,
+  GraphQL, HTTP editor) pass the write's conditions to the history read (`tools.RestoreHistoryContext`, or the HTTP
+  restore context), and `ReadVersion` checks them against the file it resolved, so the later conditional write
+  cannot land the snapshot in another layer. Retention (`pruneVersionsTx`) stays per physical project and path.
 - Mutations (`runUserMutation`): under the addressed project's locks, `defaultLayerTouches` probes whether
   `@DEFAULT` has a live file at, above or below the touched paths. If not, the mutation runs the unchanged
   single-project path. Otherwise it rolls back before any change and reruns holding `@DEFAULT` too, every scope in

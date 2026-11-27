@@ -109,6 +109,7 @@ func (t *FileHistoryTool) Handle(ctx context.Context, req mcp.CallToolRequest) (
 		return fileToolErrorFromErr(err), nil //nolint:nilerr // MCP tool error
 	}
 	var writer FileService
+	readCtx := ctx
 	if t.name == FileRestoreVersionToolName {
 		ctx = withFilePluginOverride(ctx, req)
 		// The final operation is a selected plugin Write. Protect that exact operation,
@@ -117,8 +118,11 @@ func (t *FileHistoryTool) Handle(ctx context.Context, req mcp.CallToolRequest) (
 		if err != nil {
 			return fileToolErrorFromErr(err), nil //nolint:nilerr // MCP tool error
 		}
+		if readCtx, err = RestoreHistoryContext(ctx, auth, project, path); err != nil {
+			return fileToolErrorFromErr(err), nil //nolint:nilerr // MCP tool error
+		}
 	}
-	snapshot, err := t.history.ReadVersion(ctx, auth, project, path, id)
+	snapshot, err := t.history.ReadVersion(readCtx, auth, project, path, id)
 	if err != nil {
 		return fileToolErrorFromErr(err), nil //nolint:nilerr // MCP tool error
 	}

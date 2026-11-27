@@ -148,7 +148,8 @@
       "TestBalanceProxyBoundsTheKeyBeforeNormalizing",
       "TestGraphQLFileRenameTargetProject",
       "TestGraphQLFileIODefaultOverlayParity",
-      "TestGraphQLFileIODefaultOverlayWildcardSearchParity"
+      "TestGraphQLFileIODefaultOverlayWildcardSearchParity",
+      "TestGraphQLFileIODefaultHistoryIsPerFile"
     ]
   },
   {
@@ -414,7 +415,8 @@
     "package": "./internal/library/fileio",
     "tests": [
       "TestGraphQLSharedToolRejectsUnissuedBearer",
-      "TestGraphQLRenameTargetValidatedBeforeDispatch"
+      "TestGraphQLRenameTargetValidatedBeforeDispatch",
+      "TestGraphQLRestoreChecksConditionsOnTheHistoryRead"
     ]
   },
   {
@@ -501,7 +503,9 @@
       "TestFileRenameDefinitionAdvertisesOptionalTargetProject",
       "TestFileRenameTargetProjectRouting",
       "TestFileToolsDefaultProjectSearchLabelsEveryHit",
-      "TestFileToolsDefaultProjectCrossProjectMove"
+      "TestFileToolsDefaultProjectCrossProjectMove",
+      "TestFileToolsDefaultProjectHistoryIsPerFile",
+      "TestFileToolsRestoreNeverMovesASnapshotAcrossLayers"
     ]
   },
   {
@@ -565,7 +569,10 @@
       "TestDefaultViewReadResolvesOneSnapshot",
       "TestDefaultCrossProjectMoves",
       "TestDefaultSameProjectRenameReplacesOnlyVisibleFiles",
-      "TestDefaultOverlaySearch"
+      "TestDefaultOverlaySearch",
+      "TestDefaultHistoryIsTheResolvedFileHistory",
+      "TestDefaultHistoryRecoveryAndPagination",
+      "TestDefaultHistoryRestoreReadChecksConditions"
     ]
   },
   {

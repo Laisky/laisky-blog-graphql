@@ -36,3 +36,18 @@ func ConditionalFileService(ctx context.Context, svc FileService, auth files.Aut
 	}
 	return resolved, conditionalCtx, nil
 }
+
+// RestoreHistoryContext returns the context for the history read of a restore
+// that ConditionalFileService prepared as a write: the same current-file
+// conditions, scoped to FileOperationRestore. ReadVersion checks them against
+// the file whose history it reads. Because a version token names one physical
+// file, the conditional write that follows can only succeed on that same file,
+// so the snapshot is stored in the namespace it was read from, never in another
+// layer. Without conditions ctx is returned unchanged.
+func RestoreHistoryContext(ctx context.Context, auth files.AuthContext, project, path string) (context.Context, error) {
+	conditions, ok := files.ScopedFilePreconditions(ctx, auth, project, path, files.FileOperationWrite)
+	if !ok {
+		return ctx, nil
+	}
+	return files.WithFilePreconditions(ctx, auth, project, path, files.FileOperationRestore, conditions)
+}

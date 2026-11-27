@@ -15,7 +15,10 @@ const versionRetentionWindow = 7 * 24 * time.Hour
 // versionRetentionTopN is the minimum number of latest versions to keep regardless of age.
 const versionRetentionTopN = 3
 
-// ListVersions returns versions for a path, newest first. Content is omitted.
+// ListVersions returns the history of the file a path of project addresses,
+// newest first. Content is omitted. The path resolves like a normal read, and
+// only that file's physical project is listed (see fileNamespaceQ), so each
+// FileVersion names the project that stores the snapshot.
 func (s *Service) ListVersions(ctx context.Context, auth AuthContext, project, path string) ([]FileVersion, error) {
 	if err := s.validateAuth(auth); err != nil {
 		return nil, errors.WithStack(err)
@@ -29,16 +32,28 @@ func (s *Service) ListVersions(ctx context.Context, auth AuthContext, project, p
 	if path == "" {
 		return nil, errors.WithStack(NewError(ErrCodeInvalidPath, "path is required", false))
 	}
-	owner := systemOwnerFromContext(ctx)
-	layers := historyProjects(ctx, project)
-	args := []any{auth.APIKeyHash, path, owner}
-	for _, layer := range layers {
-		args = append(args, layer)
+	overlay := overlayApplies(ctx, project)
+	var versions []FileVersion
+	err := s.withReadSnapshot(ctx, overlay, func(q sqlQueryer) error {
+		physical, _, err := s.fileNamespaceQ(ctx, q, auth.APIKeyHash, project, path, overlay)
+		if err != nil {
+			return err
+		}
+		versions, err = s.listVersionsQ(ctx, q, auth.APIKeyHash, physical, path)
+		return err
+	})
+	if err != nil {
+		return nil, errors.WithStack(err)
 	}
-	rows, err := s.db.QueryContext(ctx,
+	return versions, nil
+}
+
+// listVersionsQ lists the snapshot metadata of one physical project path.
+func (s *Service) listVersionsQ(ctx context.Context, q sqlQueryer, apiKeyHash, project, path string) ([]FileVersion, error) {
+	rows, err := q.QueryContext(ctx,
 		rebindSQL(`SELECT id, size, created_at, source_file_id FROM mcp_file_versions
-   WHERE apikey_hash = ? AND path = ? AND system_owner = ? AND project IN (`+placeholders(len(layers))+`) ORDER BY created_at DESC, id DESC`, s.isPostgres),
-		args...,
+   WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? ORDER BY created_at DESC, id DESC`, s.isPostgres),
+		apiKeyHash, project, path, systemOwnerFromContext(ctx),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "query file versions")
@@ -52,18 +67,10 @@ func (s *Service) ListVersions(ctx context.Context, auth AuthContext, project, p
 		if scanErr := rows.Scan(&row.ID, &row.Size, &createdAt, &sourceID); scanErr != nil {
 			return nil, errors.Wrap(scanErr, "scan file version")
 		}
-		parsedAt, parseErr := parseDBTime(createdAt)
-		if parseErr != nil {
-			return nil, errors.Wrap(parseErr, "parse version created_at")
+		if err := fillFileVersion(&row, createdAt, sourceID); err != nil {
+			return nil, err
 		}
-		row.CreatedAt, row.APIKeyHash, row.Project, row.Path = parsedAt, auth.APIKeyHash, project, path
-		if sourceID.Valid {
-			if sourceID.Int64 < 0 {
-				return nil, errors.New("invalid negative source file ID")
-			}
-			id := uint64(sourceID.Int64)
-			row.SourceFileID = &id
-		}
+		row.APIKeyHash, row.Project, row.Path = apiKeyHash, project, path
 		versions = append(versions, row)
 	}
 	if err := rows.Err(); err != nil {
@@ -72,7 +79,15 @@ func (s *Service) ListVersions(ctx context.Context, auth AuthContext, project, p
 	return versions, nil
 }
 
-// ReadVersion returns the full content of one immutable historical version.
+// ReadVersion returns the full content of one immutable snapshot of the file a
+// path of project addresses. A snapshot ID of another physical project (for
+// example the other layer of an overlaid path) is NOT_FOUND.
+//
+// A restore that reads history before a separate conditional write scopes its
+// conditions to FileOperationRestore. ReadVersion then also checks them against
+// the file it resolved, in the same snapshot. Version tokens name one physical
+// row, so a write that later passes the same conditions addresses the same
+// file and stores the snapshot in the namespace it was read from.
 func (s *Service) ReadVersion(ctx context.Context, auth AuthContext, project, path string, versionID uint64) (FileVersion, error) {
 	if err := s.validateAuth(auth); err != nil {
 		return FileVersion{}, errors.WithStack(err)
@@ -86,34 +101,69 @@ func (s *Service) ReadVersion(ctx context.Context, auth AuthContext, project, pa
 	if path == "" {
 		return FileVersion{}, errors.WithStack(NewError(ErrCodeInvalidPath, "path is required", false))
 	}
+	overlay := overlayApplies(ctx, project)
+	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationRestore)
+	checkConditions := overlay && !conditions.Empty()
 	var row FileVersion
-	var createdAt any
-	var sourceID sql.NullInt64
-	err := s.versionSnapshotRow(ctx, s.db, auth.APIKeyHash, project, path, versionID, "id, content, size, created_at, source_file_id").
-		Scan(&row.ID, &row.Content, &row.Size, &createdAt, &sourceID)
-	if err != nil {
+	err := s.withReadSnapshot(ctx, overlay, func(q sqlQueryer) error {
+		physical, current, err := s.fileNamespaceQ(ctx, q, auth.APIKeyHash, project, path, overlay)
+		if err != nil {
+			return err
+		}
+		var createdAt any
+		var sourceID sql.NullInt64
+		err = s.versionSnapshotRow(ctx, q, auth.APIKeyHash, physical, path, versionID, "id, content, size, created_at, source_file_id").
+			Scan(&row.ID, &row.Content, &row.Size, &createdAt, &sourceID)
 		if errors.Is(err, sql.ErrNoRows) {
-			return FileVersion{}, errors.WithStack(NewError(ErrCodeNotFound, "version not found", false))
+			return errors.WithStack(NewError(ErrCodeNotFound, "version not found", false))
 		}
-		return FileVersion{}, errors.Wrap(err, "query file version")
-	}
-	parsedAt, parseErr := parseDBTime(createdAt)
-	if parseErr != nil {
-		return FileVersion{}, errors.Wrap(parseErr, "parse version created_at")
-	}
-	row.CreatedAt, row.APIKeyHash, row.Project, row.Path = parsedAt, auth.APIKeyHash, project, path
-	if sourceID.Valid {
-		if sourceID.Int64 < 0 {
-			return FileVersion{}, errors.New("invalid negative source file ID")
+		if err != nil {
+			return errors.Wrap(err, "query file version")
 		}
-		id := uint64(sourceID.Int64)
-		row.SourceFileID = &id
+		if err := fillFileVersion(&row, createdAt, sourceID); err != nil {
+			return err
+		}
+		row.APIKeyHash, row.Project, row.Path = auth.APIKeyHash, physical, path
+		if !checkConditions {
+			return nil
+		}
+		actual := ""
+		if current != nil {
+			actual = current.Version
+		}
+		return errors.WithStack(checkFileVersion(actual, conditions.ExpectedVersion, conditions.CreateOnly))
+	})
+	if err != nil {
+		return FileVersion{}, errors.WithStack(err)
 	}
 	return row, nil
 }
 
+// fillFileVersion parses the created_at and source_file_id columns of a snapshot row.
+func fillFileVersion(row *FileVersion, createdAt any, sourceID sql.NullInt64) error {
+	parsedAt, err := parseDBTime(createdAt)
+	if err != nil {
+		return errors.Wrap(err, "parse version created_at")
+	}
+	row.CreatedAt = parsedAt
+	if sourceID.Valid {
+		if sourceID.Int64 < 0 {
+			return errors.New("invalid negative source file ID")
+		}
+		id := uint64(sourceID.Int64)
+		row.SourceFileID = &id
+	}
+	return nil
+}
+
 // RestoreVersion writes historical bytes as a new live revision. An optional
 // restore precondition protects the CURRENT file, not the historical snapshot ID.
+//
+// Inside the locked mutation transaction the path resolves like a write: the
+// condition is checked against the file the path shows, the target is that
+// file's physical project (or the addressed project when none is visible), and
+// the snapshot must belong to that same physical file history. A snapshot of
+// another layer is NOT_FOUND and nothing changes.
 func (s *Service) RestoreVersion(ctx context.Context, auth AuthContext, project, path string, versionID uint64) (WriteResult, error) {
 	if err := s.validateAuth(auth); err != nil {
 		return WriteResult{}, errors.WithStack(err)
@@ -141,11 +191,9 @@ func (s *Service) RestoreVersion(ctx context.Context, auth AuthContext, project,
 				return resolveErr
 			}
 		}
-		// History is read through the same layers as file_list_versions, so a
-		// default's snapshot can be restored through any project.
 		var content []byte
 		var size int64
-		err := s.versionSnapshotRow(ctx, tx, auth.APIKeyHash, project, path, versionID, "content, size").Scan(&content, &size)
+		err := s.versionSnapshotRow(ctx, tx, auth.APIKeyHash, layer, path, versionID, "content, size").Scan(&content, &size)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return errors.WithStack(NewError(ErrCodeNotFound, "version not found", false))
@@ -174,28 +222,14 @@ func (s *Service) RestoreVersion(ctx context.Context, auth AuthContext, project,
 	return result, nil
 }
 
-// historyProjects returns the physical projects whose history a project path
-// shows: an overlaid project also shows DefaultProject history for the path.
-func historyProjects(ctx context.Context, project string) []string {
-	if overlayApplies(ctx, project) {
-		return []string{project, DefaultProject}
-	}
-	return []string{project}
-}
-
-// versionSnapshotRow selects columns of one immutable snapshot of path that the
-// project's history shows. Snapshot IDs are unique across projects.
+// versionSnapshotRow selects columns of one immutable snapshot of a path of
+// one physical project. Snapshot IDs are unique across projects, so the
+// project predicate is what rejects an ID of another namespace.
 func (s *Service) versionSnapshotRow(ctx context.Context, q sqlQueryer, apiKeyHash, project, path string, versionID uint64, columns string) *sql.Row {
-	layers := historyProjects(ctx, project)
-	args := make([]any, 0, 4+len(layers))
-	args = append(args, apiKeyHash, path, versionID, systemOwnerFromContext(ctx))
-	for _, layer := range layers {
-		args = append(args, layer)
-	}
 	return q.QueryRowContext(ctx,
 		rebindSQL(`SELECT `+columns+` FROM mcp_file_versions
-			WHERE apikey_hash = ? AND path = ? AND id = ? AND system_owner = ? AND project IN (`+placeholders(len(layers))+`) LIMIT 1`, s.isPostgres),
-		args...,
+			WHERE apikey_hash = ? AND project = ? AND path = ? AND id = ? AND system_owner = ? LIMIT 1`, s.isPostgres),
+		apiKeyHash, project, path, versionID, systemOwnerFromContext(ctx),
 	)
 }
 

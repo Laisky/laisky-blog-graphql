@@ -290,15 +290,21 @@ func TestDefaultOverlayDeleteSemantics(t *testing.T) {
 	f.requireCode(err, ErrCodeNotFound)
 	require.False(t, f.physical(DefaultProject, "/u.md"))
 
-	// The deleted default keeps history that any project can list and restore.
-	page, err := f.svc.ListVersionPage(f.ctx, f.auth, "beta", "/u.md", 0, 10)
+	// The deleted default keeps its history in @DEFAULT, which restores it for
+	// every project. A project that never stored the path shows no history.
+	page, err := f.svc.ListVersionPage(f.ctx, f.auth, DefaultProject, "/u.md", 0, 10)
 	require.NoError(t, err)
 	require.NotEmpty(t, page.Versions)
 	restoreID, err := ParseHistoryID(page.Versions[0].ID)
 	require.NoError(t, err)
-	snapshot, err := f.svc.ReadVersion(f.ctx, f.auth, "gamma", "/u.md", restoreID)
+	snapshot, err := f.svc.ReadVersion(f.ctx, f.auth, DefaultProject, "/u.md", restoreID)
 	require.NoError(t, err)
 	require.Equal(t, "default u", string(snapshot.Content))
+	unrelated, err := f.svc.ListVersionPage(f.ctx, f.auth, "gamma", "/u.md", 0, 10)
+	require.NoError(t, err)
+	require.Empty(t, unrelated.Versions)
+	_, err = f.svc.ReadVersion(f.ctx, f.auth, "gamma", "/u.md", restoreID)
+	f.requireCode(err, ErrCodeNotFound)
 	restored, err := f.svc.RestoreVersion(f.ctx, f.auth, DefaultProject, "/u.md", restoreID)
 	require.NoError(t, err)
 	require.Equal(t, DefaultProject, restored.ResolvedProject)
@@ -370,11 +376,14 @@ func TestDefaultOverlayRenameSemantics(t *testing.T) {
 	require.Equal(t, "default src", f.read("alpha", "/fresh.md"))
 	require.Equal(t, "default src", f.read("beta", "/fresh.md"))
 	require.False(t, f.physical("alpha", "/fresh.md"))
-	versions, err := f.svc.ListVersions(f.ctx, f.auth, "alpha", "/fresh.md")
+	// /fresh.md now resolves to the default, so the replaced file's snapshot is
+	// in alpha's own history, which only a physical address reads.
+	physical := WithPhysicalProjects(f.ctx)
+	versions, err := f.svc.ListVersions(physical, f.auth, "alpha", "/fresh.md")
 	require.NoError(t, err)
 	var sawOverride bool
 	for _, version := range versions {
-		snap, readErr := f.svc.ReadVersion(f.ctx, f.auth, "alpha", "/fresh.md", version.ID)
+		snap, readErr := f.svc.ReadVersion(physical, f.auth, "alpha", "/fresh.md", version.ID)
 		require.NoError(t, readErr)
 		sawOverride = sawOverride || string(snap.Content) == "alpha draft"
 	}

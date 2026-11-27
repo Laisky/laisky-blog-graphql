@@ -23,8 +23,9 @@ The design intentionally excludes kernel-level complexity (file descriptors, per
   reserved `@DEFAULT` project is a shared base layer. Every other project of the
   same API key is overlaid on it: stat, read, list and existing-file resolution
   merge both layers, and the project's own entry wins at a conflicting name.
-  Edits of an inherited file change it in `@DEFAULT`. `file_search` reads both
-  physical projects
+  Edits of an inherited file change it in `@DEFAULT`. File history is the
+  history of the file a path resolves to, in that file's physical project, never
+  a union of both layers. `file_search` reads both physical projects
   ([`docs/proposals/fileio_default_project.md`](../proposals/fileio_default_project.md)).
 - The project root (`path=""`) always exists as an implicit directory.
 - Directories are implicit and derived from file paths.

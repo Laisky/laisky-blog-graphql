@@ -651,3 +651,56 @@ func TestGraphQLFileIODefaultOverlayWildcardSearchParity(t *testing.T) {
 	require.Empty(t, response.Errors, "GraphQL must accept the wildcard MCP accepts")
 	require.Equal(t, viaMCP, overlayHitKeys(t, graphql.search(files.ProjectWildcard)))
 }
+
+// TestGraphQLFileIODefaultHistoryIsPerFile requires GraphQL history to be the
+// history of the file a path resolves to, as MCP shows it for the same data: an
+// override and the default it hides keep separate histories, and a history ID
+// of the other layer is NOT_FOUND for read and restore, without effect.
+func TestGraphQLFileIODefaultHistoryIsPerFile(t *testing.T) {
+	stack := newOverlayStack(t)
+	graphql, sameKeyMCP := stack.graphql("sk-overlay-history"), stack.mcp("sk-overlay-history")
+	first := graphql.create(files.DefaultProject, "/h.md", "needle h default v1")
+	graphql.update(files.DefaultProject, "/h.md", "needle h default v2", first)
+	draft := graphql.create("alpha", "/h.md.draft", "needle h alpha v1")
+	require.Equal(t, "moved=1", graphql.rename(overlayRename{Project: "alpha", From: "/h.md.draft", To: "/h.md", Overwrite: true,
+		Expected: draft, ExpectedDestination: graphql.read("alpha", "/h.md").Version}))
+	graphql.update("alpha", "/h.md", "needle h alpha v2", graphql.read("alpha", "/h.md").Version)
+
+	alphaIDs, defaultIDs := graphql.history("alpha", "/h.md"), graphql.history(files.DefaultProject, "/h.md")
+	require.NotEmpty(t, alphaIDs)
+	require.NotEmpty(t, defaultIDs)
+	for _, id := range alphaIDs {
+		require.NotContains(t, defaultIDs, id, "two independent /h.md files never share one list")
+	}
+	require.Equal(t, defaultIDs, graphql.history("beta", "/h.md"), "beta resolves to the default")
+	for _, project := range []string{"alpha", "beta", files.DefaultProject} {
+		require.Equal(t, sameKeyMCP.history(project, "/h.md"), graphql.history(project, "/h.md"), project)
+	}
+
+	readVersion := func(project, id string) graphQLResponse {
+		return graphql.do(`query($p:String!,$path:String!,$id:String!){ FileReadVersion(project:$p,path:$path,history_id:$id){ content } }`,
+			map[string]any{"p": project, "path": "/h.md", "id": id})
+	}
+	restore := func(project, id, expected string) graphQLResponse {
+		return graphql.do(`mutation($p:String!,$path:String!,$id:String!,$v:String){
+			FileRestoreVersion(project:$p,path:$path,history_id:$id,expected_version:$v){ version } }`,
+			map[string]any{"p": project, "path": "/h.md", "id": id, "v": expected})
+	}
+	notFound := string(files.ErrCodeNotFound)
+	alpha, inherited := graphql.read("alpha", "/h.md"), graphql.read("beta", "/h.md")
+	require.Equal(t, notFound, errorCode(t, readVersion("alpha", defaultIDs[0])))
+	require.Equal(t, notFound, errorCode(t, readVersion("beta", alphaIDs[0])))
+	require.Equal(t, notFound, errorCode(t, readVersion(files.DefaultProject, alphaIDs[0])))
+	require.Equal(t, notFound, errorCode(t, restore("alpha", defaultIDs[0], alpha.Version)))
+	require.Equal(t, notFound, errorCode(t, restore("beta", alphaIDs[0], inherited.Version)))
+	require.Equal(t, alpha, graphql.read("alpha", "/h.md"), "a refused restore changes nothing")
+	require.Equal(t, inherited, graphql.read(files.DefaultProject, "/h.md"))
+	require.Equal(t, alphaIDs, graphql.history("alpha", "/h.md"))
+	require.Equal(t, defaultIDs, graphql.history(files.DefaultProject, "/h.md"))
+
+	// The override's own snapshot restores into the override only.
+	response := restore("alpha", alphaIDs[0], alpha.Version)
+	require.Empty(t, response.Errors, "%+v", response.Errors)
+	require.Equal(t, "needle h alpha v1", graphql.read("alpha", "/h.md").Content)
+	require.Equal(t, "needle h default v2", graphql.read("beta", "/h.md").Content)
+}

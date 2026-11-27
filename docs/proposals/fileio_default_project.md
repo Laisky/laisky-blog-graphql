@@ -46,8 +46,9 @@ project of the same API key, similar to the lower layer of an OverlayFS mount:
 
 The view of an overlaid project `P` serves `file_stat`, `file_read` and
 `file_list`, and resolves every existing-file operand: the file a write, append,
-delete, restore or same-project rename addresses, and the file a version
-condition is checked against.
+delete, restore or same-project rename addresses, the file a version
+condition is checked against, and the file whose history is listed, read or
+restored (§6).
 
 A directory is the recursive union of both layers' children. Only a
 **conflicting name** is replaced by `P`'s entry:
@@ -83,7 +84,7 @@ at `X`, but not the default files below `X`: their children merge.
 | --- | --- |
 | Any write mode, or restore, of a path that resolves to a default | Changes that `@DEFAULT` row in place, for every project of the key. |
 | Write that creates a new name | Creates the file in `P`. A new file reaches `@DEFAULT` only when `@DEFAULT` is addressed. |
-| Delete of a path that resolves to a default | Deletes the default for every project. Its history is kept, so it is recoverable (§6). |
+| Delete of a path that resolves to a default | Deletes the default for every project. Its history is kept in `@DEFAULT`, so it is recoverable through `@DEFAULT` (§6). |
 | Delete of `P`'s file that overrides a default | Deletes `P`'s row. The default is visible again ("reset to default"). |
 | Recursive directory delete (internal callers only) | Deletes every visible file below the path, each in its own physical project. Defaults that `P` hid stay and become visible. |
 
@@ -159,14 +160,43 @@ This applies when `target_project` names another project. It is the #106 move.
 
 ## 6. History
 
-`file_list_versions`, `file_read_version` and the HTTP history endpoints of an
-overlaid project return the union of the path's history in `P` and in `@DEFAULT`,
-ordered by snapshot ID. IDs are unique across projects. A deleted default
-therefore stays recoverable through any project. `file_restore_version` (and
-`RestoreVersion`) reads the snapshot from either layer and writes it like any
-write: in place into the visible file's physical project, or into `P` when no
-file is visible at the path. To bring back a deleted default for every project,
-restore it through `@DEFAULT`.
+History belongs to one physical file. It is never a union of `P` and `@DEFAULT`.
+
+- `file_list_versions`, `file_read_version`, `file_restore_version`, the HTTP
+  history endpoints and the GraphQL history fields (service `ListVersions`,
+  `ListVersionPage`, `ReadVersion`, `RestoreVersion`) first resolve the path like
+  a normal read of `project`, with the same resolver. They then use only the
+  history of that file's physical project and path, under the usual tenant and
+  `system_owner` constraints.
+  - If `P` overrides `/a.md`, only `P`'s history of `/a.md` is visible.
+  - If `/a.md` resolves to the default, only `@DEFAULT`'s history is visible.
+  - Deleting `P`'s override reveals the default and the default's history only.
+    `P`'s own history is kept, but this path no longer addresses it.
+  - Addressing `@DEFAULT` is always physical, so its own history is listed.
+- **No live file at the path** (deleted, or a directory in the view): the history
+  is that of the addressed project. A deleted `P` file stays recoverable through
+  `P`, and a deleted default through `@DEFAULT`. Unrelated default history never
+  appears in `P`.
+- A history ID from another physical namespace is `NOT_FOUND` for read and
+  restore, and a refused restore changes nothing: no revision, no history row,
+  no outbox job. `FileVersion.Project` names the physical project of a snapshot.
+- Multi-statement history reads (resolution, then history) run in one read-only
+  snapshot (§3).
+- **`RestoreVersion`** resolves the target and checks the version condition inside
+  the locked mutation transaction (§9), like a write. It selects the snapshot from
+  the resolved file's physical namespace and writes into that same file, or into
+  `P` when no file is visible.
+- **Two-step restore.** MCP, GraphQL and the HTTP editor first read the snapshot,
+  then call the selected plugin's conditional write. The history read is given the
+  restore's current-file condition and checks it against the file it resolved, in
+  the same snapshot. A version token names one physical row, and the write
+  re-checks the same condition under its locks. So the write can only reach the
+  file whose namespace provided the snapshot. If an override is deleted between
+  the two steps, a token of the hidden default fails at the read; it cannot copy
+  the override's bytes into `@DEFAULT`.
+- Retention is unchanged and physical: per project and path.
+- History of a moved file moves with its row (§5.2), so it follows a cross-project
+  move.
 
 ## 7. Retrieval is physical (RAG and PageIndex)
 
@@ -206,8 +236,7 @@ project `default` (lowercase) is an ordinary project unrelated to `@DEFAULT`.
   probes whether `@DEFAULT` holds a live file at, above or below the touched paths.
   If not, the mutation runs the unchanged single-project path and never reads or
   changes `@DEFAULT` files. If a default appears concurrently, the result equals
-  running this mutation first. (A restore may still read an immutable `@DEFAULT`
-  history snapshot; snapshots are never edited in place.)
+  running this mutation first. Such a restore reads only `P`'s own history.
 - Otherwise the attempt rolls back before any change and reruns holding
   `@DEFAULT` too. Every multi-project mutation acquires its scopes in
   `ProjectLockOrder` (ascending advisory key, then name), so two mutations over the
@@ -265,3 +294,6 @@ overlay-specific rename planner (its merged and physical conflict planners)
 gave way to the ordinary move, run once per physical project. `SystemStateHooks`
 and `PathMove` gave way to #106's change-based plugin state plan, and the
 duplicated physical delete-target helpers gave way to one view-aware resolver.
+History stopped being a union of `P` and `@DEFAULT` (`historyProjects` and its
+`project IN (P, @DEFAULT)` queries): it is the resolved file's own physical
+history, through the same resolver (§6).

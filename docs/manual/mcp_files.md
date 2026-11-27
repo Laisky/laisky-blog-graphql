@@ -629,7 +629,8 @@ project. Exact rules: [`docs/proposals/fileio_default_project.md`](../proposals/
 
 `file_read`, `file_stat`, `file_list` and the history tools treat inherited files
 exactly like the project's own files. They return no extra field, and `file_list`
-shows each name once. `@DEFAULT` itself is an ordinary project: addressing it
+shows each name once. The history tools show the history of the file you see at
+the path (section 9.5). `@DEFAULT` itself is an ordinary project: addressing it
 shows only its own files.
 
 ### 9.2 What changes are global
@@ -638,7 +639,7 @@ shows only its own files.
 | --- | --- |
 | Edit (any write mode) or restore a file that comes from `@DEFAULT` | The default changes for **every** project. |
 | Create a new file | The file is created in that project only. |
-| Delete a file that comes from `@DEFAULT` | The default is deleted for **every** project. Its history is kept. |
+| Delete a file that comes from `@DEFAULT` | The default is deleted for **every** project. Its history is kept in `@DEFAULT`. |
 | Delete the project's own override of a default | The default becomes visible again. |
 | Rename a file that comes from `@DEFAULT` within the project | It is renamed for every project. |
 | Rename a project file onto a default's path with `overwrite=true` | The project file overrides the default in that project only. |
@@ -738,11 +739,23 @@ project that stores it. For example, a search in `web` while it overrides
 
 ### 9.5 History and isolation
 
-- `file_list_versions` for a path in a project lists the history of both the
-  project's file and the default at that path. A deleted default stays
-  recoverable: `file_restore_version` through a project creates the file in that
-  project (no file is visible there any more), while restoring through `@DEFAULT`
-  brings the default back for every project.
+- History belongs to the file you see at a path, never to both layers at once:
+  - If the project has its own file at the path (an override), the history tools
+    show only the project file's history.
+  - If the path shows a default, they show only the default's history.
+  - Deleting an override shows the default again, with the default's history.
+    The override's history is kept but no longer shown at that path.
+  - `project="@DEFAULT"` always shows the default's own history.
+- A `history_id` of the other layer is refused with `NOT_FOUND` by
+  `file_read_version` and `file_restore_version`, and nothing changes. Use IDs
+  from `file_list_versions` of the same `project` and `path`.
+- `file_restore_version` writes into the file the history belongs to: the
+  project's file, or the default for every project.
+- Deleted files: when no file is visible at the path, the history tools show the
+  history of the project you name. Restore a deleted project file through that
+  project with `create_only=true`. Restore a deleted default through
+  `project="@DEFAULT"`, which brings it back for every project. A project that
+  never had its own file at the path shows no history there.
 - The console's project picker lists `@DEFAULT` once it holds files. You can also
   type it manually.
 - "Global" always means one API key. Defaults of one key are invisible to every

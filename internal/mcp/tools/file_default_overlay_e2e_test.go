@@ -18,10 +18,12 @@ import (
 type overlayToolHarness struct {
 	t       *testing.T
 	svc     *files.Service
+	manager *mcpplugin.Manager
 	tenant  context.Context
 	foreign context.Context
 
-	writeTool, readTool, statTool, listTool, renameTool, deleteTool, searchTool, versionsTool Tool
+	writeTool, readTool, statTool, listTool, renameTool, deleteTool, searchTool Tool
+	versionsTool, readVersionTool, restoreVersionTool                           Tool
 }
 
 // overlayToolHit is one file_search hit. Project is empty exactly when the
@@ -44,7 +46,7 @@ func newOverlayToolHarness(t *testing.T) *overlayToolHarness {
 		return created
 	}
 	h := &overlayToolHarness{
-		t: t, svc: svc,
+		t: t, svc: svc, manager: manager,
 		tenant:     authtest.WithVerified(context.Background(), "tenant-key"),
 		foreign:    authtest.WithVerified(context.Background(), "foreign-key"),
 		writeTool:  tool(NewFileWriteTool(manager)),
@@ -58,11 +60,18 @@ func newOverlayToolHarness(t *testing.T) *overlayToolHarness {
 	history, err := NewFileHistoryTools(manager, svc)
 	require.NoError(t, err)
 	for _, candidate := range history {
-		if candidate.Definition().Name == FileListVersionsToolName {
+		switch candidate.Definition().Name {
+		case FileListVersionsToolName:
 			h.versionsTool = candidate
+		case FileReadVersionToolName:
+			h.readVersionTool = candidate
+		case FileRestoreVersionToolName:
+			h.restoreVersionTool = candidate
 		}
 	}
 	require.NotNil(t, h.versionsTool)
+	require.NotNil(t, h.readVersionTool)
+	require.NotNil(t, h.restoreVersionTool)
 	return h
 }
 
