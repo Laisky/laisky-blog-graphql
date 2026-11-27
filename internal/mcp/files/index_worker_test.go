@@ -156,19 +156,27 @@ func TestPurgeExpiredCredentialsIsBoundedAndThrottled(t *testing.T) {
 	require.NoError(t, err, "a live envelope survives every sweep")
 }
 
-// TestCredentialKeyFitsTheLongestReference verifies the envelope of the
-// longest valid project and path is still storable, so no valid mutation can
-// fail on its key.
+// TestCredentialKeyFitsTheLongestReference verifies the envelope of every
+// reference a mutation can produce is storable, whatever bytes its tenant hash,
+// project and path hold and however long they are, so no valid mutation can
+// fail on its envelope key.
 func TestCredentialKeyFitsTheLongestReference(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	svc := newTestService(t, settings, nil)
-	path := "/" + strings.Repeat("p", 511)
-	project := strings.Repeat("j", 128)
-	require.NoError(t, ValidatePath(path))
-	require.NoError(t, ValidateProject(project))
-	ref := CredentialReference{APIKeyHash: strings.Repeat("f", 64), Project: project, Path: path, UpdatedAt: time.Now().UTC()}
-	require.NoError(t, svc.credentials.SetWithTTL(context.Background(), ref.credentialKey(), "envelope", time.Minute))
-	require.Equal(t, 1, credentialEnvelopeCount(t, svc))
+	longestPath := "/" + strings.Repeat("p", 511)
+	longestProject := strings.Repeat("j", 128)
+	require.NoError(t, ValidatePath(longestPath))
+	require.NoError(t, ValidateProject(longestProject))
+	now := time.Now().UTC()
+	refs := []CredentialReference{
+		{APIKeyHash: strings.Repeat("f", 64), Project: longestProject, Path: longestPath, UpdatedAt: now},
+		{APIKeyHash: "user:test", Project: "@DEFAULT", Path: "/notes/a.md", UpdatedAt: now},
+		{APIKeyHash: "h", Project: "proj", Path: "/(draft) a+b#1/中文.md", UpdatedAt: now},
+	}
+	for _, ref := range refs {
+		require.NoError(t, svc.credentials.SetWithTTL(context.Background(), ref.credentialKey(), "envelope", time.Minute), "%+v", ref)
+	}
+	require.Equal(t, len(refs), credentialEnvelopeCount(t, svc), "each reference has its own envelope")
 }

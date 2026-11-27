@@ -3,6 +3,7 @@ package files_test
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"sync"
 	"testing"
@@ -211,8 +212,9 @@ func TestCredentialEnvelopesNeedOnlySQL(t *testing.T) {
 			require.NoError(t, err)
 			stored := c.envelopes(t)
 			require.Len(t, stored, 1)
-			require.Equal(t, fmt.Sprintf("mcp_files_credential|%s|race|/doc.md|%d", c.auth.APIKeyHash, c.clock.Now().UnixNano()), stored[0].key,
-				"the key is the credential reference")
+			reference := fmt.Sprintf("%s|race|/doc.md|%d", c.auth.APIKeyHash, c.clock.Now().UnixNano())
+			require.Equal(t, "mcp_files_credential_"+base64.RawURLEncoding.EncodeToString([]byte(reference)), stored[0].key,
+				"the key encodes the credential reference")
 			require.NotContains(t, stored[0].value, c.apiKey, "the envelope must be encrypted")
 			require.NotContains(t, stored[0].key, c.apiKey, "the key never holds the caller's key")
 			require.WithinDuration(t, c.clock.Now().Add(credentialTTL), stored[0].expireAt, time.Second)

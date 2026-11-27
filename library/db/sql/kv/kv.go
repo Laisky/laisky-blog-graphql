@@ -14,9 +14,9 @@ import (
 var (
 	_ Interface = new(Kv)
 
-	// regexpKey admits path-like keys such as "ns|tenant|project|/a/b.md|1";
-	// maxKeyLength bounds their length.
-	regexpKey       = regexp.MustCompile(`^[a-zA-Z0-9_./|-]+$`)
+	// regexpKey admits identifier-like keys; callers encode arbitrary bytes,
+	// for example with base64url. maxKeyLength bounds their length.
+	regexpKey       = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 	regexpTableName = regexp.MustCompile(`^[a-zA-Z0-9_]{1,64}$`)
 
 	// ErrKeyNotFound reports that no item is stored under the key.
@@ -28,8 +28,9 @@ var (
 // maxTTL bounds how far in the future an item may expire.
 const maxTTL = 30 * 24 * time.Hour
 
-// maxKeyLength bounds the length of a key in bytes.
-const maxKeyLength = 1024
+// maxKeyLength bounds the length of a key in bytes, well below PostgreSQL's
+// B-tree entry limit for the primary key.
+const maxKeyLength = 2048
 
 // KvItem is a kv doc
 type KvItem struct {

@@ -556,8 +556,8 @@ Implementation requirements:
   - `EncryptedData.UnmarshalFromString(...)`
   - `kmsClient.Decrypt(ctx, encryptedData, aad)`
 - Store only the encrypted envelope, in the `kv` table of the FileIO database. Its key is
-  `mcp_files_credential|` plus the AAD. It holds the tenant hash, project and path that the file tables
-  already store, and never the caller's key.
+  `mcp_files_credential_` plus the unpadded base64url of the AAD. It encodes the tenant hash, project and path
+  that the file tables already store, and never the caller's key.
 - The AAD is `apikey_hash|project|path|file_updated_at_unix_nano`; an envelope copied under another reference
   does not decrypt.
 - The envelope row commits or rolls back with the file mutation and its index jobs. A rejected or failed mutation
@@ -575,7 +575,7 @@ Implementation requirements:
 
 Envelope row (`kv` table):
 
-- `key`: `mcp_files_credential|<aad>`
+- `key`: `mcp_files_credential_<base64url(aad)>`
 - `value`: serialized `EncryptedData` (`kek_id`, `dek_id`, `ciphertext`)
 - `created_at`, `expire_at`: UTC
 
