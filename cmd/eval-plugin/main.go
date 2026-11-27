@@ -242,7 +242,7 @@ func (p *stubPlugin) Delete(context.Context, files.AuthContext, string, string, 
 	return files.DeleteResult{}, nil
 }
 
-func (p *stubPlugin) Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error) {
+func (p *stubPlugin) Rename(context.Context, files.AuthContext, files.RenameRequest) (files.RenameResult, error) {
 	return files.RenameResult{}, nil
 }
 

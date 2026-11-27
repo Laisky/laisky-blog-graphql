@@ -229,7 +229,7 @@ type Plugin interface {
     Read   (ctx, auth, project, path, off, n) (ReadResult, error)
     Write  (ctx, auth, project, path, content, encoding, offset, mode) (WriteResult, error)
     Delete (ctx, auth, project, path, recursive) (DeleteResult, error)
-    Rename (ctx, auth, project, src, dst, overwrite) (RenameResult, error)
+    Rename (ctx, auth, RenameRequest)          (RenameResult, error) // same- or cross-project
     List   (ctx, auth, project, path, depth, limit) (ListResult, error)
     Search (ctx, auth, project, query, pathPrefix, limit) (SearchResult, error)
 
@@ -239,11 +239,10 @@ type Plugin interface {
 }
 ```
 
-Optional capabilities stay outside this interface so existing backends keep compiling. A
-`file_rename` with `target_project` reaches only a backend that also implements
-`plugin.CrossProjectRenamer` (`RenameAcrossProjects(ctx, auth, project, src, targetProject, dst,
-overwrite)`); any other backend makes the call fail with `INVALID_ARGUMENT` rather than renaming
-inside `project`.
+`files.RenameRequest` carries `Project`, `FromPath`, `TargetProject`, `ToPath` and `Overwrite`. An
+empty `TargetProject` renames inside `Project`; any other value moves the files into that project of
+the same caller. There is one rename entry point, so a backend cannot support one kind of move and
+silently degrade the other.
 
 `StatResult` … `SearchResult` are the existing `files.*Result` value types, **moved** into
 `internal/mcp/memory/plugin/types.go` (re-exported back into `files` for backward source
@@ -549,7 +548,7 @@ Notation: `userFS` is the user-facing fileio (the same instance `rag_plugin` wra
 | `file_stat`   | `userFS.Stat(...)` — unchanged.                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `file_list`   | `userFS.List(...)` — unchanged. **System namespace is invisible** (enforced at the SQL layer, not by path filter — see §2.6.3).                                                                                                                                                                                                                                                                                                          |
 | `file_delete` | `userFS.Delete(...)` then if a mapping exists: `sysFS.Delete("pageindex/<doc_id>.json")` and update `sysFS:"pageindex/index.json"`/`pageindex/_meta.json`.                                                                                                                                                                                                                                                                               |
-| `file_rename` | `userFS.Rename(...)` then update the path↔doc_id mapping in `sysFS:"pageindex/index.json"`. Tree JSON content unchanged. With `target_project`, the user rows, catalog entries and trees move to the target tenant namespace in one transaction; trees are re-keyed to the target path's `doc_id`.                                                                                                                                                                                                                                                                                                                 |
+| `file_rename` | The one `userFS` rename, with a derived-state hook in the same transaction (`AtomicSystemFS.RenameWithState`). A tree that describes the moved bytes and keeps its kind moves with the file, into the target tenant namespace for a `target_project` move, re-keyed to the destination path's `doc_id`. Every other entry of a moved or overwritten path is dropped, and the next write re-indexes the file. Derived state never refuses a valid rename, and no model call runs. |
 | `file_search` | The interesting case — see §2.6.2.                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 Two non-obvious consequences of letting `userFS` handle steps 1 of write/delete/rename:
@@ -1395,7 +1394,7 @@ becoming fragile to internal renames.
 | P06 | `Write(.pdf, OVERWRITE@offset=10)` → `INVALID_ARGUMENT`. (User-observable side covered by C09b.)                                                                                                                                                  |
 | P07 | `Write(.pdf, TRUNCATE)` then `Read(.pdf)` returns identical bytes via `userFS`.                                                                                                                                                                   |
 | P08 | `Delete` removes user row from `userFS` and the `pageindex/<doc_id>.json` row from `SystemFS`; index mapping updated atomically.                                                                                                                  |
-| P09 | `Rename` updates `userFS` row + index mapping; tree JSON content untouched.                                                                                                                                                                       |
+| P09 | `Rename` updates the `userFS` row and the index mapping atomically. A current tree moves with only its `doc_id` re-keyed. Missing, stale or malformed state is dropped and never blocks the move. |
 | P10 | Index-mapping mutation is serialized: 10 concurrent writes to distinct user paths in the same project all succeed; final mapping has 10 entries.                                                                                                  |
 | P11 | LLM provider unreachable: `openaiLLM` returns `429`/`5xx`/network error; `avast/retry-go/v4` retries per policy honoring `Retry-After`; after exhaustion, surfaces as a tool-level `unavailable` error. (User-observable side covered by C-rows.) |
 | P12 | Concurrency cap: spinning 100 `file_write(.pdf)` calls in parallel never exceeds `indexer.max_concurrency` simultaneous LLM calls (verified by an instrumented stub `LLM`).                                                                       |

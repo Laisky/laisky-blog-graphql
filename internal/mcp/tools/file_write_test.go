@@ -39,7 +39,7 @@ func (s stubFileService) Delete(context.Context, files.AuthContext, string, stri
 }
 
 // Rename returns the configured error for tests.
-func (s stubFileService) Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error) {
+func (s stubFileService) Rename(context.Context, files.AuthContext, files.RenameRequest) (files.RenameResult, error) {
 	return files.RenameResult{}, s.renameErr
 }
 

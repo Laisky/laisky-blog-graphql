@@ -46,7 +46,7 @@ func TestFileIOPostgresLifecycle(t *testing.T) {
 		f.write(t, 0, "/old.txt", "base", files.WriteModeTruncate, 0)
 		for _, err := range parallelRaceCalls(t, f.ctx, 2, func(i int) error {
 			if i == 0 {
-				_, err := f.svc[i].Rename(f.ctx, f.auth, "race", "/old.txt", "/new.txt", false)
+				_, err := f.svc[i].Rename(f.ctx, f.auth, files.RenameRequest{Project: "race", FromPath: "/old.txt", ToPath: "/new.txt"})
 				return err
 			}
 			_, err := f.svc[i].Write(f.ctx, f.auth, "race", "/old.txt", "edited", "utf-8", 0, files.WriteModeTruncate)

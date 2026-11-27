@@ -27,7 +27,7 @@ func TestFileIOPostgresOppositeCrossProjectMoves(t *testing.T) {
 	for round := range rounds {
 		path := fmt.Sprintf("/move-%d.txt", round)
 		errs := parallelRaceCalls(t, f.ctx, 2, func(i int) error {
-			_, err := f.svc[i].RenameAcrossProjects(f.ctx, f.auth, projects[i], path, projects[1-i], "/in"+path, false)
+			_, err := f.svc[i].Rename(f.ctx, f.auth, files.RenameRequest{Project: projects[i], FromPath: path, TargetProject: projects[1-i], ToPath: "/in" + path})
 			return err
 		})
 		require.NoError(t, errs[0], "round %d", round)

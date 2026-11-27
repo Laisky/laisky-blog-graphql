@@ -68,7 +68,7 @@ func (conformanceStubPlugin) Write(_ context.Context, _ files.AuthContext, proje
 func (conformanceStubPlugin) Delete(context.Context, files.AuthContext, string, string, bool) (files.DeleteResult, error) {
 	return files.DeleteResult{}, nil
 }
-func (conformanceStubPlugin) Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error) {
+func (conformanceStubPlugin) Rename(context.Context, files.AuthContext, files.RenameRequest) (files.RenameResult, error) {
 	return files.RenameResult{}, nil
 }
 func (conformanceStubPlugin) List(context.Context, files.AuthContext, string, string, int, int) (files.ListResult, error) {

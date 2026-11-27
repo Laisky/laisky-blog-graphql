@@ -258,6 +258,16 @@ read/written only through the `SystemFS` handle the plugin obtains at startup. T
 `WriteOpts.SkipRAGIndex` write option suppresses pgvector / BM25 indexing for these
 system rows.
 
+Renames and cross-project moves (`file_rename` with `target_project`) run the one FileIO rename and
+update this namespace in the same transaction. A tree that describes exactly the moved bytes, for a
+destination with the same document kind, moves with the file and is re-keyed to the destination
+path's `doc_id`. Any other state of a moved or overwritten path is dropped: a missing, stale or
+malformed tree, an extension change, or an unfinished or failed index. The next `file_write`
+indexes the file again. A rename sends no model request and never fails because of this
+namespace, except on a database error. A catalog that cannot be decoded, or that would exceed the
+file size limit, is left unchanged. A path owns the `doc_id` derived from it: an older catalog
+entry that still uses that `doc_id` is dropped when the path is written or receives a move.
+
 ### 6.4 Per-call billing metadata
 
 Tool-result `structuredContent` for `pageindex`-routed `file_search` carries

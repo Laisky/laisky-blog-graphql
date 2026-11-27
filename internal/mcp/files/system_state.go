@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"strings"
+	"time"
 
 	errors "github.com/Laisky/errors/v2"
 )
@@ -190,85 +191,47 @@ func (s *Service) DeleteWithSystemState(
 	return DeleteResult{DeletedCount: deletedCount}, nil
 }
 
-// RenameWithSystemState renames user files and mutates the corresponding system
-// state in one transaction. The existing rename validation and index-job logic
-// are reused by the system-state variant.
-func (s *Service) RenameWithSystemState(
-	ctx context.Context,
-	auth AuthContext,
-	project, systemProject, fromPath, toPath string,
-	overwrite bool,
-	mutate SystemStateMutator,
-) (RenameResult, error) {
-	if mutate == nil {
-		return RenameResult{}, errors.New("system state mutator is nil")
-	}
-	owner := systemOwnerFromContext(ctx)
-	if owner == "" {
-		return RenameResult{}, errors.New("system_owner is required")
-	}
-	if err := ValidateProject(systemProject); err != nil {
-		return RenameResult{}, errors.WithStack(err)
-	}
-	userCtx := contextWithSystemOwner(ctx, "")
-	req := renameRequest{project: project, fromPath: fromPath, targetProject: project, toPath: toPath, overwrite: overwrite}
-	return s.rename(userCtx, auth, req, func(ctx context.Context, tx *sql.Tx, _ RenameStateChange) error {
-		return s.mutateRenameSystemStateTx(ctx, tx, systemProject, owner, mutate)
-	})
+// RenameStateHook updates system-owned derived state inside a rename
+// transaction, after the user rows moved and while every participating project
+// lock is held. Returning an error rolls the rename back, so a hook must only
+// fail for storage errors, never because derived state is missing or stale.
+type RenameStateHook func(ctx context.Context, change RenameStateChange, state SystemStateTx) error
+
+// SystemStateTx reads and writes one system owner's files inside the
+// transaction of a user mutation. It is valid only during the hook call.
+type SystemStateTx struct {
+	svc   *Service
+	tx    *sql.Tx
+	owner string
 }
 
-// RenameStateChange describes the exact file movements and displaced live
-// paths observed by the transaction. System-state changes must use these paths.
-type RenameStateChange struct {
-	Mappings         []RenameMapping
-	OverwrittenPaths []string
+// Read returns the active content of paths in the system project. Absent
+// paths are omitted from the result.
+func (st SystemStateTx) Read(ctx context.Context, project string, paths ...string) (map[string][]byte, error) {
+	state := make(map[string][]byte, len(paths))
+	if err := st.svc.readSelectedSystemStateTx(ctx, st.tx, st.owner, project, paths, state); err != nil {
+		return nil, err
+	}
+	return state, nil
 }
 
-// SystemStateMoveMutator updates the source and target state in the rename
-// transaction. A nil target means a same-namespace rename. Existing byte
-// slices are read-only; replace map values rather than mutating them in place.
-type SystemStateMoveMutator func(change RenameStateChange, source, target map[string][]byte) error
-
-// SystemStateMovePlan bounds the read set for one plugin move. CatalogPaths
-// are loaded from each namespace first. AffectedPaths selects the additional
-// data needed for the exact FileIO changes, without reading unrelated bodies.
-type SystemStateMovePlan struct {
-	CatalogPaths  []string
-	AffectedPaths func(change RenameStateChange, sourceCatalog, targetCatalog map[string][]byte) (source, target []string, err error)
-	Mutate        SystemStateMoveMutator
+// Write creates or replaces path in the system project.
+func (st SystemStateTx) Write(ctx context.Context, project, path string, content []byte) error {
+	if err := ValidateProject(project); err != nil {
+		return errors.Wrap(err, "validate system state project")
+	}
+	return st.svc.putSystemStateFileTx(ctx, st.tx, st.owner, project, path, content, st.svc.clock())
 }
 
-// RenameMappedWithSystemState applies the file move and the corresponding
-// state change under the participating project locks, in one transaction.
-func (s *Service) RenameMappedWithSystemState(
-	ctx context.Context,
-	auth AuthContext,
-	project, systemProject, fromPath string,
-	targetProject, targetSystemProject, toPath string,
-	overwrite bool,
-	plan SystemStateMovePlan,
-) (RenameResult, error) {
-	if plan.Mutate == nil || plan.AffectedPaths == nil {
-		return RenameResult{}, errors.New("system state move plan is incomplete")
-	}
-	owner := systemOwnerFromContext(ctx)
-	if owner == "" {
-		return RenameResult{}, errors.New("system_owner is required")
-	}
-	if err := ValidateProject(systemProject); err != nil {
-		return RenameResult{}, errors.WithStack(err)
-	}
-	if err := ValidateProject(targetSystemProject); err != nil {
-		return RenameResult{}, errors.WithStack(err)
-	}
-	if (project == targetProject) != (systemProject == targetSystemProject) {
-		return RenameResult{}, errors.New("project and system namespace move scopes must agree")
-	}
-	userCtx := contextWithSystemOwner(ctx, "")
-	req := renameRequest{project: project, fromPath: fromPath, targetProject: targetProject, toPath: toPath, overwrite: overwrite}
-	return s.rename(userCtx, auth, req, func(ctx context.Context, tx *sql.Tx, change RenameStateChange) error {
-		return s.mutateMoveSystemStateTx(ctx, tx, owner, systemProject, targetSystemProject, change, plan)
-	})
+// Fits reports whether content is within the per-file size limit, so a hook
+// can leave derived state out instead of failing the user mutation.
+func (st SystemStateTx) Fits(content []byte) bool {
+	return ValidateFileSize(int64(len(content)), st.svc.settings.MaxFileBytes) == nil
+}
+
+// Delete removes path from the system project. An absent path is ignored.
+func (st SystemStateTx) Delete(ctx context.Context, project, path string) error {
+	return st.svc.deleteSystemStateFileTx(ctx, st.tx, st.owner, project, path, st.svc.clock())
 }
 
 func (s *Service) activeContentHashTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) (string, error) {
@@ -338,79 +301,90 @@ func (s *Service) persistSystemStateTx(ctx context.Context, tx *sql.Tx, owner, p
 	if err != nil {
 		return err
 	}
-	return s.persistSystemStateDiffTx(ctx, tx, owner, project, current, state)
-}
-
-// persistSystemStateDiffTx persists changes against a snapshot taken in this transaction.
-func (s *Service) persistSystemStateDiffTx(ctx context.Context, tx *sql.Tx, owner, project string, current, state map[string][]byte) error {
 	now := s.clock()
 	for path := range current {
 		if _, ok := state[path]; ok {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx,
-			rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ?
-			WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND deleted = FALSE`, s.isPostgres),
-			now,
-			now,
-			"system:"+owner,
-			project,
-			path,
-			owner,
-		); err != nil {
-			return errors.Wrap(err, "delete system state file")
+		if err := s.deleteSystemStateFileTx(ctx, tx, owner, project, path, now); err != nil {
+			return err
 		}
 	}
 	for path, content := range state {
-		if err := ValidatePath(path); err != nil {
-			return errors.Wrap(err, "validate system state path")
-		}
-		if err := ValidateFileSize(int64(len(content)), s.settings.MaxFileBytes); err != nil {
-			return errors.Wrap(err, "validate system state file")
-		}
 		if old, ok := current[path]; ok && bytes.Equal(old, content) {
 			continue
 		}
-		var id uint64
-		findErr := tx.QueryRowContext(ctx,
-			rebindSQL(`SELECT id FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND deleted = FALSE LIMIT 1`, s.isPostgres),
+		if err := s.putSystemStateFileTx(ctx, tx, owner, project, path, content, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deleteSystemStateFileTx soft-deletes one active system file.
+func (s *Service) deleteSystemStateFileTx(ctx context.Context, tx *sql.Tx, owner, project, path string, now time.Time) error {
+	if _, err := tx.ExecContext(ctx,
+		rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ?
+		WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND deleted = FALSE`, s.isPostgres),
+		now,
+		now,
+		"system:"+owner,
+		project,
+		path,
+		owner,
+	); err != nil {
+		return errors.Wrap(err, "delete system state file")
+	}
+	return nil
+}
+
+// putSystemStateFileTx creates or replaces one active system file.
+func (s *Service) putSystemStateFileTx(ctx context.Context, tx *sql.Tx, owner, project, path string, content []byte, now time.Time) error {
+	if err := ValidatePath(path); err != nil {
+		return errors.Wrap(err, "validate system state path")
+	}
+	if err := ValidateFileSize(int64(len(content)), s.settings.MaxFileBytes); err != nil {
+		return errors.Wrap(err, "validate system state file")
+	}
+	var id uint64
+	findErr := tx.QueryRowContext(ctx,
+		rebindSQL(`SELECT id FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND deleted = FALSE LIMIT 1`, s.isPostgres),
+		"system:"+owner,
+		project,
+		path,
+		owner,
+	).Scan(&id)
+	switch {
+	case errors.Is(findErr, sql.ErrNoRows):
+		if _, err := tx.ExecContext(ctx,
+			rebindSQL(`INSERT INTO mcp_files (apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at, system_owner, skip_rag_index, content_hash)
+			VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, NULL, ?, TRUE, ?)`, s.isPostgres),
 			"system:"+owner,
 			project,
 			path,
+			content,
+			int64(len(content)),
+			now,
+			now,
 			owner,
-		).Scan(&id)
-		switch {
-		case errors.Is(findErr, sql.ErrNoRows):
-			if _, err := tx.ExecContext(ctx,
-				rebindSQL(`INSERT INTO mcp_files (apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at, system_owner, skip_rag_index, content_hash)
-				VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, NULL, ?, TRUE, ?)`, s.isPostgres),
-				"system:"+owner,
-				project,
-				path,
-				content,
-				int64(len(content)),
-				now,
-				now,
-				owner,
-				HashFileContent(content),
-			); err != nil {
-				return errors.Wrap(err, "insert system state file")
-			}
-		case findErr != nil:
-			return errors.Wrap(findErr, "find system state file")
-		default:
-			if _, err := tx.ExecContext(ctx,
-				rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, updated_at = ?, deleted = FALSE, deleted_at = NULL, skip_rag_index = TRUE, content_hash = ?
-				WHERE id = ? AND system_owner = ?`, s.isPostgres),
-				content,
-				int64(len(content)),
-				now,
-				HashFileContent(content),
-				id,
-				owner,
-			); err != nil {
-				return errors.Wrap(err, "update system state file")
-			}
+			HashFileContent(content),
+		); err != nil {
+			return errors.Wrap(err, "insert system state file")
+		}
+	case findErr != nil:
+		return errors.Wrap(findErr, "find system state file")
+	default:
+		if _, err := tx.ExecContext(ctx,
+			rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, updated_at = ?, deleted = FALSE, deleted_at = NULL, skip_rag_index = TRUE, content_hash = ?
+			WHERE id = ? AND system_owner = ?`, s.isPostgres),
+			content,
+			int64(len(content)),
+			now,
+			HashFileContent(content),
+			id,
+			owner,
+		); err != nil {
+			return errors.Wrap(err, "update system state file")
 		}
 	}
 	return nil

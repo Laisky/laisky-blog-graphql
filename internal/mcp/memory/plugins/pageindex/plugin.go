@@ -205,8 +205,7 @@ func (p *Plugin) indexAndPublish(ctx context.Context, auth files.AuthContext, pr
 	}
 
 	kind := pageIndexDocKind(path)
-	derive := func(userPath string) string { return docIDFromAuth(auth, project, userPath) }
-	docID := derive(path)
+	docID := docIDFromAuth(auth, project, path)
 	tree, stats, indexErr := p.indexDocument(ctx, kind, fullBytes, IndexOptions{DocID: docID, Tenant: pageIndexTenant(auth)})
 	if indexErr != nil {
 		// Indexing errors should not silently fail the write; surface as warning and
@@ -245,7 +244,7 @@ func (p *Plugin) indexAndPublish(ctx context.Context, auth files.AuthContext, pr
 	summary := pageIndexSummaryInput(desc, source, sourceHash, tree.Degraded)
 
 	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
-		published, err := atomicFS.PublishPluginSummaryAndState(ctx, auth, project, storageProject, path, summary, pageIndexWriteState(path, tree, entry, derive))
+		published, err := atomicFS.PublishPluginSummaryAndState(ctx, auth, project, storageProject, path, summary, pageIndexWriteState(docID, path, tree, entry))
 		if err != nil {
 			return err
 		}
@@ -268,7 +267,16 @@ func (p *Plugin) indexAndPublish(ctx context.Context, auth files.AuthContext, pr
 		}
 		return nil
 	}
-	return errors.Wrap(p.store.publishTree(ctx, storageProject, path, tree, entry, derive), "persist pageindex tree and catalog")
+	if err := p.store.PutTree(ctx, storageProject, docID, tree); err != nil {
+		return errors.Wrap(err, "persist pageindex tree")
+	}
+	if err := p.store.UpdateIndexEntry(ctx, storageProject, path, entry); err != nil {
+		// Keep the deterministic tree. Deleting it here can corrupt an existing
+		// catalog entry because updates reuse the same docID. A retry safely
+		// overwrites the tree and converges the catalog and metadata.
+		return errors.Wrap(err, "persist pageindex catalog")
+	}
+	return nil
 }
 
 // indexDocument builds the tree within indexer.timeout_index, the documented wall
@@ -329,65 +337,17 @@ func (p *Plugin) Delete(ctx context.Context, auth files.AuthContext, project, pa
 	return res, nil
 }
 
-// Rename persists the PageIndex path mapping before moving the user file. If
-// the user-file rename fails, the catalog move is rolled back when possible.
-func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, project, src, dst string, overwrite bool) (files.RenameResult, error) {
-	if mapped, ok := p.sysFS.(files.AtomicMappedRenameSystemFS); ok {
-		return p.renameMapped(ctx, mapped, auth, project, src, project, dst, overwrite)
-	}
-	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
-		return atomicFS.RenameWithState(ctx, auth, project, PageIndexStorageProject(auth, project), src, dst, overwrite, pageIndexRenameState(src, dst, overwrite))
-	}
-	storageProject := PageIndexStorageProject(auth, project)
-	index, err := p.store.GetIndex(ctx, storageProject)
-	if err != nil {
-		return files.RenameResult{}, errors.Wrap(err, "read pageindex catalog for rename")
-	}
-	_, indexed := index[src]
-	if indexed {
-		if err := p.store.RenameIndexEntry(ctx, storageProject, src, dst); err != nil {
-			return files.RenameResult{}, errors.Wrap(err, "rename pageindex catalog entry")
-		}
-	}
-
-	res, err := p.userFS.Rename(ctx, auth, project, src, dst, overwrite)
-	if err != nil {
-		if indexed {
-			if rollbackErr := p.store.RenameIndexEntry(ctx, storageProject, dst, src); rollbackErr != nil {
-				return res, errors.Wrapf(err, "rename user file; rollback pageindex catalog failed: %v", rollbackErr)
-			}
-		}
-		return res, err
-	}
-	return res, nil
-}
-
-// RenameAcrossProjects moves user files into targetProject and moves their
-// PageIndex trees and catalog entries into the target tenant namespace in the
-// same transaction, so the moved documents stay searchable without re-indexing.
-// It requires the transactional system handle: a non-atomic catalog could be
-// left describing files that already moved, so the move is refused instead.
-func (p *Plugin) RenameAcrossProjects(ctx context.Context, auth files.AuthContext, project, src, targetProject, dst string, overwrite bool) (files.RenameResult, error) {
-	if targetProject == "" || targetProject == project {
-		return p.Rename(ctx, auth, project, src, dst, overwrite)
-	}
-	atomicFS, ok := p.sysFS.(files.AtomicMappedRenameSystemFS)
+// Rename moves user files through the one FileIO rename path, within a project
+// or across projects, and keeps the PageIndex catalog consistent with the move
+// in the same transaction (see renameState). Derived state never blocks a valid
+// rename: missing, stale or malformed trees are dropped rather than refused,
+// and no model call runs. Production always supplies the transactional handle.
+func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, req files.RenameRequest) (files.RenameResult, error) {
+	atomicFS, ok := p.sysFS.(files.AtomicSystemFS)
 	if !ok {
-		return files.RenameResult{}, errors.WithStack(files.NewError(files.ErrCodeInvalidArgument,
-			"pageindex target_project moves require transactional catalog storage", false))
+		return files.RenameResult{}, errors.New("pageindex rename requires the transactional system namespace")
 	}
-	return p.renameMapped(ctx, atomicFS, auth, project, src, targetProject, dst, overwrite)
-}
-
-// renameMapped updates both the FileIO path and its PageIndex state in one transaction.
-func (p *Plugin) renameMapped(ctx context.Context, mapped files.AtomicMappedRenameSystemFS, auth files.AuthContext,
-	project, src, targetProject, dst string, overwrite bool,
-) (files.RenameResult, error) {
-	targetDocID := func(userPath string) string { return docIDFromAuth(auth, targetProject, userPath) }
-	return mapped.RenameMappedWithState(ctx, auth,
-		project, PageIndexStorageProject(auth, project), src,
-		targetProject, PageIndexStorageProject(auth, targetProject), dst,
-		overwrite, pageIndexMovePlan(targetDocID))
+	return atomicFS.RenameWithState(ctx, auth, req, p.renameState(auth, req))
 }
 
 // List forwards to userFS unchanged.
@@ -482,7 +442,4 @@ func docIDFromAuth(auth files.AuthContext, project, path string) string {
 }
 
 // Compile-time assertion that Plugin satisfies the manager interface.
-var (
-	_ mcpplugin.Plugin              = (*Plugin)(nil)
-	_ mcpplugin.CrossProjectRenamer = (*Plugin)(nil)
-)
+var _ mcpplugin.Plugin = (*Plugin)(nil)

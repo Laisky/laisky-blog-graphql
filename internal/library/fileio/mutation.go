@@ -8,7 +8,6 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
-	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/library"
 )
 
@@ -146,7 +145,9 @@ func (r *MutationResolver) FileRename(ctx context.Context, project, fromPath, to
 	}
 	startAt := time.Now().UTC()
 	log := logger(ctx, "file_rename").With(zap.String(fieldProject, project))
-	result, renameErr := mcpplugin.RenameAcrossProjects(renameCtx, svc, auth, project, fromPath, destinationProject, toPath, overwrite)
+	result, renameErr := svc.Rename(renameCtx, auth, files.RenameRequest{
+		Project: project, FromPath: fromPath, TargetProject: destinationProject, ToPath: toPath, Overwrite: overwrite,
+	})
 	audit := map[string]any{fieldProject: project, "from_path": fromPath, "to_path": toPath, "overwrite": overwrite}
 	if destinationProject != project {
 		audit["target_project"] = destinationProject

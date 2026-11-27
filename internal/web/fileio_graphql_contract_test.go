@@ -37,6 +37,10 @@ type recordingPlugin struct {
 	renames  int
 	reads    int
 	plugins  []string
+	// lastRename is the request of the most recent Rename call, and
+	// lastDestinationProject the destination scope of its conditions.
+	lastRename             files.RenameRequest
+	lastDestinationProject string
 }
 
 func newRecordingPlugin() *recordingPlugin {
@@ -120,12 +124,16 @@ func (p *recordingPlugin) Delete(ctx context.Context, auth files.AuthContext, pr
 	return files.DeleteResult{DeletedCount: 1}, nil
 }
 
-func (p *recordingPlugin) Rename(ctx context.Context, auth files.AuthContext, project, fromPath, _ string, _ bool) (files.RenameResult, error) {
+func (p *recordingPlugin) Rename(ctx context.Context, auth files.AuthContext, req files.RenameRequest) (files.RenameResult, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.observe(ctx)
 	p.attempts++
-	if err := p.check(ctx, auth, project, fromPath, files.FileOperationRename); err != nil {
+	p.lastRename = req
+	if conditions, ok := files.ScopedFilePreconditions(ctx, auth, req.Project, req.FromPath, files.FileOperationRename); ok {
+		p.lastDestinationProject = conditions.DestinationProject
+	}
+	if err := p.check(ctx, auth, req.Project, req.FromPath, files.FileOperationRename); err != nil {
 		return files.RenameResult{}, err
 	}
 	p.renames++

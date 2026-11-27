@@ -73,7 +73,7 @@ func TestWriteDeleteAndRenamePersistExpectedIndexJobs(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.Delete(context.Background(), auth, "proj", "/docs/sub", true)
 	require.NoError(t, err)
-	_, err = svc.Rename(context.Background(), auth, "proj", "/docs/a.txt", "/archive/a.txt", false)
+	_, err = svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/docs/a.txt", ToPath: "/archive/a.txt"})
 	require.NoError(t, err)
 
 	jobs := listIndexJobs(t, svc)
@@ -110,7 +110,7 @@ func TestRenameDirectoryEnqueuesPerFileJobs(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.Write(context.Background(), auth, "proj", "/docs/sub/b.txt", "bbb", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
-	_, err = svc.Rename(context.Background(), auth, "proj", "/docs", "/archive", false)
+	_, err = svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/docs", ToPath: "/archive"})
 	require.NoError(t, err)
 
 	jobs := summarizeJobs(listIndexJobs(t, svc))

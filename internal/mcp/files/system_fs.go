@@ -6,6 +6,7 @@ package files
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 
 	errors "github.com/Laisky/errors/v2"
@@ -22,19 +23,14 @@ type SystemFS interface {
 }
 
 // AtomicSystemFS extends SystemFS with transaction-scoped mutations that can
-// commit a user file operation and the owner's system catalog together.
+// commit a user file operation and the owner's system state together.
 type AtomicSystemFS interface {
 	SystemFS
 	PublishPluginSummaryAndState(ctx context.Context, auth AuthContext, project, systemProject, path string, in PluginSummaryInput, mutate SystemStateMutator) (bool, error)
 	DeleteWithState(ctx context.Context, auth AuthContext, project, systemProject, path string, recursive bool, mutate SystemStateMutator) (DeleteResult, error)
-	RenameWithState(ctx context.Context, auth AuthContext, project, systemProject, fromPath, toPath string, overwrite bool, mutate SystemStateMutator) (RenameResult, error)
-}
-
-// AtomicMappedRenameSystemFS optionally supports transactional mapped renames,
-// including moves across projects, without changing AtomicSystemFS.
-type AtomicMappedRenameSystemFS interface {
-	RenameMappedWithState(ctx context.Context, auth AuthContext, project, systemProject, fromPath, targetProject, targetSystemProject, toPath string,
-		overwrite bool, plan SystemStateMovePlan) (RenameResult, error)
+	// RenameWithState runs the ordinary user rename and calls hook in the
+	// same transaction with the exact file changes.
+	RenameWithState(ctx context.Context, auth AuthContext, req RenameRequest, hook RenameStateHook) (RenameResult, error)
 }
 
 // systemFS is the concrete implementation. The owner string is captured at
@@ -132,23 +128,16 @@ func (s *systemFS) DeleteWithState(ctx context.Context, auth AuthContext, projec
 	return result, nil
 }
 
-// RenameWithState atomically renames user files and system-owned plugin state.
-func (s *systemFS) RenameWithState(ctx context.Context, auth AuthContext, project, systemProject, fromPath, toPath string, overwrite bool, mutate SystemStateMutator) (RenameResult, error) {
-	ctx = contextWithSystemOwner(ctx, s.owner)
-	result, err := s.svc.RenameWithSystemState(ctx, auth, project, systemProject, fromPath, toPath, overwrite, mutate)
-	if err != nil {
-		return RenameResult{}, errors.WithStack(err)
+// RenameWithState applies the user rename, within one project or across
+// projects, and the owner's derived-state hook in one transaction.
+func (s *systemFS) RenameWithState(ctx context.Context, auth AuthContext, req RenameRequest, hook RenameStateHook) (RenameResult, error) {
+	if hook == nil {
+		return RenameResult{}, errors.New("rename state hook is nil")
 	}
-	return result, nil
-}
-
-// RenameMappedWithState updates user files and the owner's corresponding
-// system state atomically, including across projects.
-func (s *systemFS) RenameMappedWithState(ctx context.Context, auth AuthContext, project, systemProject, fromPath, targetProject, targetSystemProject, toPath string,
-	overwrite bool, plan SystemStateMovePlan,
-) (RenameResult, error) {
-	ctx = contextWithSystemOwner(ctx, s.owner)
-	result, err := s.svc.RenameMappedWithSystemState(ctx, auth, project, systemProject, fromPath, targetProject, targetSystemProject, toPath, overwrite, plan)
+	userCtx := contextWithSystemOwner(ctx, "")
+	result, err := s.svc.rename(userCtx, auth, req, func(ctx context.Context, tx *sql.Tx, change RenameStateChange) error {
+		return hook(ctx, change, SystemStateTx{svc: s.svc, tx: tx, owner: s.owner})
+	})
 	if err != nil {
 		return RenameResult{}, errors.WithStack(err)
 	}

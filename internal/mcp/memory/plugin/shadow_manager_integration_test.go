@@ -54,7 +54,7 @@ func (s *stubPlugin) Delete(context.Context, files.AuthContext, string, string, 
 	return files.DeleteResult{}, nil
 }
 
-func (s *stubPlugin) Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error) {
+func (s *stubPlugin) Rename(context.Context, files.AuthContext, files.RenameRequest) (files.RenameResult, error) {
 	return files.RenameResult{}, nil
 }
 

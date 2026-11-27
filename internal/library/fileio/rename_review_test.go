@@ -21,10 +21,10 @@ type renameReviewPlugin struct {
 
 func (*renameReviewPlugin) SupportsFileVersionPreconditions() bool { return true }
 
-func (p *renameReviewPlugin) RenameAcrossProjects(ctx context.Context, auth files.AuthContext, project, from, target, _ string, _ bool) (files.RenameResult, error) {
+func (p *renameReviewPlugin) Rename(ctx context.Context, auth files.AuthContext, req files.RenameRequest) (files.RenameResult, error) {
 	p.calls++
-	p.target = target
-	p.conditions, _ = files.ScopedFilePreconditions(ctx, auth, project, from, files.FileOperationRename)
+	p.target = req.TargetProject
+	p.conditions, _ = files.ScopedFilePreconditions(ctx, auth, req.Project, req.FromPath, files.FileOperationRename)
 	return files.RenameResult{MovedCount: 1}, nil
 }
 

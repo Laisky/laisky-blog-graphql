@@ -624,7 +624,7 @@ func TestNonSearchOperationsRejectWildcard(t *testing.T) {
 	})
 
 	t.Run("Rename", func(t *testing.T) {
-		_, err := svc.Rename(context.Background(), auth, wildcard, "/a.txt", "/b.txt", false)
+		_, err := svc.Rename(context.Background(), auth, RenameRequest{Project: wildcard, FromPath: "/a.txt", ToPath: "/b.txt"})
 		require.Error(t, err)
 	})
 

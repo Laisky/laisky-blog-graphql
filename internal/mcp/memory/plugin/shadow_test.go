@@ -83,7 +83,7 @@ func (p *shadowFakePlugin) Delete(context.Context, files.AuthContext, string, st
 	atomic.AddInt32(&p.deleteCount, 1)
 	return p.delRes, p.delErr
 }
-func (p *shadowFakePlugin) Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error) {
+func (p *shadowFakePlugin) Rename(context.Context, files.AuthContext, files.RenameRequest) (files.RenameResult, error) {
 	atomic.AddInt32(&p.renameCount, 1)
 	return p.rnRes, p.rnErr
 }

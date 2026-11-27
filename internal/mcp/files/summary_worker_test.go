@@ -197,7 +197,7 @@ func TestSummaryRenameReusesWithoutModelCall(t *testing.T) {
 	require.NoError(t, worker.RunOnce(ctx))
 	require.Equal(t, 1, stub.callCount())
 
-	_, err = svc.Rename(ctx, auth, "proj", "/old.txt", "/new.txt", false)
+	_, err = svc.Rename(ctx, auth, RenameRequest{Project: "proj", FromPath: "/old.txt", ToPath: "/new.txt"})
 	require.NoError(t, err)
 	require.NoError(t, worker.RunOnce(ctx))
 	require.Equal(t, 1, stub.callCount(), "rename must not call the summarizer")

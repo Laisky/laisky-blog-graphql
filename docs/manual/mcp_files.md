@@ -478,9 +478,10 @@ Rename or move a file/directory path, optionally into another project.
     all apply in `target_project`, and the moved bytes count against its storage quota. The file keeps its identity
     and version history; its revision advances, so re-read before editing it again. `"*"` is rejected.
 
-When using PageIndex, a Markdown or PDF destination must keep its source format and have a current tree.
-If indexing is still in progress, the move returns retryable `RESOURCE_BUSY` without changing either path.
-Moving to an unsupported extension preserves the file but removes its PageIndex search entry.
+Under PageIndex, a rename never waits for indexing and never fails because of the search index. Any extension
+change is allowed, and the bytes are never converted. A document whose tree is current and keeps its format
+(`.md` or `.pdf`) stays searchable at its new path. Otherwise the move drops its PageIndex entry, and the next
+`file_write` indexes it again. This includes an unfinished, failed or stale index, or a format change.
 
 #### Example A: rename one file
 

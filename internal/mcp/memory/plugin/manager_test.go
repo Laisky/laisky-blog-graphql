@@ -60,7 +60,7 @@ func (p *testPlugin) Delete(context.Context, files.AuthContext, string, string, 
 }
 
 // Rename returns a zero-value stub response.
-func (p *testPlugin) Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error) {
+func (p *testPlugin) Rename(context.Context, files.AuthContext, files.RenameRequest) (files.RenameResult, error) {
 	return files.RenameResult{}, nil
 }
 

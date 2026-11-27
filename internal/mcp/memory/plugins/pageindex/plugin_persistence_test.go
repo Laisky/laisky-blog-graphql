@@ -105,7 +105,7 @@ func TestAtomicPageIndexPublicationAndMutation(t *testing.T) {
 	).Scan(&systemFiles))
 	require.Equal(t, 3, systemFiles, "tree, index, and metadata must publish together")
 
-	_, err = plugin.Rename(ctx, auth, "project", "/manual.md", "/renamed.md", false)
+	_, err = plugin.Rename(ctx, auth, files.RenameRequest{Project: "project", FromPath: "/manual.md", ToPath: "/renamed.md"})
 	require.NoError(t, err)
 	var oldExists, newExists int
 	require.NoError(t, db.QueryRowContext(ctx,
@@ -206,6 +206,13 @@ func (*failNthWriteSystemFS) List(context.Context, string, string) ([]string, er
 
 func newPersistenceTestService(t testing.TB) (*sql.DB, *files.Service) {
 	t.Helper()
+	return newPersistenceTestServiceWithLimit(t, 10_000_000)
+}
+
+// newPersistenceTestServiceWithLimit builds the SQLite test service with the
+// given per-file size limit.
+func newPersistenceTestServiceWithLimit(t testing.TB, maxFileBytes int64) (*sql.DB, *files.Service) {
+	t.Helper()
 	dsn := fmt.Sprintf("file:pageindex-persistence-%s-%d?mode=memory&cache=shared&_foreign_keys=on", t.Name(), time.Now().UnixNano())
 	db, err := sql.Open("sqlite3", dsn)
 	require.NoError(t, err)
@@ -213,7 +220,7 @@ func newPersistenceTestService(t testing.TB) (*sql.DB, *files.Service) {
 	db.SetMaxIdleConns(1)
 	service, err := files.NewService(db, files.Settings{
 		MaxPayloadBytes:  2_000_000,
-		MaxFileBytes:     10_000_000,
+		MaxFileBytes:     maxFileBytes,
 		MaxProjectBytes:  100_000_000,
 		ListLimitDefault: 20,
 		ListLimitMax:     100,

@@ -74,39 +74,6 @@ func TestDeleteCatalogFailureIsRetryable(t *testing.T) {
 	require.NotContains(t, index, "/manual.md")
 }
 
-// TestRenameCatalogFailureIsRetryable verifies catalog persistence is attempted
-// before moving the user file so the same rename request can be retried safely.
-func TestRenameCatalogFailureIsRetryable(t *testing.T) {
-	db, service := newPersistenceTestService(t)
-	defer func() { require.NoError(t, db.Close()) }()
-	plugin, faultFS, auth := newRetryTestPlugin(t, service)
-	defer func() { require.NoError(t, plugin.Stop(context.Background())) }()
-	storageProject := PageIndexStorageProject(auth, "project")
-
-	_, err := plugin.Write(
-		context.Background(), auth, "project", "/source.md",
-		"# Manual\n\nThe rollback token is ORBIT-17.", "utf-8", 0, files.WriteModeTruncate,
-	)
-	require.NoError(t, err)
-
-	faultFS.FailNextWrite(indexPath())
-	_, err = plugin.Rename(context.Background(), auth, "project", "/source.md", "/destination.md", false)
-	require.Error(t, err)
-	source, sourceErr := plugin.Stat(context.Background(), auth, "project", "/source.md")
-	require.NoError(t, sourceErr)
-	require.True(t, source.Exists, "the user path remains unchanged when catalog persistence fails")
-
-	_, err = plugin.Rename(context.Background(), auth, "project", "/source.md", "/destination.md", false)
-	require.NoError(t, err, "retry must converge after the one-shot catalog fault")
-	destination, destinationErr := plugin.Stat(context.Background(), auth, "project", "/destination.md")
-	require.NoError(t, destinationErr)
-	require.True(t, destination.Exists)
-	index, err := plugin.store.GetIndex(context.Background(), storageProject)
-	require.NoError(t, err)
-	require.NotContains(t, index, "/source.md")
-	require.Contains(t, index, "/destination.md")
-}
-
 func newRetryTestPlugin(t *testing.T, service *files.Service) (*Plugin, *failOnceSystemFS, files.AuthContext) {
 	t.Helper()
 	systemFS, err := service.SystemNamespace(SysOwner)

@@ -36,7 +36,7 @@ func BenchmarkPageIndexSingleMoveLargeProjects(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {
-		_, err = plugin.RenameAcrossProjects(ctx, auth, source, "/move.md", dest, "/move.md", false)
+		_, err = plugin.Rename(ctx, auth, files.RenameRequest{Project: source, FromPath: "/move.md", TargetProject: dest, ToPath: "/move.md"})
 		require.NoError(b, err)
 		source, dest = dest, source
 	}

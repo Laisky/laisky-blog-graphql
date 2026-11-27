@@ -558,14 +558,23 @@ Cross-project move (`target_project` set and different from `project`):
   each moved file's revision.
 - the transaction holds both project advisory locks, taken in ascending `(lock key, project)` order by
   `MultiProjectLockProvider.WithProjectsLock`; a lock provider without it refuses the move.
-- memory plugins expose the move through the optional `CrossProjectRenamer` capability. `rag` delegates to the
-  service above. `pageindex` moves catalog entries and trees from the source tenant namespace to the target one in
-  the same transaction, using the exact FileIO move and replacement paths. It reads both catalogs but only the
-  affected tree bodies. Writes, refreshes and moves reserve an identity not used by another catalog entry.
-  An indexable destination requires a current tree; otherwise the move rolls back with retryable `RESOURCE_BUSY`.
-  An extension change into a different indexable format is rejected; a non-indexable destination can move without
-  a tree and drops obsolete catalog state. A backend without the capability, or `pageindex` without
-  transactional catalog storage, returns `INVALID_ARGUMENT` instead of renaming within `project`.
+
+One rename implementation (`files.Service.Rename(ctx, auth, files.RenameRequest)`) serves same-project and
+cross-project moves; every memory plugin's `Rename` receives the same `RenameRequest`.
+
+- `rag` delegates to the service above.
+- `pageindex` calls the same rename through `AtomicSystemFS.RenameWithState`, which runs a derived-state hook
+  in the rename transaction with the exact moved and overwritten paths. The file move is authoritative and the
+  hook never calls a model; it fails only on storage errors:
+  - a catalog entry whose tree describes exactly the moved bytes, for a destination of the same indexable kind
+    (`.md` or `.pdf`), moves with the file and is re-keyed to the destination path's `doc_id`. It reads both
+    catalogs but only the affected tree bodies;
+  - every other entry of a moved or overwritten path (missing, stale or malformed tree, extension change) is
+    dropped and its unreferenced tree deleted. The file is indexed again by its next write;
+  - a path owns the `doc_id` derived from it, for writes and moves alike. An entry from a release that kept the
+    `doc_id` on rename, and still uses that `doc_id`, is dropped when the path is written or receives a move;
+  - a catalog that cannot be decoded, or that would exceed the file size limit, is left untouched;
+  - search validates every candidate against the live file bytes, so stale state never returns the old path.
 
 Path remap rule:
 
@@ -581,7 +590,9 @@ Execution outline:
 5. resolve source file set:
    - exact file match at `from_path`, or
    - descendant files under `from_path + "/%"`, else `NOT_FOUND`.
-6. validate destination constraints and collision policy.
+6. validate destination constraints and collision policy. For a directory source, the directories it creates
+   below `to_path` must not be active files of the destination (`NOT_DIRECTORY`). Files move in ascending
+   source-path length, so moving a directory into its own parent never reuses a path before it is freed.
 7. if overwrite-replace applies, soft-delete the replaced destination file first.
 8. apply transactional path remap update on `mcp_files` with `updated_at=now`.
 9. enqueue a `DELETE` for `old_path`. For a RAG-indexed destination, queue one `UPSERT` that replaces

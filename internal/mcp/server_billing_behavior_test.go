@@ -77,7 +77,7 @@ func (s *behaviorFileService) Delete(_ context.Context, _ files.AuthContext, _ s
 	return files.DeleteResult{DeletedCount: 1}, nil
 }
 
-func (s *behaviorFileService) Rename(_ context.Context, _ files.AuthContext, _ string, _ string, _ string, _ bool) (files.RenameResult, error) {
+func (s *behaviorFileService) Rename(_ context.Context, _ files.AuthContext, _ files.RenameRequest) (files.RenameResult, error) {
 	if err := s.record("rename"); err != nil {
 		return files.RenameResult{}, err
 	}

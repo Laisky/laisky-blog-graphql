@@ -240,16 +240,16 @@ func (s *ShadowPlugin) Delete(ctx context.Context, auth files.AuthContext, proje
 }
 
 // Rename applies the mutation to live first; on success it dual-writes to shadow.
-func (s *ShadowPlugin) Rename(ctx context.Context, auth files.AuthContext, project, fromPath, toPath string, overwrite bool) (files.RenameResult, error) {
+func (s *ShadowPlugin) Rename(ctx context.Context, auth files.AuthContext, req files.RenameRequest) (files.RenameResult, error) {
 	liveStart := time.Now()
-	res, err := s.live.Rename(ctx, auth, project, fromPath, toPath, overwrite)
+	res, err := s.live.Rename(ctx, auth, req)
 	liveDur := time.Since(liveStart)
 	if err != nil {
 		return res, err
 	}
 
-	s.fireMutation(ctx, "rename", project, fromPath, liveDur, func(opCtx context.Context) error {
-		_, e := s.shadow.Rename(opCtx, auth, project, fromPath, toPath, overwrite)
+	s.fireMutation(ctx, "rename", req.Project, req.FromPath, liveDur, func(opCtx context.Context) error {
+		_, e := s.shadow.Rename(opCtx, auth, req)
 		return e
 	})
 	return res, nil

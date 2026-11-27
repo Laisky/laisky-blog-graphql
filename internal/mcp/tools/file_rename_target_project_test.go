@@ -16,25 +16,23 @@ import (
 // testRenameVersion is a syntactically valid opaque file version.
 const testRenameVersion = "00000000000000000000000000000001:1"
 
-// crossProjectFileService records cross-project moves and the destination
-// scope of the conditions that reached it.
-type crossProjectFileService struct {
+// renameScopeService records each rename request and the destination scope
+// of the conditions that reached the backend.
+type renameScopeService struct {
 	*behaviorFileService
-	moves              int
-	targetProject      string
+	renames            int
 	destinationProject string
 }
 
-// RenameAcrossProjects records one cross-project move request.
-func (s *crossProjectFileService) RenameAcrossProjects(ctx context.Context, auth files.AuthContext, project, fromPath, targetProject, toPath string, _ bool) (files.RenameResult, error) {
-	s.moves++
-	s.lastProject, s.lastPath, s.lastToPath, s.targetProject = project, fromPath, toPath, targetProject
-	conditions, ok := files.ScopedFilePreconditions(ctx, auth, project, fromPath, files.FileOperationRename)
+// Rename records one rename request.
+func (s *renameScopeService) Rename(ctx context.Context, auth files.AuthContext, req files.RenameRequest) (files.RenameResult, error) {
+	s.renames++
+	conditions, ok := files.ScopedFilePreconditions(ctx, auth, req.Project, req.FromPath, files.FileOperationRename)
 	if !ok {
 		return files.RenameResult{}, files.NewError(files.ErrCodePreconditionRequired, "no precondition reached the backend", false)
 	}
 	s.destinationProject = conditions.DestinationProject
-	return files.RenameResult{MovedCount: 1}, nil
+	return s.behaviorFileService.Rename(ctx, auth, req)
 }
 
 // renameRequest builds a file_rename call with the given extra arguments.
@@ -61,10 +59,14 @@ func TestFileRenameDefinitionAdvertisesOptionalTargetProject(t *testing.T) {
 	require.NotContains(t, schema["required"], targetProjectKey)
 }
 
-// TestFileRenameTargetProjectRouting verifies that only a real target project
-// reaches the cross-project capability, carrying its destination scope.
+// TestFileRenameTargetProjectRouting verifies that target_project reaches the
+// backend in the one rename request, with its destination condition scope, and
+// that an invalid target never reaches it.
 func TestFileRenameTargetProjectRouting(t *testing.T) {
 	ctx := authtest.WithVerified(context.Background(), "key")
+	newService := func() *renameScopeService {
+		return &renameScopeService{behaviorFileService: &behaviorFileService{renameResult: files.RenameResult{MovedCount: 1}}}
+	}
 
 	for name, extra := range map[string]map[string]any{
 		"absent":           nil,
@@ -74,81 +76,64 @@ func TestFileRenameTargetProjectRouting(t *testing.T) {
 		"plugin selection": {"plugin": "auto"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			svc := &crossProjectFileService{behaviorFileService: &behaviorFileService{renameResult: files.RenameResult{MovedCount: 1}}}
+			svc := newService()
 			tool, err := NewFileRenameTool(svc)
 			require.NoError(t, err)
 			result, err := tool.Handle(ctx, renameRequest(extra))
 			require.NoError(t, err)
 			require.False(t, result.IsError, behaviorTextContent(t, result))
-			require.Zero(t, svc.moves, "a same-project rename must use Rename")
-			require.Equal(t, "proj", svc.lastProject)
-			require.Equal(t, "/b.txt", svc.lastToPath)
+			require.Equal(t, 1, svc.renames)
+			require.Equal(t, files.RenameRequest{Project: "proj", FromPath: "/a.txt", TargetProject: "proj", ToPath: "/b.txt"}, svc.lastRename)
+			require.Equal(t, "proj", svc.destinationProject)
 		})
 	}
 
 	t.Run("another project moves across projects", func(t *testing.T) {
-		svc := &crossProjectFileService{behaviorFileService: &behaviorFileService{}}
+		svc := newService()
 		tool, err := NewFileRenameTool(svc)
 		require.NoError(t, err)
 		result, err := tool.Handle(ctx, renameRequest(map[string]any{targetProjectKey: "archive", "to_path": "inbox/b.txt"}))
 		require.NoError(t, err)
 		require.False(t, result.IsError, behaviorTextContent(t, result))
-		require.Equal(t, 1, svc.moves)
-		require.Equal(t, "proj", svc.lastProject)
-		require.Equal(t, "archive", svc.targetProject)
-		require.Equal(t, "/inbox/b.txt", svc.lastToPath, "the destination path is normalized as usual")
+		require.Equal(t, files.RenameRequest{Project: "proj", FromPath: "/a.txt", TargetProject: "archive", ToPath: "/inbox/b.txt"}, svc.lastRename,
+			"the destination path is normalized as usual")
 		require.Equal(t, "archive", svc.destinationProject, "destination conditions are scoped to the target project")
 		require.Equal(t, 1, asInt(t, decodeToolPayload(t, result)["moved_count"]))
 	})
 
 	t.Run("a non-string target is refused before the backend", func(t *testing.T) {
-		svc := &crossProjectFileService{behaviorFileService: &behaviorFileService{}}
+		svc := newService()
 		tool, err := NewFileRenameTool(svc)
 		require.NoError(t, err)
 		result, err := tool.Handle(ctx, renameRequest(map[string]any{targetProjectKey: 7}))
 		require.NoError(t, err)
 		require.True(t, result.IsError)
 		require.Equal(t, string(files.ErrCodeInvalidArgument), behaviorJSONContent(t, result)["code"])
-		require.Zero(t, svc.moves)
-		require.Empty(t, svc.lastToPath, "the move must not fall back to a same-project rename")
+		require.Zero(t, svc.renames, "the move must not fall back to a same-project rename")
 	})
 
 	for _, invalid := range []string{"*", "bad project", "bad/project"} {
 		t.Run("invalid target "+invalid, func(t *testing.T) {
-			svc := &crossProjectFileService{behaviorFileService: &behaviorFileService{}}
+			svc := newService()
 			tool, err := NewFileRenameTool(svc)
 			require.NoError(t, err)
 			result, err := tool.Handle(ctx, renameRequest(map[string]any{targetProjectKey: invalid}))
 			require.NoError(t, err)
 			require.True(t, result.IsError)
 			require.Equal(t, string(files.ErrCodeInvalidPath), behaviorJSONContent(t, result)["code"])
-			require.Zero(t, svc.moves)
-			require.Empty(t, svc.lastToPath)
+			require.Zero(t, svc.renames)
 		})
 	}
 
-	t.Run("a backend without the capability refuses instead of renaming in place", func(t *testing.T) {
-		svc := &behaviorFileService{renameResult: files.RenameResult{MovedCount: 1}}
-		tool, err := NewFileRenameTool(svc)
-		require.NoError(t, err)
-		result, err := tool.Handle(ctx, renameRequest(map[string]any{targetProjectKey: "archive"}))
-		require.NoError(t, err)
-		require.True(t, result.IsError)
-		payload := behaviorJSONContent(t, result)
-		require.Equal(t, string(files.ErrCodeInvalidArgument), payload["code"])
-		require.Contains(t, payload["message"], "target_project")
-		require.Empty(t, svc.lastToPath, "the backend's same-project Rename must not run")
-	})
-
 	t.Run("a move without a source version is refused", func(t *testing.T) {
-		svc := &crossProjectFileService{behaviorFileService: &behaviorFileService{}}
+		svc := newService()
 		tool, err := NewFileRenameTool(svc)
 		require.NoError(t, err)
 		result, err := tool.Handle(ctx, newToolReq(map[string]any{"project": "proj", "from_path": "/a.txt", "to_path": "/b.txt", targetProjectKey: "archive"}))
 		require.NoError(t, err)
 		require.True(t, result.IsError)
 		require.Equal(t, string(files.ErrCodePreconditionRequired), behaviorJSONContent(t, result)["code"])
-		require.Zero(t, svc.moves)
+		require.Zero(t, svc.renames)
 	})
 }
 

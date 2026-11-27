@@ -137,7 +137,7 @@ func TestFileIOVersionRegressions(t *testing.T) {
 							_, err := f.svc[1].Delete(f.ctx, f.auth, "race", "/old.txt", false)
 							require.NoError(t, err)
 						} else {
-							_, err := f.svc[1].Rename(f.ctx, f.auth, "race", "/old.txt", "/new.txt", false)
+							_, err := f.svc[1].Rename(f.ctx, f.auth, files.RenameRequest{Project: "race", FromPath: "/old.txt", ToPath: "/new.txt"})
 							require.NoError(t, err)
 						}
 						rows, versions, jobs := f.count(t, "mcp_files"), f.count(t, "mcp_file_versions"), f.count(t, "mcp_file_index_jobs")

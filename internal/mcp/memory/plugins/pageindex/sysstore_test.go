@@ -114,26 +114,6 @@ func TestSysStoreConcurrentIndexUpdates(t *testing.T) {
 	require.Len(t, ix, n)
 }
 
-// TestSysStoreRenameRoundTrip verifies a catalog rename leaves the persisted tree unchanged.
-func TestSysStoreRenameRoundTrip(t *testing.T) {
-	fs := newMemoryFS()
-	store := NewSysStore(fs)
-	ctx := context.Background()
-	tree := &Tree{DocID: "d1", Type: KindPDF, PageCount: 1, Structure: []*Node{{Title: "T"}}}
-	require.NoError(t, store.PutTree(ctx, "p", "d1", tree))
-	require.NoError(t, store.UpdateIndexEntry(ctx, "p", "/from.pdf", IndexEntry{DocID: "d1", Type: "pdf"}))
-	beforeBytes, err := fs.Read(ctx, "p", treePath("d1"))
-	require.NoError(t, err)
-	require.NoError(t, store.RenameIndexEntry(ctx, "p", "/from.pdf", "/to.pdf"))
-	ix, err := store.GetIndex(ctx, "p")
-	require.NoError(t, err)
-	require.NotContains(t, ix, "/from.pdf")
-	require.Equal(t, "d1", ix["/to.pdf"].DocID)
-	afterBytes, err := fs.Read(ctx, "p", treePath("d1"))
-	require.NoError(t, err)
-	require.Equal(t, string(beforeBytes), string(afterBytes))
-}
-
 // TestSysStoreRemoveAndDeleteTree verifies catalog and tree removal complete together.
 func TestSysStoreRemoveAndDeleteTree(t *testing.T) {
 	fs := newMemoryFS()
