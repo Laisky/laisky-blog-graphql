@@ -146,7 +146,9 @@
       "TestRequestBodyPolicyCountsUnarmedDeadlines",
       "TestRequestBodySettingsLoadMCPInflightBudget",
       "TestBalanceProxyBoundsTheKeyBeforeNormalizing",
-      "TestGraphQLFileRenameTargetProject"
+      "TestGraphQLFileRenameTargetProject",
+      "TestGraphQLFileIODefaultOverlayParity",
+      "TestGraphQLFileIODefaultOverlayWildcardSearchParity"
     ]
   },
   {
@@ -497,7 +499,9 @@
       "TestFileMutationAlternativesDeclareOnlyAcceptedArguments",
       "TestFileAuthFromContextRefusesUnverifiedIdentity",
       "TestFileRenameDefinitionAdvertisesOptionalTargetProject",
-      "TestFileRenameTargetProjectRouting"
+      "TestFileRenameTargetProjectRouting",
+      "TestFileToolsDefaultProjectSearchLabelsEveryHit",
+      "TestFileToolsDefaultProjectCrossProjectMove"
     ]
   },
   {

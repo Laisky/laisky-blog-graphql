@@ -152,8 +152,12 @@ func (r *QueryResolver) FileSearch(ctx context.Context, project, query, pathPref
 		return nil, invalidArgument("query must be trimmed, non-empty, valid UTF-8 within 16384 bytes")
 	}
 	pathPrefix = normalizePath(pathPrefix)
-	if err := validateTarget(project, pathPrefix); err != nil {
-		return nil, err
+	// A search, like MCP file_search, also accepts the "*" wildcard project.
+	if err := files.ValidateSearchProject(project); err != nil {
+		return nil, graphQLError(err, "validate project")
+	}
+	if err := files.ValidatePath(pathPrefix); err != nil {
+		return nil, graphQLError(err, "validate path")
 	}
 	searchLimit, err := optionalInt(limit, 0, 0, 1000)
 	if err != nil {
