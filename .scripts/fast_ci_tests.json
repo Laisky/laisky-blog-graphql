@@ -411,7 +411,8 @@
   {
     "package": "./internal/library/fileio",
     "tests": [
-      "TestGraphQLSharedToolRejectsUnissuedBearer"
+      "TestGraphQLSharedToolRejectsUnissuedBearer",
+      "TestGraphQLRenameTargetValidatedBeforeDispatch"
     ]
   },
   {
@@ -540,7 +541,18 @@
       "TestIndexMarkdownEmptyHeadingKeepsTreeValid",
       "TestGoldmarkWorkBoundsRouteBeforeParsing",
       "TestExtractHeadersMatchesFullGoldmarkParse",
-      "TestPageIndexMoveStateDocIDAllocation"
+      "TestPageIndexMoveStateDocIDAllocation",
+      "TestPageIndexRenameIdentityFollowsCatalog",
+      "TestPageIndexRenameDuringPublication",
+      "TestPageIndexRenameRejectsStaleTreeAndDropsNonIndexableState",
+      "TestPageIndexLegacyAtomicSystemFSStillRenamesAtomically"
+    ]
+  },
+  {
+    "package": "./internal/mcp/files",
+    "tests": [
+      "TestRenameOverwritePreservesReplacementSearch",
+      "TestRenameOptOutNeverPublishesRAG"
     ]
   }
 ]

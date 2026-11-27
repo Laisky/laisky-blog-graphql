@@ -112,7 +112,7 @@ func (s *Service) findActiveFile(ctx context.Context, apiKeyHash, project, path 
 	var file File
 	err := s.db.QueryRowContext(ctx,
 		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at,
-			content_hash, summary_content_hash, summary_status, summary_generation_key, incarnation_id || ':' || CAST(revision AS TEXT)
+			skip_rag_index, content_hash, summary_content_hash, summary_status, summary_generation_key, incarnation_id || ':' || CAST(revision AS TEXT)
 			FROM mcp_files
 			WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?
 			LIMIT 1`, s.isPostgres),
@@ -120,7 +120,7 @@ func (s *Service) findActiveFile(ctx context.Context, apiKeyHash, project, path 
 	).Scan(
 		&file.ID, &file.APIKeyHash, &file.Project, &file.Path, &file.Content,
 		&file.Size, &file.CreatedAt, &file.UpdatedAt, &file.Deleted, &file.DeletedAt,
-		&file.ContentHash, &file.SummaryContentHash, &file.SummaryStatus, &file.SummaryGenerationKey, &file.Version,
+		&file.SkipRAGIndex, &file.ContentHash, &file.SummaryContentHash, &file.SummaryStatus, &file.SummaryGenerationKey, &file.Version,
 	)
 	if err != nil {
 		return nil, err

@@ -28,8 +28,13 @@ type AtomicSystemFS interface {
 	PublishPluginSummaryAndState(ctx context.Context, auth AuthContext, project, systemProject, path string, in PluginSummaryInput, mutate SystemStateMutator) (bool, error)
 	DeleteWithState(ctx context.Context, auth AuthContext, project, systemProject, path string, recursive bool, mutate SystemStateMutator) (DeleteResult, error)
 	RenameWithState(ctx context.Context, auth AuthContext, project, systemProject, fromPath, toPath string, overwrite bool, mutate SystemStateMutator) (RenameResult, error)
-	RenameAcrossProjectsWithState(ctx context.Context, auth AuthContext, project, systemProject, fromPath, targetProject, targetSystemProject, toPath string,
-		overwrite bool, mutate SystemStateMoveMutator) (RenameResult, error)
+}
+
+// AtomicMappedRenameSystemFS optionally supports transactional mapped renames,
+// including moves across projects, without changing AtomicSystemFS.
+type AtomicMappedRenameSystemFS interface {
+	RenameMappedWithState(ctx context.Context, auth AuthContext, project, systemProject, fromPath, targetProject, targetSystemProject, toPath string,
+		overwrite bool, plan SystemStateMovePlan) (RenameResult, error)
 }
 
 // systemFS is the concrete implementation. The owner string is captured at
@@ -137,13 +142,13 @@ func (s *systemFS) RenameWithState(ctx context.Context, auth AuthContext, projec
 	return result, nil
 }
 
-// RenameAcrossProjectsWithState atomically moves user files into another project
-// and moves the owner's system state between the two projects' namespaces.
-func (s *systemFS) RenameAcrossProjectsWithState(ctx context.Context, auth AuthContext, project, systemProject, fromPath, targetProject, targetSystemProject, toPath string,
-	overwrite bool, mutate SystemStateMoveMutator,
+// RenameMappedWithState updates user files and the owner's corresponding
+// system state atomically, including across projects.
+func (s *systemFS) RenameMappedWithState(ctx context.Context, auth AuthContext, project, systemProject, fromPath, targetProject, targetSystemProject, toPath string,
+	overwrite bool, plan SystemStateMovePlan,
 ) (RenameResult, error) {
 	ctx = contextWithSystemOwner(ctx, s.owner)
-	result, err := s.svc.RenameAcrossProjectsWithSystemState(ctx, auth, project, systemProject, fromPath, targetProject, targetSystemProject, toPath, overwrite, mutate)
+	result, err := s.svc.RenameMappedWithSystemState(ctx, auth, project, systemProject, fromPath, targetProject, targetSystemProject, toPath, overwrite, plan)
 	if err != nil {
 		return RenameResult{}, errors.WithStack(err)
 	}

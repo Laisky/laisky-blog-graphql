@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -13,7 +14,7 @@ import (
 
 // newCrossProjectPlugin starts a PageIndex plugin over a real SQLite service
 // and the production transactional system handle.
-func newCrossProjectPlugin(t *testing.T) (*sql.DB, *files.Service, *Plugin) {
+func newCrossProjectPlugin(t testing.TB, llms ...LLM) (*sql.DB, *files.Service, *Plugin) {
 	t.Helper()
 	db, service := newPersistenceTestService(t)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
@@ -22,7 +23,13 @@ func newCrossProjectPlugin(t *testing.T) (*sql.DB, *files.Service, *Plugin) {
 	require.NoError(t, err)
 	systemFS, err := service.SystemNamespace(SysOwner)
 	require.NoError(t, err)
-	plugin, err := New(PluginDeps{UserFS: service, SystemFS: systemFS, Settings: settings, LLM: NewStubLLM(), Tokenizer: tokenizer})
+	var llm LLM = NewStubLLM()
+	if len(llms) != 0 {
+		llm = llms[0]
+		settings.Algo.GenerateNodeSummary = true
+		settings.Indexer.TimeoutIndex = 10 * time.Second
+	}
+	plugin, err := New(PluginDeps{UserFS: service, SystemFS: systemFS, Settings: settings, LLM: llm, Tokenizer: tokenizer})
 	require.NoError(t, err)
 	require.NoError(t, plugin.Start(context.Background()))
 	t.Cleanup(func() { require.NoError(t, plugin.Stop(context.Background())) })
@@ -154,7 +161,7 @@ func TestPageIndexMoveStateDocIDAllocation(t *testing.T) {
 	targetDocID := func(userPath string) string { return docIDFromAuth(auth, "beta", userPath) }
 	preferred := targetDocID("/x.md")
 	tree := func(docID string) []byte {
-		body, err := json.Marshal(&Tree{DocID: docID, Type: KindMarkdown})
+		body, err := json.Marshal(&Tree{DocID: docID, Type: KindMarkdown, SourceContentHash: "fixture-hash"})
 		require.NoError(t, err)
 		return body
 	}
@@ -169,16 +176,19 @@ func TestPageIndexMoveStateDocIDAllocation(t *testing.T) {
 		return index
 	}
 
+	change := files.RenameStateChange{Mappings: []files.RenameMapping{
+		{OldPath: "/a.md", NewPath: "/x.md", ContentHash: "fixture-hash", SkipRAGIndex: true},
+	}}
 	t.Run("preferred doc_id taken falls back to the original", func(t *testing.T) {
 		source := map[string][]byte{
-			indexPath():      catalog(Index{"/a.md": {DocID: "orig"}, "/shared.md": {DocID: "orig"}}),
+			indexPath():      catalog(Index{"/a.md": {DocID: "orig", SourceContentHash: "fixture-hash"}, "/shared.md": {DocID: "orig", SourceContentHash: "fixture-hash"}}),
 			treePath("orig"): tree("orig"),
 		}
 		target := map[string][]byte{
 			indexPath():         catalog(Index{"/other.md": {DocID: preferred}}),
 			treePath(preferred): tree(preferred),
 		}
-		require.NoError(t, pageIndexMoveState("/a.md", "/x.md", false, targetDocID)(source, target))
+		require.NoError(t, pageIndexMappedMoveState(targetDocID)(change, source, target))
 		targetIndex := decode(target)
 		require.Equal(t, "orig", targetIndex["/x.md"].DocID)
 		require.Equal(t, preferred, targetIndex["/other.md"].DocID)
@@ -189,9 +199,9 @@ func TestPageIndexMoveStateDocIDAllocation(t *testing.T) {
 	})
 
 	t.Run("both candidates taken uses a salted doc_id", func(t *testing.T) {
-		source := map[string][]byte{indexPath(): catalog(Index{"/a.md": {DocID: "orig"}}), treePath("orig"): tree("orig")}
-		target := map[string][]byte{indexPath(): catalog(Index{"/one.md": {DocID: preferred}, "/two.md": {DocID: "orig"}})}
-		require.NoError(t, pageIndexMoveState("/a.md", "/x.md", false, targetDocID)(source, target))
+		source := map[string][]byte{indexPath(): catalog(Index{"/a.md": {DocID: "orig", SourceContentHash: "fixture-hash"}}), treePath("orig"): tree("orig")}
+		target := map[string][]byte{indexPath(): catalog(Index{"/one.md": {DocID: preferred}, "/two.md": {DocID: "orig", SourceContentHash: "fixture-hash"}})}
+		require.NoError(t, pageIndexMappedMoveState(targetDocID)(change, source, target))
 		docID := decode(target)["/x.md"].DocID
 		require.NotContains(t, []string{preferred, "orig"}, docID)
 		var moved Tree
@@ -203,7 +213,7 @@ func TestPageIndexMoveStateDocIDAllocation(t *testing.T) {
 	t.Run("nothing indexed leaves both namespaces untouched", func(t *testing.T) {
 		source := map[string][]byte{}
 		target := map[string][]byte{}
-		require.NoError(t, pageIndexMoveState("/a.txt", "/a.txt", true, targetDocID)(source, target))
+		require.NoError(t, pageIndexMappedMoveState(targetDocID)(files.RenameStateChange{Mappings: []files.RenameMapping{{OldPath: "/a.txt", NewPath: "/a.txt"}}}, source, target))
 		require.Empty(t, source)
 		require.Empty(t, target)
 	})

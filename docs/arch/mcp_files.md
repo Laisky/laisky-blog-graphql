@@ -560,9 +560,12 @@ Cross-project move (`target_project` set and different from `project`):
   `MultiProjectLockProvider.WithProjectsLock`; a lock provider without it refuses the move.
 - memory plugins expose the move through the optional `CrossProjectRenamer` capability. `rag` delegates to the
   service above. `pageindex` moves catalog entries and trees from the source tenant namespace to the target one in
-  the same transaction, re-keying each tree to the target path's `doc_id` unless a remaining target entry already
-  uses it. A backend without the capability, or `pageindex` without transactional catalog storage, returns
-  `INVALID_ARGUMENT` instead of renaming within `project`.
+  the same transaction, using the exact FileIO move and replacement paths. It reads both catalogs but only the
+  affected tree bodies. Writes, refreshes and moves reserve an identity not used by another catalog entry.
+  An indexable destination requires a current tree; otherwise the move rolls back with retryable `RESOURCE_BUSY`.
+  An extension change into a different indexable format is rejected; a non-indexable destination can move without
+  a tree and drops obsolete catalog state. A backend without the capability, or `pageindex` without
+  transactional catalog storage, returns `INVALID_ARGUMENT` instead of renaming within `project`.
 
 Path remap rule:
 
@@ -579,11 +582,11 @@ Execution outline:
    - exact file match at `from_path`, or
    - descendant files under `from_path + "/%"`, else `NOT_FOUND`.
 6. validate destination constraints and collision policy.
-7. apply transactional path remap update on `mcp_files` with `updated_at=now`.
-8. if overwrite-replace applies, soft-delete the replaced destination file first.
-9. enqueue outbox jobs per moved file:
-   - `DELETE` for `old_path` in `project`
-   - `UPSERT` for `new_path` in `target_project` (equal to `project` for an ordinary rename)
+7. if overwrite-replace applies, soft-delete the replaced destination file first.
+8. apply transactional path remap update on `mcp_files` with `updated_at=now`.
+9. enqueue a `DELETE` for `old_path`. For a RAG-indexed destination, queue one `UPSERT` that replaces
+   old chunks. For an opted-out destination, clear obsolete RAG chunks in the move transaction without
+   queueing model work. A delayed cleanup never removes chunks from an active RAG generation.
 10. commit and return `moved_count`.
 
 ### 9.6 `file_list(project, path="", depth=1, limit=256)`

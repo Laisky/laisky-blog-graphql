@@ -106,7 +106,7 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 			in.OnCandidate(cand.userPath, cand.entry)
 		}
 		tree, err := s.store.GetTree(ctx, in.Project, cand.entry.DocID)
-		if err != nil {
+		if err != nil || tree.SourceContentHash != cand.entry.SourceContentHash {
 			continue
 		}
 		// Tree.DocDescription is the authoritative public summary for this document.

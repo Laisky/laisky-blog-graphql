@@ -114,12 +114,13 @@ func (r *MutationResolver) FileRename(ctx context.Context, project, fromPath, to
 	if err := files.ValidatePath(toPath); err != nil {
 		return nil, graphQLError(err, "validate destination path")
 	}
-	destinationProject := project
-	if targetProject != nil && *targetProject != "" {
-		if err := files.ValidateTargetProject(*targetProject); err != nil {
-			return nil, graphQLError(err, "validate target project")
-		}
-		destinationProject = *targetProject
+	target := ""
+	if targetProject != nil {
+		target = *targetProject
+	}
+	destinationProject, err := files.NormalizeRenameTargetProject(project, target)
+	if err != nil {
+		return nil, graphQLError(err, "validate target project")
 	}
 	conditions, err := preconditions(&expectedVersion, nil)
 	if err != nil {

@@ -212,29 +212,44 @@ func (s *Service) RenameWithSystemState(
 	}
 	userCtx := contextWithSystemOwner(ctx, "")
 	req := renameRequest{project: project, fromPath: fromPath, targetProject: project, toPath: toPath, overwrite: overwrite}
-	return s.rename(userCtx, auth, req, func(ctx context.Context, tx *sql.Tx) error {
+	return s.rename(userCtx, auth, req, func(ctx context.Context, tx *sql.Tx, _ RenameStateChange) error {
 		return s.mutateRenameSystemStateTx(ctx, tx, systemProject, owner, mutate)
 	})
 }
 
-// SystemStateMoveMutator moves entries between the source and target namespaces
-// of one system owner. Both maps are loaded and persisted inside the caller's
-// cross-project rename transaction.
-type SystemStateMoveMutator func(source, target map[string][]byte) error
+// RenameStateChange describes the exact file movements and displaced live
+// paths observed by the transaction. System-state changes must use these paths.
+type RenameStateChange struct {
+	Mappings         []RenameMapping
+	OverwrittenPaths []string
+}
 
-// RenameAcrossProjectsWithSystemState moves user files from project into
-// targetProject and lets mutate move the owner's state from systemProject to
-// targetSystemProject, all in one transaction that holds both project locks.
-func (s *Service) RenameAcrossProjectsWithSystemState(
+// SystemStateMoveMutator updates the source and target state in the rename
+// transaction. A nil target means a same-namespace rename. Existing byte
+// slices are read-only; replace map values rather than mutating them in place.
+type SystemStateMoveMutator func(change RenameStateChange, source, target map[string][]byte) error
+
+// SystemStateMovePlan bounds the read set for one plugin move. CatalogPaths
+// are loaded from each namespace first. AffectedPaths selects the additional
+// data needed for the exact FileIO changes, without reading unrelated bodies.
+type SystemStateMovePlan struct {
+	CatalogPaths  []string
+	AffectedPaths func(change RenameStateChange, sourceCatalog, targetCatalog map[string][]byte) (source, target []string, err error)
+	Mutate        SystemStateMoveMutator
+}
+
+// RenameMappedWithSystemState applies the file move and the corresponding
+// state change under the participating project locks, in one transaction.
+func (s *Service) RenameMappedWithSystemState(
 	ctx context.Context,
 	auth AuthContext,
 	project, systemProject, fromPath string,
 	targetProject, targetSystemProject, toPath string,
 	overwrite bool,
-	mutate SystemStateMoveMutator,
+	plan SystemStateMovePlan,
 ) (RenameResult, error) {
-	if mutate == nil {
-		return RenameResult{}, errors.New("system state mutator is nil")
+	if plan.Mutate == nil || plan.AffectedPaths == nil {
+		return RenameResult{}, errors.New("system state move plan is incomplete")
 	}
 	owner := systemOwnerFromContext(ctx)
 	if owner == "" {
@@ -246,13 +261,13 @@ func (s *Service) RenameAcrossProjectsWithSystemState(
 	if err := ValidateProject(targetSystemProject); err != nil {
 		return RenameResult{}, errors.WithStack(err)
 	}
-	if project == targetProject || systemProject == targetSystemProject {
-		return RenameResult{}, errors.New("cross-project rename requires distinct projects and system namespaces")
+	if (project == targetProject) != (systemProject == targetSystemProject) {
+		return RenameResult{}, errors.New("project and system namespace move scopes must agree")
 	}
 	userCtx := contextWithSystemOwner(ctx, "")
 	req := renameRequest{project: project, fromPath: fromPath, targetProject: targetProject, toPath: toPath, overwrite: overwrite}
-	return s.rename(userCtx, auth, req, func(ctx context.Context, tx *sql.Tx) error {
-		return s.mutateMoveSystemStateTx(ctx, tx, owner, systemProject, targetSystemProject, mutate)
+	return s.rename(userCtx, auth, req, func(ctx context.Context, tx *sql.Tx, change RenameStateChange) error {
+		return s.mutateMoveSystemStateTx(ctx, tx, owner, systemProject, targetSystemProject, change, plan)
 	})
 }
 
@@ -267,30 +282,52 @@ func (s *Service) activeContentHashTx(ctx context.Context, tx *sql.Tx, apiKeyHas
 	return hash, err
 }
 
+// loadSystemStateTx loads one namespace for ordinary plugin state mutations.
 func (s *Service) loadSystemStateTx(ctx context.Context, tx *sql.Tx, owner, project string) (map[string][]byte, error) {
-	rows, err := tx.QueryContext(ctx,
-		rebindSQL(`SELECT path, content FROM mcp_files WHERE apikey_hash = ? AND project = ? AND system_owner = ? AND deleted = FALSE`, s.isPostgres),
-		"system:"+owner,
-		project,
-		owner,
-	)
+	state := make(map[string][]byte)
+	err := s.readSystemStateTx(ctx, tx, owner, project, nil, state)
+	return state, err
+}
+
+// readSelectedSystemStateTx reads only the named entries, in bounded batches
+// so directory moves cannot hit the database's bind-parameter ceiling.
+func (s *Service) readSelectedSystemStateTx(ctx context.Context, tx *sql.Tx, owner, project string, paths []string, state map[string][]byte) error {
+	for len(paths) > 0 {
+		n := min(len(paths), 200)
+		if err := s.readSystemStateTx(ctx, tx, owner, project, paths[:n], state); err != nil {
+			return err
+		}
+		paths = paths[n:]
+	}
+	return nil
+}
+
+// readSystemStateTx adds matching entries to state. A nil selection reads all rows.
+func (s *Service) readSystemStateTx(ctx context.Context, tx *sql.Tx, owner, project string, paths []string, state map[string][]byte) error {
+	query := rebindSQL(`SELECT path, content FROM mcp_files WHERE apikey_hash = ? AND project = ? AND system_owner = ? AND deleted = FALSE`, s.isPostgres)
+	args := []any{"system:" + owner, project, owner}
+	if len(paths) > 0 {
+		clause, extra := buildInClause(paths, s.isPostgres, len(args)+1)
+		query += " AND path IN (" + clause + ")"
+		args = append(args, extra...)
+	}
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, errors.Wrap(err, "load system state")
+		return errors.Wrap(err, "load system state")
 	}
 	defer func() { _ = rows.Close() }()
-	state := make(map[string][]byte)
 	for rows.Next() {
 		var path string
 		var content []byte
 		if err := rows.Scan(&path, &content); err != nil {
-			return nil, errors.Wrap(err, "scan system state")
+			return errors.Wrap(err, "scan system state")
 		}
-		state[path] = append([]byte(nil), content...)
+		state[path] = content
 	}
 	if err := rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "iterate system state")
+		return errors.Wrap(err, "iterate system state")
 	}
-	return state, nil
+	return nil
 }
 
 func (s *Service) persistSystemStateTx(ctx context.Context, tx *sql.Tx, owner, project string, state map[string][]byte) error {
@@ -301,6 +338,11 @@ func (s *Service) persistSystemStateTx(ctx context.Context, tx *sql.Tx, owner, p
 	if err != nil {
 		return err
 	}
+	return s.persistSystemStateDiffTx(ctx, tx, owner, project, current, state)
+}
+
+// persistSystemStateDiffTx persists changes against a snapshot taken in this transaction.
+func (s *Service) persistSystemStateDiffTx(ctx context.Context, tx *sql.Tx, owner, project string, current, state map[string][]byte) error {
 	now := s.clock()
 	for path := range current {
 		if _, ok := state[path]; ok {

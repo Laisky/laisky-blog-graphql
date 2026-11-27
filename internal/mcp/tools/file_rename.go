@@ -102,8 +102,5 @@ func readTargetProjectArg(req mcp.CallToolRequest, project string) (string, erro
 	if !ok {
 		return "", files.NewError(files.ErrCodeInvalidArgument, targetProjectKey+" must be a string project namespace", false)
 	}
-	if value == "" {
-		return project, nil
-	}
-	return value, nil
+	return files.NormalizeRenameTargetProject(project, value)
 }

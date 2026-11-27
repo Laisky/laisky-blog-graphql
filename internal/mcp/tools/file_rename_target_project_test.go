@@ -113,6 +113,20 @@ func TestFileRenameTargetProjectRouting(t *testing.T) {
 		require.Empty(t, svc.lastToPath, "the move must not fall back to a same-project rename")
 	})
 
+	for _, invalid := range []string{"*", "bad project", "bad/project"} {
+		t.Run("invalid target "+invalid, func(t *testing.T) {
+			svc := &crossProjectFileService{behaviorFileService: &behaviorFileService{}}
+			tool, err := NewFileRenameTool(svc)
+			require.NoError(t, err)
+			result, err := tool.Handle(ctx, renameRequest(map[string]any{targetProjectKey: invalid}))
+			require.NoError(t, err)
+			require.True(t, result.IsError)
+			require.Equal(t, string(files.ErrCodeInvalidPath), behaviorJSONContent(t, result)["code"])
+			require.Zero(t, svc.moves)
+			require.Empty(t, svc.lastToPath)
+		})
+	}
+
 	t.Run("a backend without the capability refuses instead of renaming in place", func(t *testing.T) {
 		svc := &behaviorFileService{renameResult: files.RenameResult{MovedCount: 1}}
 		tool, err := NewFileRenameTool(svc)
