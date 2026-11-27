@@ -155,3 +155,20 @@ func TestPurgeExpiredCredentialsIsBoundedAndThrottled(t *testing.T) {
 	_, err := svc.credentials.Get(ctx, "live")
 	require.NoError(t, err, "a live envelope survives every sweep")
 }
+
+// TestCredentialKeyFitsTheLongestReference verifies the envelope of the
+// longest valid project and path is still storable, so no valid mutation can
+// fail on its key.
+func TestCredentialKeyFitsTheLongestReference(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	svc := newTestService(t, settings, nil)
+	path := "/" + strings.Repeat("p", 511)
+	project := strings.Repeat("j", 128)
+	require.NoError(t, ValidatePath(path))
+	require.NoError(t, ValidateProject(project))
+	ref := CredentialReference{APIKeyHash: strings.Repeat("f", 64), Project: project, Path: path, UpdatedAt: time.Now().UTC()}
+	require.NoError(t, svc.credentials.SetWithTTL(context.Background(), ref.credentialKey(), "envelope", time.Minute))
+	require.Equal(t, 1, credentialEnvelopeCount(t, svc))
+}

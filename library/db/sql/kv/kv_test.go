@@ -172,9 +172,11 @@ func TestOpenRunsNoDDL(t *testing.T) {
 func TestKeyAndTTLValidation(t *testing.T) {
 	kvInstance, _ := setupTestKv(t)
 	ctx := context.Background()
-	require.NoError(t, kvInstance.SetWithTTL(ctx, strings.Repeat("a", 128), "v", time.Minute))
-	require.Error(t, kvInstance.SetWithTTL(ctx, strings.Repeat("a", 129), "v", time.Minute))
+	require.NoError(t, kvInstance.SetWithTTL(ctx, strings.Repeat("a", 1024), "v", time.Minute))
+	require.NoError(t, kvInstance.SetWithTTL(ctx, "ns|tenant-1|proj.a|/dir_a/b.md|1764201600000000000", "v", time.Minute))
+	require.Error(t, kvInstance.SetWithTTL(ctx, strings.Repeat("a", 1025), "v", time.Minute))
 	require.Error(t, kvInstance.SetWithTTL(ctx, "has:colon", "v", time.Minute))
+	require.Error(t, kvInstance.SetWithTTL(ctx, "has space", "v", time.Minute))
 	require.Error(t, kvInstance.SetWithTTL(ctx, "k", "v", 0))
 	require.Error(t, kvInstance.SetWithTTL(ctx, "k", "v", maxTTL+time.Second))
 	require.Error(t, kvInstance.SetWithExpireAt(ctx, "k", "v", time.Now().Add(-time.Second)))

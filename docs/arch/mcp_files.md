@@ -980,8 +980,8 @@ For async index workers:
 
 - never persist user raw API keys in plaintext storage.
 - store a credential envelope in the FileIO database's `kv` table (`library/db/sql/kv`) with short TTL (for
-  example 300s), keyed by `mcp_files_credential_` plus the SHA-256 of the job reference AAD
-  (`apikey_hash|project|path|file_updated_at_unix_nano`). FileIO and RAG need no Redis.
+  example 300s), keyed by `mcp_files_credential|` plus the job reference AAD
+  (`apikey_hash|project|path|file_updated_at_unix_nano`); the key holds no secret. FileIO and RAG need no Redis.
 - write the envelope on the mutation's transaction, after its index job, so it commits or rolls back with the file
   rows and the outbox. A write or rename that opted out of RAG indexing stores none.
 - envelope must contain encrypted data only (`kek_id`, `dek_id`, `ciphertext`); `expire_at` is a column. The

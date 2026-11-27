@@ -2,9 +2,7 @@ package files
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
@@ -14,7 +12,7 @@ import (
 )
 
 // envelopeKeyPrefix namespaces FileIO envelopes in the shared kv table.
-const envelopeKeyPrefix = "mcp_files_credential_"
+const envelopeKeyPrefix = "mcp_files_credential|"
 
 // credentialPurgeBatch bounds the rows one expiration sweep deletes.
 const credentialPurgeBatch = 500
@@ -33,12 +31,12 @@ func openCredentialEnvelopes(db *sql.DB, clock func() time.Time) (*kv.Kv, error)
 	return store, nil
 }
 
-// credentialKey returns the kv key of the envelope: a digest of the tenant,
-// project, path and generation time. The envelope's AAD binds the same fields,
-// so an envelope copied under another reference never decrypts.
+// credentialKey returns the kv key of the envelope: the reference itself,
+// tenant hash, project, path and generation time, which are no secrets and are
+// stored the same way in the file tables. The envelope's AAD binds the same
+// fields, so an envelope copied under another reference never decrypts.
 func (c CredentialReference) credentialKey() string {
-	sum := sha256.Sum256(c.AAD())
-	return envelopeKeyPrefix + hex.EncodeToString(sum[:])
+	return envelopeKeyPrefix + string(c.AAD())
 }
 
 // storeCredentialEnvelopeTx encrypts the caller's key for the index worker and
