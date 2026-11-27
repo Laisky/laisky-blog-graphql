@@ -10,12 +10,11 @@ import (
 
 // ensureNoDescendantFile validates that the target path has no child files.
 func (s *Service) ensureNoDescendantFile(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) error {
-	owner := systemOwnerFromContext(ctx)
-	prefix := buildPathPrefix(path)
+	below, belowArgs := belowPathSQL("path", path)
 	var count int64
 	if err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash, project, prefix, owner,
+		rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND `+below, s.isPostgres),
+		append([]any{apiKeyHash, project, systemOwnerFromContext(ctx)}, belowArgs...)...,
 	).Scan(&count); err != nil {
 		return errors.Wrap(err, "check descendant files")
 	}
@@ -122,11 +121,10 @@ func (s *Service) resolveDeleteTargets(ctx context.Context, tx *sql.Tx, apiKeyHa
 
 // listDescendantPaths returns all active descendant file paths for a directory.
 func (s *Service) listDescendantPaths(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) ([]string, error) {
-	owner := systemOwnerFromContext(ctx)
-	prefix := buildPathPrefix(path)
+	below, belowArgs := belowPathSQL("path", path)
 	rows, err := tx.QueryContext(ctx,
-		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash, project, prefix, owner,
+		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND `+below, s.isPostgres),
+		append([]any{apiKeyHash, project, systemOwnerFromContext(ctx)}, belowArgs...)...,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "query descendant paths")

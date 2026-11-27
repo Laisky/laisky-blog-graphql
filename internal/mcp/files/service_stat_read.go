@@ -136,12 +136,11 @@ func (s *Service) directoryExists(ctx context.Context, apiKeyHash, project, path
 
 // findDirectoryUpdatedAt returns the latest update time for descendants, if any.
 func (s *Service) findDirectoryUpdatedAt(ctx context.Context, apiKeyHash, project, path string) (time.Time, bool, error) {
-	owner := systemOwnerFromContext(ctx)
-	prefix := buildPathPrefix(path)
+	below, belowArgs := belowPathSQL("path", path)
 	var rawValue any
 	err := s.db.QueryRowContext(ctx,
-		rebindSQL(`SELECT MAX(updated_at) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash, project, prefix, owner,
+		rebindSQL(`SELECT MAX(updated_at) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND `+below, s.isPostgres),
+		append([]any{apiKeyHash, project, systemOwnerFromContext(ctx)}, belowArgs...)...,
 	).Scan(&rawValue)
 	if err != nil {
 		return time.Time{}, false, errors.Wrap(err, "query directory updated_at")

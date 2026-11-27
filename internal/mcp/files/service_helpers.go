@@ -37,11 +37,3 @@ func belowPathSQL(col, path string) (string, []any) {
 	}
 	return prefixSQL(col, path+"/")
 }
-
-// buildPathPrefix returns the SQL LIKE prefix for descendants.
-func buildPathPrefix(path string) string {
-	if path == "" {
-		return "%"
-	}
-	return path + "/%"
-}
