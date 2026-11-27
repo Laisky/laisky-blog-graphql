@@ -490,10 +490,10 @@ for a file ancestor) and changes nothing. Within one project, a directory cannot
 file's new path must also be a valid path, including the 512-byte limit (`INVALID_PATH`). Moving a path onto itself
 in the same project is a no-op; the same path in another project is a real move.
 
-Under PageIndex, a rename never waits for indexing and never fails because of the search index. Any extension
-change is allowed, and the bytes are never converted. A document whose tree is current and keeps its format
-(`.md` or `.pdf`) stays searchable at its new path. Otherwise the move drops its PageIndex entry, and the next
-`file_write` indexes it again. This includes an unfinished, failed or stale index, or a format change.
+A rename never waits for indexing and never fails because of a search index. Any extension change the path
+rules allow is accepted (for example `.txt -> .md`, `.md -> .pdf` or `.md -> .txt`), and the bytes are never
+converted. RAG updates its index for the moved paths in the background, so allow a short delay before searching
+them. The PageIndex backend is disabled; see [MCP memory plugins](mcp_memory_plugins.md#6-pageindex-phase-2).
 
 #### Example A: rename one file
 

@@ -49,6 +49,10 @@ A storage-only handler without an explicit resolver is retained for standalone
 storage use/tests and still enforces conditions; the production web mount always
 supplies the resolver.
 
+Update 2026-11-27: PageIndex is disabled, so the production resolver never selects
+it; see [memory plugins §6](mcp_memory_plugins.md#6-pageindex-phase-2). The PageIndex
+statements in this entry describe the audited release.
+
 The deterministic PageIndex cross-entrypoint tests use `.txt` files to inspect
 `skip_rag_index` and the published complete-content summary hash without provider
 calls. They do not claim to validate long-document reasoning quality or zero-second

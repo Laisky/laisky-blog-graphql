@@ -15,7 +15,7 @@ import (
 // TestFileIOMCPPipeRetainsVersionConditions exercises the actual pipeline and
 // FileIO handlers. A pipeline is not an exception to the external CAS contract.
 func TestFileIOMCPPipeRetainsVersionConditions(t *testing.T) {
-	f := newEntrypointFixture(t, "sqlite", "rag")
+	f := newEntrypointFixture(t, "sqlite")
 	callRaceTool(t, f.toolCtx, f.writer, "file_write", map[string]any{
 		"project": "race", "path": "/piped.txt", "content": "base", "mode": "TRUNCATE", "create_only": true,
 	})

@@ -100,7 +100,8 @@
       "TestValidateStartupConfigRefusesUnsafeValidationBounds",
       "TestValidateStartupConfigChecksAuthorityURLsAndGateways",
       "TestStaleShadowSettingsNeitherWrapNorReplay",
-      "TestNewMCPFileManagerWarnsOnlyForEnabledShadow"
+      "TestNewMCPFileManagerIsSilentForOrdinaryConfig",
+      "TestNewMCPFileManagerIgnoresStalePageIndexConfig"
     ]
   },
   {
@@ -148,7 +149,8 @@
       "TestRequestBodyPolicyCountsUnarmedDeadlines",
       "TestRequestBodySettingsLoadMCPInflightBudget",
       "TestBalanceProxyBoundsTheKeyBeforeNormalizing",
-      "TestGraphQLFileRenameTargetProject"
+      "TestGraphQLFileRenameTargetProject",
+      "TestGraphQLPageIndexSelectionIsDisabled"
     ]
   },
   {
@@ -499,7 +501,9 @@
       "TestFileMutationAlternativesDeclareOnlyAcceptedArguments",
       "TestFileAuthFromContextRefusesUnverifiedIdentity",
       "TestFileRenameDefinitionAdvertisesOptionalTargetProject",
-      "TestFileRenameTargetProjectRouting"
+      "TestFileRenameTargetProjectRouting",
+      "TestFileToolsRefuseDisabledPageIndex",
+      "TestMemoryToolRefusesDisabledPageIndex"
     ]
   },
   {
@@ -542,14 +546,7 @@
       "TestIndexMarkdownStopsWhenCanceledMidParse",
       "TestIndexMarkdownEmptyHeadingKeepsTreeValid",
       "TestGoldmarkWorkBoundsRouteBeforeParsing",
-      "TestExtractHeadersMatchesFullGoldmarkParse",
-      "TestPageIndexRenameIdentityFollowsCatalog",
-      "TestPageIndexRenameCarriesCurrentTree",
-      "TestPageIndexRenameDropsUnusableDerivedState",
-      "TestPageIndexRenameLeavesMalformedCatalogUntouched",
-      "TestPageIndexRenameAllowsExtensionChanges",
-      "TestPageIndexRenameDuringPendingIndexing",
-      "TestPageIndexPathOwnsItsDerivedDocID"
+      "TestExtractHeadersMatchesFullGoldmarkParse"
     ]
   },
   {
@@ -557,11 +554,11 @@
     "tests": [
       "TestRenameOverwritePreservesReplacementSearch",
       "TestRenameOptOutNeverPublishesRAG",
-      "TestRenameWithStateHookSharesTheTransaction",
       "TestRenameWithPendingAndFailedRAGIndexing",
       "TestIndexWorkerDeletesCredentialAfterSuccess",
       "TestPurgeExpiredCredentialsIsBoundedAndThrottled",
-      "TestFileToolMutationsExecuteOnce"
+      "TestFileToolMutationsExecuteOnce",
+      "TestRenameExtensionChangesFollowFilesystemRules"
     ]
   },
   {
@@ -571,6 +568,12 @@
       "TestWithTxCommitsAndRollsBackWithTheTransaction",
       "TestDeleteExpiredIsBounded",
       "TestOpenRunsNoDDL"
+    ]
+  },
+  {
+    "package": "./internal/mcp/memory/plugin",
+    "tests": [
+      "TestManagerRefusesDisabledPageIndex"
     ]
   }
 ]

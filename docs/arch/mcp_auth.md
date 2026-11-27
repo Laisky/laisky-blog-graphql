@@ -82,7 +82,7 @@ one-api limits its `/api` group per client address (`GLOBAL_API_RATE_LIMIT`, def
 | Validation, revalidation | `GET /api/token/balance` | `UpstreamGate` (source → global, or the revalidation reserve) + ledger |
 | Balance proxy, `ValidateOneapiAPIKey` | `GET /api/token/balance` | `UpstreamGate` (source → global) + ledger |
 | Tool charges and zero-cost usage reports (MCP and GraphQL), ArweaveUpload, Telegram uploads | `POST /api/token/consume` | Recorded in the ledger; never refused locally, because the work already ran |
-| Embeddings, rerank, Responses (file index), memory heuristic, PageIndex LLM | `/v1/...` relay | Per token at one-api; not in the ledger |
+| Embeddings, rerank, Responses (file index), memory heuristic | `/v1/...` relay | Per token at one-api; not in the ledger |
 
 With the defaults the gate starts at most 266 calls per window, leaving at least 214 for consumes. When consumes need more, the gate yields: it starts no call once the ledger holds `oneapi_rate_limit` calls, so validation never pushes the process over one-api's limit.
 

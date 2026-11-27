@@ -52,28 +52,13 @@ func (r RenameRequest) crossProject() bool {
 	return r.Destination() != r.Project
 }
 
-// RenameStateChange describes the exact file movements and displaced live
-// paths of one rename transaction. Derived state must follow these paths.
-type RenameStateChange struct {
-	Mappings         []RenameMapping
-	OverwrittenPaths []string
-}
-
-// renameStateTx persists plugin-owned system state inside the rename transaction.
-type renameStateTx func(ctx context.Context, tx *sql.Tx, change RenameStateChange) error
-
 // Rename renames or moves a file path or directory subtree, within one project
 // or into another project of the same caller, in one transaction. File
 // identity, version history and summary metadata travel with the rows; moved
-// bytes must fit the destination project's quota.
+// bytes must fit the destination project's quota. It is the only rename
+// implementation and never depends on a search index: the RAG outbox
+// re-indexes the moved paths after commit.
 func (s *Service) Rename(ctx context.Context, auth AuthContext, req RenameRequest) (RenameResult, error) {
-	return s.rename(ctx, auth, req, nil)
-}
-
-// rename validates and applies one rename request. It is the only rename
-// implementation; mutateState, when non-nil, persists derived system state in
-// the same transaction after the user rows moved.
-func (s *Service) rename(ctx context.Context, auth AuthContext, req RenameRequest, mutateState renameStateTx) (RenameResult, error) {
 	req.TargetProject = req.Destination()
 	if err := s.validateRenameRequest(auth, req); err != nil {
 		return RenameResult{}, errors.WithStack(err)
@@ -92,17 +77,9 @@ func (s *Service) rename(ctx context.Context, auth AuthContext, req RenameReques
 		if samePath {
 			return nil
 		}
-		moved, err := s.applyRenameTx(ctx, tx, auth, req)
-		if err != nil {
-			return err
-		}
-		if mutateState != nil {
-			if err := mutateState(ctx, tx, moved); err != nil {
-				return err
-			}
-		}
-		movedCount = len(moved.Mappings)
-		return nil
+		var err error
+		movedCount, err = s.applyRenameTx(ctx, tx, auth, req)
+		return err
 	})
 	if err != nil {
 		return RenameResult{}, errors.WithStack(err)
@@ -145,16 +122,17 @@ type renameMove struct {
 }
 
 // applyRenameTx resolves the sources, validates the destination in the target
-// project and moves the rows. Every check runs before the first change, so a
-// rejected rename leaves rows, history and the index outbox untouched.
-func (s *Service) applyRenameTx(ctx context.Context, tx *sql.Tx, auth AuthContext, req RenameRequest) (RenameStateChange, error) {
+// project and moves the rows, returning how many files moved. Every check runs
+// before the first change, so a rejected rename leaves rows, history and the
+// index outbox untouched.
+func (s *Service) applyRenameTx(ctx context.Context, tx *sql.Tx, auth AuthContext, req RenameRequest) (int, error) {
 	sources, sourceIsDirectory, err := s.resolveRenameSources(ctx, tx, auth.APIKeyHash, req.Project, req.FromPath)
 	if err != nil {
-		return RenameStateChange{}, err
+		return 0, err
 	}
 	move, err := s.planRenameMoveTx(ctx, tx, auth.APIKeyHash, req, sources, sourceIsDirectory)
 	if err != nil {
-		return RenameStateChange{}, err
+		return 0, err
 	}
 	return s.applyRenameMoveTx(ctx, tx, auth, move)
 }
@@ -193,24 +171,25 @@ func (s *Service) planRenameMoveTx(ctx context.Context, tx *sql.Tx, apiKeyHash s
 
 // applyRenameMoveTx applies one planned move: it releases the overwritten
 // destination file, enforces the target quota of a cross-project move and
-// remaps the rows, their history and their index jobs.
-func (s *Service) applyRenameMoveTx(ctx context.Context, tx *sql.Tx, auth AuthContext, move renameMove) (RenameStateChange, error) {
+// remaps the rows, their history and their index jobs. It returns how many
+// files moved.
+func (s *Service) applyRenameMoveTx(ctx context.Context, tx *sql.Tx, auth AuthContext, move renameMove) (int, error) {
 	owner := systemOwnerFromContext(ctx)
 	now := s.clock()
 	if err := s.softDeleteRenameDestinationsTx(ctx, tx, auth, move.req.TargetProject, owner, move.overwritten, now); err != nil {
-		return RenameStateChange{}, err
+		return 0, err
 	}
 	if move.req.crossProject() {
 		// Overwritten destinations are already released, so the quota sees the
 		// target project exactly as it will be after the move commits.
 		if err := s.ensureProjectQuota(ctx, tx, auth.APIKeyHash, move.req.TargetProject, renameSourceBytes(move.sources), nil); err != nil {
-			return RenameStateChange{}, err
+			return 0, err
 		}
 	}
 	if err := s.applyRenameMappingsTx(ctx, tx, auth, move.req, owner, move.mappings, now); err != nil {
-		return RenameStateChange{}, err
+		return 0, err
 	}
-	return RenameStateChange{Mappings: move.mappings, OverwrittenPaths: move.overwritten}, nil
+	return len(move.mappings), nil
 }
 
 // ValidateTargetProject validates a rename destination project and names it in

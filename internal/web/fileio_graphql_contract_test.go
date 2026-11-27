@@ -341,8 +341,8 @@ func TestGraphQLFileIOSharedBehavior(t *testing.T) {
 		plugin := newRecordingPlugin()
 		resolver := newContractResolver(ResolverArgs{MCPFileService: plugin})
 		require.Empty(t, execute(t, resolver, true,
-			`query { FileRead(project:"p",path:"/a",plugin:PAGEINDEX) { content } }`).Errors)
-		require.Contains(t, plugin.plugins, mcpplugin.DefaultPluginPageIndex)
+			`query { FileRead(project:"p",path:"/a",plugin:RAG) { content } }`).Errors)
+		require.Contains(t, plugin.plugins, mcpplugin.DefaultPluginRAG)
 
 		require.Empty(t, execute(t, resolver, true,
 			`query { FileRead(project:"p",path:"/a") { content } }`).Errors)

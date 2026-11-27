@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
-	pageindex "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/pageindex"
 )
 
 // TestFileIOConditionalLifecycle guards destructive operations and token ABA
@@ -136,25 +135,6 @@ func TestFileIOConditionalLifecycle(t *testing.T) {
 					requireVersionConflict(t, err)
 				}
 				f.assertStored(t, "/a", "user")
-			})
-
-			t.Run("pageindex_adapter_preserves_conditional_write", func(t *testing.T) {
-				f := newRaceFixture(t, backend, nil)
-				fs, err := f.svc[0].SystemNamespace("pageindex")
-				require.NoError(t, err)
-				plugin, err := pageindex.New(pageindex.PluginDeps{UserFS: f.svc[0], SystemFS: fs})
-				require.NoError(t, err)
-				require.True(t, plugin.SupportsFileVersionPreconditions())
-				f.write(t, 0, "/plain.txt", "before", files.WriteModeTruncate, 0)
-				base := readRaceVersion(t, f, "/plain.txt")
-				ctx := conditionRace(t, f, "/plain.txt", files.FileOperationWrite, files.FilePreconditions{ExpectedVersion: base.Version})
-				// Non-long-document path uses deterministic summary publication, no LLM.
-				written, err := plugin.Write(ctx, f.auth, "race", "/plain.txt", "after", "utf-8", 0, files.WriteModeTruncate)
-				require.NoError(t, err)
-				require.Equal(t, written.Version, readRaceVersion(t, f, "/plain.txt").Version)
-				_, err = plugin.Write(ctx, f.auth, "race", "/plain.txt", "stale", "utf-8", 0, files.WriteModeTruncate)
-				requireVersionConflict(t, err)
-				f.assertStored(t, "/plain.txt", "after")
 			})
 		})
 	}

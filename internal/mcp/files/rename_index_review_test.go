@@ -88,6 +88,56 @@ func TestRenameOptOutNeverPublishesRAG(t *testing.T) {
 	}
 }
 
+// TestRenameWithPendingAndFailedRAGIndexing verifies that RAG indexing state
+// never blocks a rename: a file whose index job is still pending and a file
+// whose job failed permanently both move, within a project and across
+// projects, including an extension change, and the outbox indexes them at the
+// new path while the old path keeps no searchable rows.
+func TestRenameWithPendingAndFailedRAGIndexing(t *testing.T) {
+	for _, target := range []string{"alpha", "archive"} {
+		t.Run(target, func(t *testing.T) {
+			svc, setClock := newSummaryTestService(t, &stubFileSummarizer{})
+			ctx := context.Background()
+			auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+			now := time.Date(2026, 11, 27, 2, 0, 0, 0, time.UTC)
+			setClock(now)
+			_, err := svc.Write(ctx, auth, "alpha", "/pending.txt", "quasar pending", "utf-8", 0, WriteModeTruncate)
+			require.NoError(t, err)
+			_, err = svc.Write(ctx, auth, "alpha", "/failed.md", "pulsar failed", "utf-8", 0, WriteModeTruncate)
+			require.NoError(t, err)
+			_, err = svc.db.ExecContext(ctx, rebindSQL(`UPDATE mcp_file_index_jobs SET status = 'failed', retry_count = 9
+				WHERE apikey_hash = ? AND project = ? AND file_path = ? AND system_owner = ''`, svc.isPostgres), auth.APIKeyHash, "alpha", "/failed.md")
+			require.NoError(t, err)
+
+			setClock(now.Add(time.Second))
+			for from, to := range map[string]string{"/pending.txt": "/moved/pending.md", "/failed.md": "/moved/failed.txt"} {
+				result, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: from, TargetProject: target, ToPath: to})
+				require.NoError(t, err, from)
+				require.Equal(t, 1, result.MovedCount)
+				requireCrossProjectMissing(t, svc, auth, "alpha", from)
+			}
+			requireCrossProjectContent(t, svc, auth, target, "/moved/pending.md", "quasar pending")
+			requireCrossProjectContent(t, svc, auth, target, "/moved/failed.txt", "pulsar failed")
+
+			worker := svc.NewIndexWorker()
+			require.NoError(t, worker.RunOnce(ctx))
+			requireIndexedRenameContent(t, svc, auth, target, "/moved/pending.md", "quasar pending")
+			requireIndexedRenameContent(t, svc, auth, target, "/moved/failed.txt", "pulsar failed")
+			for _, old := range []string{"/pending.txt", "/failed.md"} {
+				require.Zero(t, countCrossProjectRows(t, svc,
+					`SELECT COUNT(1) FROM mcp_file_chunks WHERE apikey_hash = ? AND project = ? AND file_path = ? AND system_owner = ''`,
+					auth.APIKeyHash, "alpha", old), old)
+			}
+			found, err := svc.Search(ctx, auth, target, "pulsar", "/moved", 10)
+			require.NoError(t, err)
+			require.NotEmpty(t, found.Chunks)
+			for _, chunk := range found.Chunks {
+				require.Contains(t, []string{"/moved/pending.md", "/moved/failed.txt"}, chunk.FilePath)
+			}
+		})
+	}
+}
+
 // requireIndexedRenameContent asserts persisted outbox output in addition to search,
 // which can otherwise fall back to reading an unindexed active file on demand.
 func requireIndexedRenameContent(t *testing.T, svc *Service, auth AuthContext, project, path, want string) {

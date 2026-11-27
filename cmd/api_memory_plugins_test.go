@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 
@@ -15,6 +14,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
+	ragplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
 )
 
 // callCountingPlugin records every operation that reaches it, in order.
@@ -92,16 +92,65 @@ func (p *callCountingPlugin) Search(context.Context, files.AuthContext, string, 
 	return files.SearchResult{}, nil
 }
 
+// newObservedLogger returns a logger whose entries the test can inspect.
+func newObservedLogger(t *testing.T) (logSDK.Logger, *observer.ObservedLogs) {
+	t.Helper()
+	core, observed := observer.New(zapcore.DebugLevel)
+	logger, err := logSDK.NewWithName("api", logSDK.LevelDebug, zap.WrapCore(func(zapcore.Core) zapcore.Core { return core }))
+	require.NoError(t, err)
+	return logger, observed
+}
+
+// TestNewMCPFileManagerIgnoresStalePageIndexConfig verifies that a formerly
+// configured PageIndex, with an API key and as the default plugin, passes
+// startup validation, registers only rag, routes the default to rag, refuses
+// an explicit pageindex selection and never logs the configured key.
+func TestNewMCPFileManagerIgnoresStalePageIndexConfig(t *testing.T) {
+	const secret = "sk-stale-pageindex-key"
+	get := newMapConfigGetter(map[string]any{"settings": map[string]any{"mcp": map[string]any{"tools": map[string]any{"memory": map[string]any{
+		"default_plugin": "PageIndex",
+		"plugins": map[string]any{"pageindex": map[string]any{
+			"llm":     map[string]any{"api_key": secret, "base_url": "https://llm.invalid/v1"},
+			"indexer": "corrupt",
+		}},
+	}}}}})
+	require.NoError(t, validateStartupConfigWithGetter(get), "a stale pageindex default must not fail startup")
+
+	rag, err := ragplugin.New(&files.Service{})
+	require.NoError(t, err)
+	logger, observed := newObservedLogger(t)
+	manager, err := newMCPFileManager(get, logger, "PageIndex", rag)
+	require.NoError(t, err)
+	require.Equal(t, mcpplugin.DefaultPluginRAG, manager.DefaultPlugin())
+	require.Equal(t, []string{mcpplugin.DefaultPluginRAG}, manager.AvailablePlugins())
+
+	require.Len(t, observed.FilterLevelExact(zapcore.WarnLevel).All(), 2)
+	for _, entry := range observed.All() {
+		require.NotContains(t, entry.Message, secret)
+		for _, field := range entry.Context {
+			require.NotContains(t, field.String, secret)
+		}
+	}
+
+	resolved, err := manager.Resolve(context.Background(), files.AuthContext{}, "demo", "")
+	require.NoError(t, err)
+	require.Same(t, rag, resolved)
+	_, err = manager.Resolve(context.Background(), files.AuthContext{}, "demo", mcpplugin.DefaultPluginPageIndex)
+	resolveErr, ok := mcpplugin.AsResolveError(err)
+	require.True(t, ok)
+	require.Equal(t, mcpplugin.PageIndexDisabledMessage, resolveErr.Error())
+	require.Equal(t, []string{mcpplugin.DefaultPluginRAG}, resolveErr.Available)
+}
+
 // TestStaleShadowSettingsNeitherWrapNorReplay verifies that a configuration
 // still carrying the removed settings.mcp.tools.memory.shadow.* block passes
 // startup validation, logs exactly one warning, and changes nothing else: the
-// manager routes to the registered plugins themselves, every operation runs
-// once on the selected plugin, the other plugin never receives a replay (not
-// even after Stop, which is where an asynchronous replay would have drained),
-// and no recorder file is created.
+// manager routes to rag itself, every operation runs once (also across Stop,
+// where an asynchronous replay would have drained), and no recorder file is
+// created.
 func TestStaleShadowSettingsNeitherWrapNorReplay(t *testing.T) {
 	recorderPath := filepath.Join(t.TempDir(), "shadow.jsonl")
-	stale := map[string]any{"settings": map[string]any{"mcp": map[string]any{"tools": map[string]any{"memory": map[string]any{
+	get := newMapConfigGetter(map[string]any{"settings": map[string]any{"mcp": map[string]any{"tools": map[string]any{"memory": map[string]any{
 		"default_plugin": "rag",
 		"shadow": map[string]any{
 			"enabled":       true,
@@ -112,34 +161,24 @@ func TestStaleShadowSettingsNeitherWrapNorReplay(t *testing.T) {
 			"op_timeout":    "not-a-duration",
 			"drain_grace":   -1,
 		},
-	}}}}}
-	get := newMapConfigGetter(stale)
+	}}}}})
 	require.NoError(t, validateStartupConfigWithGetter(get), "stale shadow keys must not fail startup")
 
-	core, observed := observer.New(zapcore.DebugLevel)
-	logger, err := logSDK.NewWithName("api", logSDK.LevelDebug, zap.WrapCore(func(zapcore.Core) zapcore.Core { return core }))
-	require.NoError(t, err)
-
+	logger, observed := newObservedLogger(t)
 	rag := &callCountingPlugin{name: mcpplugin.DefaultPluginRAG}
-	pageindex := &callCountingPlugin{name: mcpplugin.DefaultPluginPageIndex}
-	manager, err := newMCPFileManager(get, logger, mcpplugin.DefaultPluginRAG, rag, pageindex)
+	manager, err := newMCPFileManager(get, logger, mcpplugin.DefaultPluginRAG, rag)
 	require.NoError(t, err)
 
 	entries := observed.All()
 	require.Len(t, entries, 1, "the stale setting produces exactly one log entry")
 	require.Equal(t, zapcore.WarnLevel, entries[0].Level)
 	require.Contains(t, entries[0].Message, "shadow replay was removed")
-	require.Contains(t, entries[0].Message, "ignored")
 	require.Equal(t, removedShadowReplayEnabledKey, entries[0].ContextMap()["setting"])
 
 	ctx := context.Background()
 	resolved, err := manager.Resolve(ctx, files.AuthContext{}, "proj", "")
 	require.NoError(t, err)
-	require.Same(t, rag, resolved, "the default plugin is registered unwrapped")
-	resolved, err = manager.ForName(mcpplugin.DefaultPluginPageIndex)
-	require.NoError(t, err)
-	require.Same(t, pageindex, resolved, "the former shadow target is registered unwrapped")
-
+	require.Same(t, rag, resolved, "rag is registered unwrapped")
 	require.NoError(t, manager.StartAll(ctx))
 	_, err = manager.Write(ctx, files.AuthContext{}, "proj", "/a.md", "x", "utf-8", 0, files.WriteModeAppend)
 	require.NoError(t, err)
@@ -152,30 +191,25 @@ func TestStaleShadowSettingsNeitherWrapNorReplay(t *testing.T) {
 	require.NoError(t, manager.StopAll(ctx))
 
 	require.Equal(t, []string{"start", "write", "rename", "delete", "search", "stop"}, rag.recorded())
-	require.Equal(t, []string{"start", "stop"}, pageindex.recorded(), "no operation is replayed on another plugin")
 	require.NoFileExists(t, recorderPath, "no shadow recorder is opened")
-	require.Len(t, observed.All(), 1, "routing logs nothing about shadow replay")
+	require.Len(t, observed.All(), 1, "routing logs nothing more")
 }
 
-// TestNewMCPFileManagerWarnsOnlyForEnabledShadow verifies that an absent or
-// disabled shadow toggle registers the plugins silently.
-func TestNewMCPFileManagerWarnsOnlyForEnabledShadow(t *testing.T) {
+// TestNewMCPFileManagerIsSilentForOrdinaryConfig verifies an ordinary RAG
+// configuration, and an absent, disabled or malformed shadow toggle, register
+// rag silently with the configured default.
+func TestNewMCPFileManagerIsSilentForOrdinaryConfig(t *testing.T) {
 	for name, cfg := range map[string]map[string]any{
-		"absent":   {},
+		"absent":   {"settings": map[string]any{"mcp": map[string]any{}}},
 		"disabled": {"settings": map[string]any{"mcp": map[string]any{"tools": map[string]any{"memory": map[string]any{"shadow": map[string]any{"enabled": false}}}}}},
 		"invalid":  {"settings": map[string]any{"mcp": map[string]any{"tools": map[string]any{"memory": map[string]any{"shadow": map[string]any{"enabled": "maybe"}}}}}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			core, observed := observer.New(zapcore.DebugLevel)
-			logger, err := logSDK.NewWithName("api", logSDK.LevelDebug, zap.WrapCore(func(zapcore.Core) zapcore.Core { return core }))
-			require.NoError(t, err)
-			rag := &callCountingPlugin{name: mcpplugin.DefaultPluginRAG}
-			manager, err := newMCPFileManager(newMapConfigGetter(cfg), logger, "", rag)
+			logger, observed := newObservedLogger(t)
+			manager, err := newMCPFileManager(newMapConfigGetter(cfg), logger, "", &callCountingPlugin{name: mcpplugin.DefaultPluginRAG})
 			require.NoError(t, err)
 			require.Equal(t, mcpplugin.DefaultPluginRAG, manager.DefaultPlugin())
-			for _, entry := range observed.All() {
-				require.False(t, strings.Contains(entry.Message, "shadow"), entry.Message)
-			}
+			require.Zero(t, observed.Len())
 		})
 	}
 }

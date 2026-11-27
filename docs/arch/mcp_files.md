@@ -135,10 +135,11 @@ chunk. Key architecture points (full contract:
   `SUMMARY_REFRESH` job (states `pending|processing|waiting_auth|done|failed`) that
   upgrades the summary once an authenticated operation supplies a credential. A
   platform key is never substituted.
-- PageIndex maps `Tree.DocDescription` (bounded to the shared limits, derived for
-  Markdown, deterministic fallback otherwise) into every returned chunk and publishes
-  the same catalog metadata onto the user row through a content-hash-guarded publisher.
-  `Tree.SourceContentHash` and `IndexEntry.SourceContentHash` reject stale writers.
+- PageIndex is disabled (2026-11-27; see
+  [../manual/mcp_memory_plugins.md §6](../manual/mcp_memory_plugins.md#6-pageindex-phase-2)),
+  so the server runs no PageIndex summary producer and the transactional
+  `PublishPluginSummaryAndState` publisher was removed. The `pageindex` value of
+  `summary_source` remains for rows written by earlier releases.
 - Summary text is response metadata only: it is excluded from embeddings, lexical
   tokens, rerank input, and scoring, and is redacted from logs and call audits.
 
@@ -571,18 +572,12 @@ One rename implementation (`files.Service.Rename(ctx, auth, files.RenameRequest)
 cross-project moves; every memory plugin's `Rename` receives the same `RenameRequest`.
 
 - `rag` delegates to the service above.
-- `pageindex` calls the same rename through `AtomicSystemFS.RenameWithState`, which runs a derived-state hook
-  in the rename transaction with the exact moved and overwritten paths. The file move is authoritative and the
-  hook never calls a model; it fails only on storage errors:
-  - a catalog entry whose tree describes exactly the moved bytes, for a destination of the same indexable kind
-    (`.md` or `.pdf`), moves with the file and is re-keyed to the destination path's `doc_id`. It reads both
-    catalogs but only the affected tree bodies;
-  - every other entry of a moved or overwritten path (missing, stale or malformed tree, extension change) is
-    dropped and its unreferenced tree deleted. The file is indexed again by its next write;
-  - a path owns the `doc_id` derived from it, for writes and moves alike. An entry from a release that kept the
-    `doc_id` on rename, and still uses that `doc_id`, is dropped when the path is written or receives a move;
-  - a catalog that cannot be decoded, or that would exceed the file size limit, is left untouched;
-  - search validates every candidate against the live file bytes, so stale state never returns the old path.
+- A rename never depends on a search index. No derived-state hook runs in the rename transaction, and no
+  PageIndex catalog, tree, model or state work happens; the `AtomicSystemFS`/`RenameWithState`/`RenameStateHook`
+  APIs were removed when PageIndex was disabled (2026-11-27). Any extension change the path rules allow
+  (for example `.txt -> .md`, `.md -> .pdf`, `.md -> .txt`) is accepted, and the bytes are never converted.
+  RAG index jobs follow step 9 below. Stored `system_owner='pageindex'` rows are left in place.
+- The dormant `pageindex` package, kept for offline tooling only, forwards `Rename` to the same service call.
 
 Path remap rule:
 

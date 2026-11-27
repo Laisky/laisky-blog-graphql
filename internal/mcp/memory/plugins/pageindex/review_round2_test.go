@@ -102,9 +102,10 @@ func TestRefreshedTruncatedTreeSettlesOnDocumentLimit(t *testing.T) {
 	clock.Advance(2 * time.Hour)
 	_, err = h.plugin.Search(ctx, auth, "p", "topic", "", 5)
 	require.NoError(t, err)
+	// The summary row and the catalog entry are published one after the other.
 	require.Eventually(t, func() bool {
 		_, code := h.summaryStatus(t, auth, "p", "/doc.md")
-		return code == degradedDocumentLimit
+		return code == degradedDocumentLimit && h.entry(t, auth, "p", "/doc.md").Degraded == degradedDocumentLimit
 	}, 10*time.Second, 10*time.Millisecond, "the refreshed tree reports the permanent limit")
 	entry := h.entry(t, auth, "p", "/doc.md")
 	require.Equal(t, degradedDocumentLimit, entry.Degraded)

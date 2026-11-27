@@ -42,6 +42,9 @@ func NewManager(defaultPlugin string, plugins ...Plugin) (*Manager, error) {
 	if resolvedDefault == "" || resolvedDefault == DefaultPluginAuto {
 		resolvedDefault = DefaultPluginRAG
 	}
+	if resolvedDefault == DefaultPluginPageIndex {
+		return nil, errors.New(PageIndexDisabledMessage)
+	}
 
 	if _, exists := plugs[resolvedDefault]; !exists {
 		return nil, errors.Errorf("default plugin %q is not registered", resolvedDefault)
@@ -116,9 +119,15 @@ func (m *Manager) Resolve(ctx context.Context, _ files.AuthContext, _ string, ov
 		requested = m.defaultPlugin
 	}
 
-	item, exists := m.plugins[requested]
-	if !exists {
-		return nil, &ResolveError{Requested: requested, Available: m.AvailablePlugins()}
+	return m.lookup(requested)
+}
+
+// lookup returns the registered plugin named name. PageIndex is disabled, so
+// it is never routed to, even when a caller registered a plugin of that name.
+func (m *Manager) lookup(name string) (Plugin, error) {
+	item, exists := m.plugins[name]
+	if !exists || name == DefaultPluginPageIndex {
+		return nil, &ResolveError{Requested: name, Available: m.AvailablePlugins()}
 	}
 
 	return item, nil
@@ -130,12 +139,7 @@ func (m *Manager) ForName(name string) (Plugin, error) {
 		return nil, errors.New("plugin manager is nil")
 	}
 
-	item, exists := m.plugins[NormalizeName(name)]
-	if !exists {
-		return nil, &ResolveError{Requested: NormalizeName(name), Available: m.AvailablePlugins()}
-	}
-
-	return item, nil
+	return m.lookup(NormalizeName(name))
 }
 
 // StartAll starts every registered plugin in a deterministic order.

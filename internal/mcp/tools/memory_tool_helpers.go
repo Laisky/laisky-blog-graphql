@@ -189,13 +189,9 @@ func memoryToolErrorFromErr(err error) *mcp.CallToolResult {
 		return nil
 	}
 	if resolveErr, ok := mcpplugin.AsResolveError(err); ok {
-		message := resolveErr.Error()
-		if resolveErr.Requested == mcpplugin.DefaultPluginPageIndex && !containsString(resolveErr.Available, mcpplugin.DefaultPluginPageIndex) {
-			message = message + "; settings.mcp.tools.memory.plugins.pageindex.llm.api_key is required"
-		}
 		return memoryToolErrorResultWithExtras(
 			mcpmemory.ErrCodeInvalidArgument,
-			message,
+			resolveErr.Error(),
 			false,
 			map[string]any{"available_plugins": resolveErr.Available},
 		)

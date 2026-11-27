@@ -31,6 +31,13 @@ supersedes_on_acceptance:
 > responsibilities before the response-enforcement gate (`search.enforce_summary`) is
 > turned on.
 
+> **Status update (2026-11-27).** PageIndex is disabled; RAG is the supported memory
+> backend and the only live summary producer. The transactional PageIndex publisher of
+> §4.5 (`PublishPluginSummaryAndState`) was removed with the other PageIndex-only FileIO
+> state APIs, so FileIO mutations never depend on a search index. The PageIndex parts of
+> this proposal describe the dormant package only; see
+> [the memory plugin manual](../manual/mcp_memory_plugins.md#6-pageindex-phase-2).
+
 ## 1. Background
 
 ### 1.1 Current behavior

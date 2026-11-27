@@ -13,10 +13,15 @@ import (
 const (
 	// DefaultPluginAuto lets callers defer to the configured manager default.
 	DefaultPluginAuto = "auto"
-	// DefaultPluginRAG is the Phase-1 default plugin name.
+	// DefaultPluginRAG is the default and only supported memory backend.
 	DefaultPluginRAG = "rag"
-	// DefaultPluginPageIndex reserves the future long-doc engine name in schemas.
+	// DefaultPluginPageIndex names the disabled long-document engine. It stays in
+	// the MCP and GraphQL enums for wire compatibility only: the server never
+	// registers it, and selecting it fails with PageIndexDisabledMessage.
 	DefaultPluginPageIndex = "pageindex"
+	// PageIndexDisabledMessage is the user-facing error for an explicit
+	// pageindex selection.
+	PageIndexDisabledMessage = "pageindex plugin is disabled; rag is the supported memory backend"
 )
 
 // SearchMode describes the retrieval mode exposed by a plugin.
@@ -107,6 +112,9 @@ func (e *ResolveError) Error() string {
 
 	if e.Requested == "" {
 		return "plugin resolution failed"
+	}
+	if e.Requested == DefaultPluginPageIndex {
+		return PageIndexDisabledMessage
 	}
 
 	if len(e.Available) == 0 {

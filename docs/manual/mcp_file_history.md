@@ -52,8 +52,9 @@ revision, historical preimage and outbox updates. A failed precondition has no
 mutation side effects. Historical bytes are read outside a long-running plugin
 transaction; the final write, not that read, enforces the live version.
 
-A PageIndex processing error can occur after the file content commit; the existing
-plugin contract does not promise rollback of every post-write error. This change
+The plugin contract does not promise rollback of every post-write error. (PageIndex,
+which could fail after the file content commit, is disabled; see
+[memory plugins §6](mcp_memory_plugins.md#6-pageindex-phase-2).) This change
 does not add operation-ID deduplication or automatic retries. On an ambiguous
 error, inspect the live file before another explicit edit.
 

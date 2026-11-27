@@ -25,7 +25,8 @@ enum FileIOWriteMode {
 }
 
 # MemoryPlugin selects the per-call memory backend, matching the MCP `plugin`
-# argument. AUTO follows the server default.
+# argument. AUTO follows the server default (RAG). PAGEINDEX is disabled and
+# kept only for wire compatibility: selecting it returns INVALID_ARGUMENT.
 enum MemoryPlugin {
   AUTO
   RAG

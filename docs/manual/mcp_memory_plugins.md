@@ -15,12 +15,13 @@ additive optional field.
 
 Plugins shipped today:
 
-| Plugin      | Status                    | Engine                                                                           |
-| ----------- | ------------------------- | -------------------------------------------------------------------------------- |
-| `rag`       | Shipping (Phase 1)        | Existing Postgres + pgvector + BM25 + optional rerank stack                      |
-| `pageindex` | Shipping (Phase 2; gated) | Tree-reasoning indexer + Responses-API LLM + bbolt cache; gated on `llm.api_key` |
+| Plugin      | Status                                | Engine                                                                       |
+| ----------- | ------------------------------------- | ---------------------------------------------------------------------------- |
+| `rag`       | Shipping; default and only supported  | Existing Postgres + pgvector + BM25 + optional rerank stack                  |
+| `pageindex` | Disabled (maintainer decision, 2026-11-27) | Not built by the API server; the package is kept for offline tooling only |
 
-See [Section 6](#6-pageindex-phase-2) for pageindex bring-up.
+RAG is the default and only supported memory backend. See [Section 6](#6-pageindex-phase-2)
+for what a stale PageIndex configuration or an explicit `plugin="pageindex"` does.
 
 Background and the full design rationale live in
 [../proposals/mcp_memory_plugin_manager.md](../proposals/mcp_memory_plugin_manager.md).
@@ -33,10 +34,10 @@ The plugin manager reads `settings.mcp.tools.memory.*`.
 settings:
   mcp:
     memory:
-      default_plugin: 'rag' # "rag" today; "pageindex" reserved (Phase 2)
+      default_plugin: 'rag' # the only supported value; a stale "pageindex" resolves to "rag"
       plugins:
         rag: {} # all current settings.mcp.files.* re-rooted under here
-        # pageindex: see Section 6 — block is reserved, not used in Phase 1
+        # pageindex: ignored by the API server (Section 6)
 ```
 
 `settings.mcp.tools.memory.plugins.rag.*` carries the keys that previously lived under
@@ -84,8 +85,12 @@ If everyone needs to move, flip `default_plugin`.
 | omitted       | Identical to `"auto"`.                                                                                                 |
 | `"auto"`      | Resolve via `default_plugin`.                                                                                          |
 | `"rag"`       | Pin this single invocation to `rag_plugin`.                                                                            |
-| `"pageindex"` | Pin to `pageindex_plugin` (Phase 2; returns `FAILED_PRECONDITION` today if not enabled).                               |
+| `"pageindex"` | Disabled. `INVALID_ARGUMENT` with `pageindex plugin is disabled; rag is the supported memory backend` and `available_plugins` (e.g. `["rag"]`). |
 | unknown name  | `INVALID_ARGUMENT`; response includes `available_plugins=[...]` in `structuredContent` so the caller can self-correct. |
+
+The `pageindex` value stays in the MCP `plugin` enum (and in the GraphQL `MemoryPlugin`
+enum as `PAGEINDEX`) for wire compatibility only. The same applies to the `plugin`
+argument of the `memory_*` tools.
 
 ### 3.2 Cross-plugin reads
 
@@ -105,8 +110,8 @@ Regardless of the resolved plugin, every `file_search` hit returns a `file_summa
 concise, English, file-level overview (≤ 300 words / 2,048 bytes) bound to the same
 content generation as the matched chunk. `rag` publishes it through its asynchronous
 index worker (a just-written file may briefly return without one; a slow or missing
-summarizer yields a bounded deterministic fallback, never an empty field). `pageindex`
-returns its bounded `Tree.DocDescription`. The summary is display-only response
+summarizer yields a bounded deterministic fallback, never an empty field). PageIndex is
+disabled, so the live server runs no PageIndex summary producer. The summary is display-only response
 metadata and never changes ranking, and it is redacted from logs and call audits. See
 [`docs/proposals/file_search_file_summaries.md`](../proposals/file_search_file_summaries.md)
 for configuration (`...plugins.rag.index.file_summary.*`), readiness, and rollback.
@@ -146,8 +151,9 @@ row C05/R06 in [the proposal §5.1 / §5.2](../proposals/mcp_memory_plugin_manag
 
 ### 5.2 Switching the default
 
-1. Update `settings.mcp.tools.memory.default_plugin` to the new plugin name. Today only `"rag"`
-   is valid.
+1. Update `settings.mcp.tools.memory.default_plugin` to the new plugin name. Only `"rag"` is
+   supported. A stale `"pageindex"` passes config validation and does not fail startup: the
+   default resolves to `rag` and the server logs one startup WARN.
 2. Restart the server. The change is config-reload, no migration required.
 3. Replay the smoke script. Existing data written under the prior default remains pinned
    to that plugin and is reachable only with an explicit `plugin=<prior>` argument.
@@ -164,109 +170,50 @@ A1, A2, A3, A5, A9 cover Phase 1; the remainder track Phases 2–4.
 
 ## 6. Pageindex (Phase 2)
 
-`pageindex_plugin` ships in Phase 2. The runtime (indexer, Responses-API LLM client,
-tree search loop, bbolt response cache, and `SystemFS`-backed persistence) links into
-the existing binary; there is no new process or container. The plugin is gated on
-`llm.api_key`: the manager constructs and registers it only when the key is non-empty.
-With an empty key the plugin is silently skipped and a single debug log line is
-emitted at startup; explicit `plugin="pageindex"` calls then return `INVALID_ARGUMENT`
-with `available_plugins=[...]` and a hint that names the missing
-`settings.mcp.tools.memory.plugins.pageindex.llm.api_key` key (acceptance A10).
+**Status: disabled (maintainer decision, 2026-11-27).** RAG is the default and only
+supported memory backend. The API server never constructs, registers or starts
+`pageindex_plugin`, whatever `settings.mcp.tools.memory.plugins.pageindex.*` holds.
 
-### 6.1 Enabling pageindex
+The package `internal/mcp/memory/plugins/pageindex` stays in the tree, pure Go, only for
+offline tooling (`internal/mcp/memory/benchmark`, `cmd/memory-bench`, `cmd/eval-plugin`).
+It is not wired into the live server. In that package `Write` and `Delete` are plain,
+non-transactional calls and `Rename` forwards to FileIO. Sections 6.4 to 6.6 describe
+the package and its settings
+([../../internal/mcp/memory/plugins/pageindex/settings.go](../../internal/mcp/memory/plugins/pageindex/settings.go));
+they do not apply to the live server.
 
-Set `settings.mcp.tools.memory.plugins.pageindex.*`. Defaults are sourced from
-[../../internal/mcp/memory/plugins/pageindex/settings.go](../../internal/mcp/memory/plugins/pageindex/settings.go).
-With `default_plugin: rag` and an empty `pageindex.llm.api_key`, the manager registers
-only `rag_plugin`; explicit `plugin="pageindex"` calls then surface the missing-key
-hint described in [Section 9](#9-troubleshooting).
+### 6.1 Stale configuration
 
-```yaml
-settings:
-  mcp:
-    tools:
-      memory:
-        default_plugin: 'rag'
-        plugins:
-          rag: {}
-          pageindex:
-            llm:
-              api_key: '' # empty key keeps pageindex unregistered
-              base_url: '' # empty = api.openai.com; an origin selects its /v1 API root
-              indexing_model: 'gpt-5.4-mini'
-              retrieve_model: 'gpt-5.4-mini'
-            indexer:
-              timeout_index: '5m'
-              timeout_query: '60s'
-              max_concurrency: 8
-              retry:
-                max_attempts: 3 # upstream requests per call, including the first
-                initial_backoff: '250ms'
-                max_backoff: '8s'
-              cache:
-                enabled: true
-                path: '/var/lib/laisky/pageindex-cache.bbolt'
-                max_size_bytes: 1073741824
-            algo:
-              toc_check_page_num: 20
-              max_page_num_each_node: 10
-              max_token_num_each_node: 20000
-              generate_node_summary: true
-              generate_doc_description: true
-            tree_query:
-              max_steps: 8
-              max_tokens: 20000
-              candidate_docs: 5
-            pdf:
-              text_parser: 'pdfcpu'
-              outline_parser: 'pdfcpu'
-            limits: # absolute ceilings; 0 or a negative value selects the default
-              max_nodes_per_document: 2000
-              max_llm_calls_per_document: 256
-              max_tokens_per_document: 2000000
-              window: '1h'
-              tenant_llm_calls_per_window: 1000
-              tenant_tokens_per_window: 4000000
-              global_llm_calls_per_window: 5000
-              global_tokens_per_window: 20000000
-              global_reserve_percent: 20
-              max_tracked_tenants: 10000
-              max_output_tokens_per_call: 4096
-              max_toc_output_tokens_per_call: 32768
-```
+- A `settings.mcp.tools.memory.plugins.pageindex.*` block, including `llm.api_key`, is
+  ignored. The server logs one startup WARN and never logs the key. Remove the block.
+- `default_plugin: pageindex` passes config validation and does not fail startup. The
+  default resolves to `rag` and the server logs one startup WARN. Set
+  `default_plugin: rag` to clear it.
+- An explicit `plugin="pageindex"` on a `file_*` or `memory_*` tool, or
+  `MemoryPlugin.PAGEINDEX` in GraphQL, returns `INVALID_ARGUMENT` with the message
+  `pageindex plugin is disabled; rag is the supported memory backend` and the
+  `available_plugins` extra (e.g. `["rag"]`). Drop the argument or pass `rag`.
 
-The full schema and the resolution semantics of an empty `llm.api_key` (silently
-unregistered vs. fail-fast on present-but-empty) are specified in
-[../proposals/mcp_memory_plugin_manager.md#24-settings--resolution-rules](../proposals/mcp_memory_plugin_manager.md#24-settings--resolution-rules).
+### 6.2 FileIO does not depend on a search index
 
-### 6.2 Bring-up checklist
-
-1. Provision the bbolt cache parent directory (default `/var/lib/laisky/`); the
-   process user must have write permission. The plugin opens the file lazily on the
-   first indexing call and never deletes it.
-2. Set `llm.api_key`. Restart. The startup log names `pageindex` in the registered
-   plugin list.
-3. To route a single call through pageindex, pass `plugin="pageindex"` on any `file_*`
-   tool. To route by default, set `default_plugin: "pageindex"`.
+FileIO writes, deletes and renames, including cross-project moves (`file_rename` with
+`target_project`), never depend on a search index. They do no PageIndex catalog, tree,
+model or state work, and no system-state hook runs in their transaction. A rename that
+the path rules allow is never refused for indexing reasons, including extension changes
+such as `.txt -> .md`, `.md -> .pdf` and `.md -> .txt`. RAG keeps its index-job (outbox)
+behavior.
 
 ### 6.3 System namespace
 
-Pageindex persists tree JSON (one row per indexed document) in `mcp_files` rows owned
-by the system namespace under `system_owner='pageindex'`. These rows are unobservable
-to user-facing tool calls regardless of API key (acceptance A8); the namespace is
-read/written only through the `SystemFS` handle the plugin obtains at startup. The
-`WriteOpts.SkipRAGIndex` write option suppresses pgvector / BM25 indexing for these
-system rows.
+Earlier releases stored PageIndex tree JSON and its catalog in `mcp_files` rows owned by
+the system namespace under `system_owner='pageindex'`. These rows are left in place.
+Nothing purges them, so a future reintroduction could rebuild or reuse them; no
+asynchronous rebuild mechanism exists. They stay unobservable to user-facing tool calls
+regardless of API key (acceptance A8). `SystemFS` (plain Read/Write/Delete/List for one
+system owner) and the `system_owner = ?` SQL predicates remain.
 
-Renames and cross-project moves (`file_rename` with `target_project`) run the one FileIO rename and
-update this namespace in the same transaction. A tree that describes exactly the moved bytes, for a
-destination with the same document kind, moves with the file and is re-keyed to the destination
-path's `doc_id`. Any other state of a moved or overwritten path is dropped: a missing, stale or
-malformed tree, an extension change, or an unfinished or failed index. The next `file_write`
-indexes the file again. A rename sends no model request and never fails because of this
-namespace, except on a database error. A catalog that cannot be decoded, or that would exceed the
-file size limit, is left unchanged. A path owns the `doc_id` derived from it: an older catalog
-entry that still uses that `doc_id` is dropped when the path is written or receives a move.
+User files that PageIndex wrote in earlier releases keep `skip_rag_index`, so RAG holds
+no chunks for them until they are written again through RAG.
 
 ### 6.4 Per-call billing metadata
 
@@ -580,6 +527,7 @@ Tool-result `structuredContent` carries per-call billing fields used for cost at
 | `llm_calls`  | `pageindex` | Number of LLM round-trips (Phase 2).                         |
 | `truncated`  | `pageindex` | `true` when a per-call budget capped the response (Phase 2). |
 
+PageIndex is disabled (Section 6), so the live server emits none of these fields.
 `rag_plugin` does not emit `tokens_*` or `llm_calls` because LLM calls are not in its
 hot path; embedding cost is reported through the existing embedder telemetry and is
 attributed to the user's own credentials.
@@ -592,11 +540,12 @@ The resolved plugin name is recorded on every request log entry regardless of pl
 | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | Tool returns `INVALID_ARGUMENT` with `available_plugins=[...]`                            | Caller passed an unknown plugin name (typo, version mismatch, future plugin not yet shipped).                    | Pass one of the listed names, or omit the field to use `default_plugin`.                          |
 | Tool returns `NOT_FOUND` with hint "path exists under plugin=A; pass plugin=A to read it" | Path was written via plugin A and the current call is pinned to plugin B (or vice versa).                        | Re-issue the call with `plugin=A`. The manager does not silently cross plugins by design.         |
-| Tool returns `INVALID_ARGUMENT` for `plugin="pageindex"` with hint about `llm.api_key`    | `pageindex_plugin` is not registered because `settings.mcp.tools.memory.plugins.pageindex.llm.api_key` is empty. | Set the api_key (Section 6.1) and restart, or drop the `plugin` field to route via default.       |
+| Tool returns `INVALID_ARGUMENT` "pageindex plugin is disabled; rag is the supported memory backend" | The caller selected `pageindex` (`plugin="pageindex"`, or `MemoryPlugin.PAGEINDEX` in GraphQL). PageIndex is disabled; no configuration enables it. | Drop the `plugin` field or pass one of `available_plugins` (e.g. `rag`). See Section 6.1. |
+| Startup WARN about a PageIndex block or `default_plugin: pageindex` | Stale configuration. The block is ignored and the default resolves to `rag`. | Remove the `pageindex` block and set `default_plugin: rag`. |
 | Single startup WARN about deprecated `settings.mcp.files.*`                               | Legacy-config shim translated old keys.                                                                          | Move keys to `settings.mcp.tools.memory.plugins.rag.*` before the shim is removed (post-Phase 3). |
 | Single startup WARN `memory plugin shadow replay was removed; the setting is ignored`     | `settings.mcp.tools.memory.shadow.enabled` is still `true`; shadow replay was removed (Section 6.7).             | Delete the `settings.mcp.tools.memory.shadow.*` block. Nothing is replayed either way.            |
 | Two routing layers seem active                                                            | There is no second layer. The only inputs are the per-call `plugin` argument and `default_plugin`.               | Confirm by reading the request log entry's resolved-plugin field.                                 |
-| PageIndex trees are all `degraded` or every PageIndex call fails | The provider cannot serve the Responses API as configured: it rejects `max_output_tokens`, has no quota for the key, or (before origins were mapped to `/v1`) `llm.base_url` reached the gateway's web UI. | Check `pageindex.llm.respond failed` in the logs, then run `PAGEINDEX_CONTRACT_BASE_URL=<llm.base_url> PAGEINDEX_CONTRACT_API_KEY=<key> go test -run TestLiveResponsesProviderContract ./internal/mcp/memory/plugins/pageindex`. |
+| An offline PageIndex run against a real provider yields only `degraded` trees, or every PageIndex LLM call fails | The provider cannot serve the Responses API as configured: it rejects `max_output_tokens`, has no quota for the key, or (before origins were mapped to `/v1`) `llm.base_url` reached the gateway's web UI. | Check `pageindex.llm.respond failed` in the logs, then run `PAGEINDEX_CONTRACT_BASE_URL=<llm.base_url> PAGEINDEX_CONTRACT_API_KEY=<key> go test -run TestLiveResponsesProviderContract ./internal/mcp/memory/plugins/pageindex`. |
 
 ## 10. References
 

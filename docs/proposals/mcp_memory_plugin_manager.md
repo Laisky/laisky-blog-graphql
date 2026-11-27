@@ -16,11 +16,11 @@ implementation:
       - cmd/eval-plugin/main.go
       - docs/eval/baseline_v1/
   phase_2:
-    status: shipped
+    status: shipped # PageIndex disabled 2026-11-27; see the status note below
     paths:
       - internal/mcp/files/{migration.go,system_fs.go,system_owner.go,types.go,service_*.go}
-      - internal/mcp/memory/plugins/pageindex/ # 16 source files, ~4.3k LOC, pure Go
-      - cmd/api.go # enablement gate on settings.mcp.tools.memory.plugins.pageindex.llm.api_key
+      - internal/mcp/memory/plugins/pageindex/ # dormant; pure Go; offline tooling only
+      - cmd/api.go # never builds pageindex; a stale pageindex block is ignored with one WARN
   phase_3:
     status: removed # shadow replay removed 2026-11-27; see §7.8
     removed_paths:
@@ -35,6 +35,27 @@ forbidden_under_v1:
 ---
 
 # MCP Memory Plugin Manager — Change Manual
+
+> **Status update (2026-11-27, maintainer decision): PageIndex is disabled.** RAG is the
+> default and only supported memory backend. The API server never constructs, registers
+> or starts `pageindex_plugin`, whatever `settings.mcp.tools.memory.plugins.pageindex.*`
+> (including `llm.api_key`) holds; a stale block is ignored with one startup warning. A
+> stale `default_plugin: pageindex` passes config validation and resolves to `rag` with a
+> startup warning. An explicit `pageindex` selection (MCP `plugin` argument, GraphQL
+> `MemoryPlugin.PAGEINDEX`) returns `INVALID_ARGUMENT`
+> (`pageindex plugin is disabled; rag is the supported memory backend`, with
+> `available_plugins`); the enum values stay for wire compatibility only. FileIO writes,
+> deletes and renames never depend on a search index: the PageIndex-only transactional
+> APIs (`AtomicSystemFS`, `PublishPluginSummaryAndState`, `DeleteWithState`/`DeleteWithSystemState`,
+> `RenameWithState`, `RenameStateHook`, `SystemStateTx`, `SystemStateMutator`) were removed,
+> while `SystemFS`/`SystemNamespace` and the `system_owner = ?` predicates remain. Stored
+> `system_owner='pageindex'` rows are left in place; no asynchronous rebuild exists. The
+> package stays in the tree, pure Go per §0, for offline tooling only
+> (`internal/mcp/memory/benchmark`, `cmd/memory-bench`, `cmd/eval-plugin`). The PageIndex
+> design below is kept as a record; where it describes PageIndex as enabled by
+> `llm.api_key`, selectable at runtime, or updated inside FileIO transactions, this note
+> wins. Operator guidance:
+> [../manual/mcp_memory_plugins.md §6](../manual/mcp_memory_plugins.md#6-pageindex-phase-2).
 
 ## 0. Decision (v1 runtime)
 
@@ -343,6 +364,9 @@ Semantics:
   backend regardless of `default_plugin`. Useful for: agents that know which backend a
   doc lives in; A/B comparison of the two engines on the same query; force-routing a
   `file_write` of a long PDF into PageIndex even when the server default is RAG.
+- **`"pageindex"` (since 2026-11-27)** — rejected with `INVALID_ARGUMENT`
+  (`pageindex plugin is disabled; rag is the supported memory backend`) and
+  `available_plugins`; the enum value stays for wire compatibility only.
 - **Unknown name** — return `INVALID_ARGUMENT` with `available_plugins=[...]` in
   `structuredContent` so the caller can self-correct.
 - **Cross-plugin reads** — if a path was written via plugin A but the call specifies plugin B
@@ -363,7 +387,7 @@ New settings keys:
 settings:
   mcp:
     memory:
-      default_plugin: 'rag' # "rag" | "pageindex" — the only routing knob
+      default_plugin: 'rag' # the only routing knob; since 2026-11-27 a stale "pageindex" resolves to "rag"
       plugins:
         rag: {} # current settings.mcp.files.* re-rooted under here
         pageindex:
@@ -548,7 +572,7 @@ Notation: `userFS` is the user-facing fileio (the same instance `rag_plugin` wra
 | `file_stat`   | `userFS.Stat(...)` — unchanged.                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `file_list`   | `userFS.List(...)` — unchanged. **System namespace is invisible** (enforced at the SQL layer, not by path filter — see §2.6.3).                                                                                                                                                                                                                                                                                                          |
 | `file_delete` | `userFS.Delete(...)` then if a mapping exists: `sysFS.Delete("pageindex/<doc_id>.json")` and update `sysFS:"pageindex/index.json"`/`pageindex/_meta.json`.                                                                                                                                                                                                                                                                               |
-| `file_rename` | The one `userFS` rename, with a derived-state hook in the same transaction (`AtomicSystemFS.RenameWithState`). A tree that describes the moved bytes and keeps its kind moves with the file, into the target tenant namespace for a `target_project` move, re-keyed to the destination path's `doc_id`. Every other entry of a moved or overwritten path is dropped, and the next write re-indexes the file. Derived state never refuses a valid rename, and no model call runs. |
+| `file_rename` | The one `userFS` rename. Since 2026-11-27 the package's `Rename` forwards to FileIO with no derived-state hook (`AtomicSystemFS.RenameWithState` was removed); FileIO does no PageIndex catalog or tree work on a move, and no model call runs. |
 | `file_search` | The interesting case — see §2.6.2.                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 Two non-obvious consequences of letting `userFS` handle steps 1 of write/delete/rename:
@@ -854,16 +878,15 @@ client, not via this `LLM` interface — embeddings are not LLM-style structured
 
 - [cmd/api.go:408-447](../../cmd/api.go#L408-L447): replace direct `files.NewService`
   injection with `plugin.Manager.MustBuild(cfg)`. The manager constructs each enabled plugin
-  (today: rag always on; pageindex on if config block present) and starts them.
+  (rag always on; since 2026-11-27 pageindex never, see the status note) and starts them.
   - The single `*files.Service` instance is built once and **shared** by both plugins:
     `rag_plugin` wraps it directly; `pageindex_plugin` receives it as `userFS` and a
     `SystemFS` handle scoped to `system_owner="pageindex"`.
-  - **Pageindex enablement gate.** `pageindex_plugin` is constructed only if its config
-    block is present **and** `llm.api_key` is a non-empty string at startup. If the block
-    is present but `llm.api_key` is empty, `MustBuild` fails fast with a startup error
-    naming the missing config key. If the block is absent entirely, `pageindex_plugin`
-    is silently not registered — explicit `plugin="pageindex"` calls then return
-    `FAILED_PRECONDITION` per A10.
+  - **Pageindex enablement gate (superseded 2026-11-27).** The original gate built
+    `pageindex_plugin` when its block was present and `llm.api_key` was non-empty. The
+    API server no longer builds it at all: a present block, including `llm.api_key`, is
+    ignored with one startup warning that never logs the key, and explicit
+    `plugin="pageindex"` calls return `INVALID_ARGUMENT` per A10.
   - **Pageindex sub-construction.** Inside the manager, building `pageindex_plugin`
     threads the following one-time singletons:
     1. `openaiLLM` — built from `llm.{indexing_model,retrieve_model,api_key,base_url}`
@@ -1083,8 +1106,10 @@ trail for this rule.
 invariants matching the `forbidden_under_v1` list (no `third_party/pageindex_sidecar/`,
 no `requirements.txt`, no Python under `internal/`, no PageIndex `.proto` stubs, no
 cgo / `os/exec` / IPC bring-up inside the pageindex plugin, no missing pageindex
-package, no missing wiring in `cmd/api.go`, and the proposal frontmatter still
-declares `v1_runtime: pure-Go`). A PR that violates any one of them fails CI.
+package, no pageindex import in the API server's `cmd` package since PageIndex was
+disabled on 2026-11-27 (formerly: no missing wiring in `cmd/api.go`), and the proposal
+frontmatter still declares `v1_runtime: pure-Go`). A PR that violates any one of them
+fails CI.
 
 ## 4. Change list (file-by-file)
 
@@ -1129,7 +1154,7 @@ declares `v1_runtime: pure-Go`). A PR that violates any one of them fails CI.
 | `internal/mcp/tools/file_*.go`                                                                                            | Constructors take `*plugin.Manager`; `Definition()` adds optional `plugin` input field (§2.4.1); `Handle()` decodes `req.Plugin` and forwards to `Manager.Resolve`                                                                                                                                                         |
 | `internal/mcp/tools/file_tool_helpers.go`                                                                                 | New shared helper `parsePluginOverride(raw string) (string, error)` validating `""`/`"auto"`/known names                                                                                                                                                                                                                   |
 | `internal/mcp/server.go` (lines 204-452)                                                                                  | Pass `*plugin.Manager` instead of `FileService`                                                                                                                                                                                                                                                                            |
-| `cmd/api.go` (lines 408-447)                                                                                              | Build a single shared `*files.Service`; pass it to both plugins (rag wraps directly, pageindex receives `userFS` + `SystemFS("pageindex")`); build & start `plugin.Manager`                                                                                                                                                |
+| `cmd/api.go` (lines 408-447)                                                                                              | Build a single shared `*files.Service`; pass it to both plugins (rag wraps directly, pageindex receives `userFS` + `SystemFS("pageindex")`); build & start `plugin.Manager`. Since 2026-11-27 pageindex is never built (status note)                                                                                                                                              |
 | `internal/mcp/files/settings.go`                                                                                          | Add deprecation shim reading old `settings.mcp.files.*` and forwarding into `settings.mcp.tools.memory.plugins.rag.*`                                                                                                                                                                                                      |
 | `internal/mcp/files/service.go`, `service_*.go`, `service_search.go`, `index_worker.go`, `service_versions.go`, `lock.go` | Add `system_owner string` parameter (or context value) on every method that touches `mcp_files`/`mcp_file_chunks`/`mcp_file_index_jobs`/`mcp_file_chunk_embeddings`/`mcp_file_chunk_bm25`/`mcp_file_versions`. User-facing entrypoints pass `''`. SQL gains explicit `system_owner = $X` predicates everywhere             |
 | `internal/mcp/files/migration.go`                                                                                         | Add `system_owner TEXT NOT NULL DEFAULT ''` column to all six tables; add `(system_owner, api_key_hash, project, path)` indexes; backfill is the default (no-op for existing rows)                                                                                                                                         |
@@ -1349,6 +1374,9 @@ used; rows assert what the concurrent agents observe.
 
 ### 5.3 Integration / e2e — operator scenarios
 
+Since 2026-11-27, E02, E03, E04, E06 and E07 need a live PageIndex and cannot run against
+the API server (status note).
+
 | ID  | Operator scenario                                                                                                    | Expected observation                                                                                                                                                                          |
 | --- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | E01 | Operator runs the server with `default_plugin=rag` against the existing test corpus                                  | The pre-refactor user-visible behavior is preserved end-to-end: every existing functional test under `internal/mcp/files` and `internal/mcp/tools` is green; the §5.4 smoke flow works        |
@@ -1363,7 +1391,7 @@ used; rows assert what the concurrent agents observe.
 
 - `go run -race main.go -c /opt/configs/laisky-blog-graphql/test/settings.yml api -t "heartbeat" --listen "0.0.0.0:17800" --debug`
 - Hit MCP `tools/list` from the heartbeat client; verify the `file_*` tool schemas match the documented diff (one new optional `plugin` field; everything else byte-identical).
-- Toggle `default_plugin` between `rag` and `pageindex` via env override; replay the smoke script (§5.3 E01) under each.
+- Toggle `default_plugin` between `rag` and `pageindex` via env override; replay the smoke script (§5.3 E01) under each. Since 2026-11-27 `pageindex` resolves to `rag` (status note).
 - Reach the dev frontend at `http://100.75.198.70:5173/` and exercise any UI panel that lists files; verify no visible change.
 
 ### 5.5 Internal regression tests (informational, not acceptance)
@@ -1393,8 +1421,8 @@ becoming fragile to internal renames.
 | P05 | `Search` loop with malformed LLM JSON → Responses-API strict-schema rejection → `LLM.Respond` returns error (or a budget refuses the planner) → degrades, without an LLM call, to the sections of each candidate whose titles and summaries match the query terms, the first node only when none match, ranked below planned results and counted by cause. (User-observable side covered by C-row.) |
 | P06 | `Write(.pdf, OVERWRITE@offset=10)` → `INVALID_ARGUMENT`. (User-observable side covered by C09b.)                                                                                                                                                  |
 | P07 | `Write(.pdf, TRUNCATE)` then `Read(.pdf)` returns identical bytes via `userFS`.                                                                                                                                                                   |
-| P08 | `Delete` removes user row from `userFS` and the `pageindex/<doc_id>.json` row from `SystemFS`; index mapping updated atomically.                                                                                                                  |
-| P09 | `Rename` updates the `userFS` row and the index mapping atomically. A current tree moves with only its `doc_id` re-keyed. Missing, stale or malformed state is dropped and never blocks the move. |
+| P08 | `Delete` removes user row from `userFS` and the `pageindex/<doc_id>.json` row from `SystemFS`. Since 2026-11-27 these are plain, non-transactional steps (status note).                                                                          |
+| P09 | `Rename` forwards to the one FileIO rename (since 2026-11-27, status note); no PageIndex state is updated and nothing blocks the move. |
 | P10 | Index-mapping mutation is serialized: 10 concurrent writes to distinct user paths in the same project all succeed; final mapping has 10 entries.                                                                                                  |
 | P11 | LLM provider unreachable: `openaiLLM` returns `429`/`5xx`/network error; `avast/retry-go/v4` retries per policy honoring `Retry-After`; after exhaustion, surfaces as a tool-level `unavailable` error. (User-observable side covered by C-rows.) |
 | P12 | Concurrency cap: spinning 100 `file_write(.pdf)` calls in parallel never exceeds `indexer.max_concurrency` simultaneous LLM calls (verified by an instrumented stub `LLM`).                                                                       |
@@ -1466,6 +1494,7 @@ When an operator switches `default_plugin` between `rag` and `pageindex` and an 
 re-runs the same script (write → list → stat → search → read → delete), every call
 returns success with payloads that satisfy the §5.1 conformance rows for the active
 plugin. The agent's code never changes between configurations.
+_Superseded 2026-11-27:_ `pageindex` is no longer selectable (status note).
 
 A4. **All §5.1 conformance rows and §5.2 race-condition rows pass for every plugin.**
 When the conformance suite runs against a plugin (real DB; stub `LLM` returning canned
@@ -1484,6 +1513,8 @@ section of `docs/manual/mcp_memory_plugins.md` on a 2-vCPU box (set `llm.api_key
 in `settings.yml`, flip `default_plugin: pageindex`, restart), the §5.3 E02 scenario
 succeeds on the first try. Bring-up is config-only — the existing Go process owns
 the pipeline.
+_Superseded 2026-11-27:_ PageIndex cannot be enabled; the manual documents it as
+disabled (status note).
 
 A7. **Cost is budgeted and visible to the agent.**
 When an agent issues a `file_search` under `pageindex` and the configured budgets
@@ -1509,11 +1540,11 @@ reading source.
 
 A10. **Reverting to single-plugin mode produces pre-refactor behavior.**
 When an operator sets `default_plugin=rag` and removes the `pageindex` block from
-config (or simply leaves `llm.api_key` empty), every tool call's observable outcome
-matches the pre-refactor system on the same input. No migration leaves behind a
-user-visible change. With no API key configured, any explicit `plugin="pageindex"`
-call returns `FAILED_PRECONDITION` with a message naming the missing config key —
-not silent fallback.
+config, every tool call's observable outcome matches the pre-refactor system on the
+same input. No migration leaves behind a user-visible change. Since 2026-11-27, any
+explicit `plugin="pageindex"` call returns `INVALID_ARGUMENT` with the message
+`pageindex plugin is disabled; rag is the supported memory backend` and
+`available_plugins`, whatever the config holds — not silent fallback.
 
 A11. **Switching the indexing/retrieval model within the Responses-API contract is invisible to the agent.**
 When an operator changes `llm.indexing_model` and `llm.retrieve_model` to another
@@ -1867,7 +1898,8 @@ Offline plugin comparison remains available through the §7 harness
 2. **Phase 2 — pageindex indexer (off by default).**
    Land `pageindex_plugin` with the Go `Indexer` (§2.6.4) and the Responses-API `LLM`
    (§2.6.5). No new processes, no new container images, no new deploy artifact — the
-   plugin links into the existing binary. Default config does not enable it. Run E02/E03
+   plugin links into the existing binary. Default config does not enable it, and since
+   2026-11-27 no config does (status note). Run E02/E03
    in staging only. Acceptance: A3, A4, A6, A7, A8, A11, **Q1–Q4, Q9–Q12** (full §7
    scorecard filled in for `pageindex_plugin` against the same golden sets).
 3. **Phase 3 — shadow replay promotion gate (removed, see §7.8).**

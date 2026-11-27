@@ -243,17 +243,6 @@ func (p *Plugin) indexAndPublish(ctx context.Context, auth files.AuthContext, pr
 	p.markRefresh(&entry, tree.Degraded, refreshes)
 	summary := pageIndexSummaryInput(desc, source, sourceHash, tree.Degraded)
 
-	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
-		published, err := atomicFS.PublishPluginSummaryAndState(ctx, auth, project, storageProject, path, summary, pageIndexWriteState(docID, path, tree, entry))
-		if err != nil {
-			return err
-		}
-		if !published && p.log != nil {
-			p.log.Debug("pageindex.write skipped stale tree publish", glog.String("path", path))
-		}
-		return nil
-	}
-
 	// Publish the user-row summary first, guarded by the content hash. A false result
 	// means a newer generation is already active, so this stale writer must not
 	// overwrite the tree or index mapping (P06).
@@ -310,9 +299,6 @@ func (p *Plugin) publishUserRowSummary(ctx context.Context, auth files.AuthConte
 // Delete removes matching PageIndex trees and catalog entries before deleting
 // user files, so failures remain fail-closed and the same request can be retried.
 func (p *Plugin) Delete(ctx context.Context, auth files.AuthContext, project, path string, recursive bool) (files.DeleteResult, error) {
-	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
-		return atomicFS.DeleteWithState(ctx, auth, project, PageIndexStorageProject(auth, project), path, recursive, pageIndexDeleteState(path, recursive))
-	}
 	storageProject := PageIndexStorageProject(auth, project)
 	entries, err := p.indexEntriesForPath(ctx, storageProject, path, recursive)
 	if err != nil {
@@ -337,17 +323,10 @@ func (p *Plugin) Delete(ctx context.Context, auth files.AuthContext, project, pa
 	return res, nil
 }
 
-// Rename moves user files through the one FileIO rename path, within a project
-// or across projects, and keeps the PageIndex catalog consistent with the move
-// in the same transaction (see renameState). Derived state never blocks a valid
-// rename: missing, stale or malformed trees are dropped rather than refused,
-// and no model call runs. Production always supplies the transactional handle.
+// Rename forwards to the FileIO rename unchanged. The dormant plugin does not
+// move its catalog or trees; their entries keep the old paths.
 func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, req files.RenameRequest) (files.RenameResult, error) {
-	atomicFS, ok := p.sysFS.(files.AtomicSystemFS)
-	if !ok {
-		return files.RenameResult{}, errors.New("pageindex rename requires the transactional system namespace")
-	}
-	return atomicFS.RenameWithState(ctx, auth, req, p.renameState(auth, req))
+	return p.userFS.Rename(ctx, auth, req)
 }
 
 // List forwards to userFS unchanged.
