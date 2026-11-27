@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,7 +26,11 @@ const tool = vi.mocked(callFileTool);
 const api = vi.mocked(callFileAPI);
 function input(label: string, value: string) { fireEvent.change(screen.getByLabelText(label), { target: { value } }); }
 function click(name: string) { fireEvent.click(screen.getByRole('button', { name, exact: true })); }
-function enabled(name: string) { return !(screen.getByRole('button', { name, exact: true }) as HTMLButtonElement).disabled; }
+// Preview actions stay focusable while unavailable (aria-disabled); other buttons use the native attribute.
+function enabled(name: string) {
+  const button = screen.getByRole('button', { name, exact: true }) as HTMLButtonElement;
+  return !button.disabled && button.getAttribute('aria-disabled') !== 'true';
+}
 async function openPreview() {
   click('Refresh list');
   await screen.findByRole('button', { name: 'a.txt' });
@@ -240,5 +245,75 @@ describe('FileIO page mandatory version workflow', () => {
     input('Write Content (UTF-8)', 'draft');
     const saved = window.localStorage.getItem(fileIOInputStorageKey('test-key')!)!;
     expect(saved).toContain('draft'); expect(saved).not.toContain(v1);
+  });
+});
+
+describe('FileIO preview layout', () => {
+  const editor = () => screen.getByLabelText('File content') as HTMLTextAreaElement;
+  const before = (first: Node, second: Node) => Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const scroller = () => editor().closest('[data-preview-scroll]')!;
+
+  it('pins the compact actions above the scroller and opens the scrolled body with their feedback', async () => {
+    const implementation = tool.getMockImplementation()!;
+    tool.mockImplementation((key, name, args) => name === 'file_stat'
+      ? Promise.reject(new Error('metadata temporarily unavailable')) : implementation(key, name, args));
+    const apiImplementation = api.getMockImplementation()!;
+    api.mockImplementation((key, method, path, options) => method === 'PUT'
+      ? Promise.reject(new Error('save rejected')) : apiImplementation(key, method, path, options));
+    render(<FileIOPage />); await openPreview();
+    const toolbar = screen.getByRole('group', { name: 'File actions' });
+    for (const name of ['Reload latest', 'Restore as latest', 'Save']) {
+      expect(toolbar.contains(screen.getByRole('button', { name, exact: true }))).toBe(true);
+    }
+    expect(toolbar.contains(screen.getByLabelText('File history'))).toBe(true);
+    expect(toolbar.closest('[data-preview-scroll]')).toBeNull();
+    expect(scroller()).not.toBeNull();
+
+    input('File content', 'my edit');
+    expect(toolbar.contains(screen.getByText('Unsaved changes'))).toBe(true);
+    click('Save');
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('save rejected');
+    // Feedback of any length scrolls with the body, before the editor, so it can never take the editor's room.
+    for (const message of [alert, screen.getByRole('note')]) {
+      expect(scroller().contains(message)).toBe(true);
+      expect(message.closest('[data-preview-notice]')).not.toBeNull();
+      expect(before(message, editor())).toBe(true);
+    }
+  });
+
+  it('keeps preview actions focusable but inert while a save is in flight', async () => {
+    const pending = deferred<{ bytes_written: number; version: string }>();
+    const implementation = api.getMockImplementation()!;
+    api.mockImplementation((key, method, path, options) => method === 'PUT' ? pending.promise : implementation(key, method, path, options));
+    render(<FileIOPage />); await openPreview();
+    input('File content', 'my edit');
+    const save = screen.getByRole('button', { name: 'Save', exact: true });
+    save.focus();
+    click('Save');
+    await waitFor(() => expect(save).toHaveAttribute('aria-disabled', 'true'));
+    // A natively disabled focused control drops focus to the document; these stay focusable instead.
+    for (const control of [save, screen.getByRole('button', { name: 'Reload latest', exact: true }), screen.getByLabelText('File history')]) {
+      expect((control as HTMLButtonElement).disabled).toBe(false);
+      expect(control).toHaveAttribute('aria-disabled', 'true');
+    }
+    expect(document.activeElement).toBe(save);
+    click('Save'); click('Reload latest');
+    input('File history', '7');
+    expect(api.mock.calls.filter((call) => call[1] === 'PUT')).toHaveLength(1);
+    expect(api.mock.calls.filter((call) => String(call[2]).startsWith('/versions/'))).toHaveLength(0);
+    expect(tool.mock.calls.filter((call) => call[1] === 'file_read')).toHaveLength(1);
+    expect((screen.getByLabelText('File history') as HTMLSelectElement).value).toBe('current');
+
+    await act(async () => pending.resolve({ bytes_written: 7, version: v2 }));
+    await screen.findByText(/Saved 7 bytes/);
+    expect(document.activeElement).toBe(save);
+  });
+
+  it('sizes the editor to its content instead of a fixed row count', async () => {
+    render(<FileIOPage />); await openPreview();
+    // jsdom has no layout; preview.browser.test.tsx measures the real behavior. These classes are its contract.
+    expect(editor().hasAttribute('rows')).toBe(false);
+    expect(editor().className.split(/\s+/)).toEqual(expect.arrayContaining(['grow', 'shrink-0', '[field-sizing:content]']));
   });
 });

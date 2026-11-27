@@ -90,6 +90,25 @@ The `/tools/file_io` page implements this contract, not just its documentation:
   version observed when the file was opened, not the numeric historical snapshot ID.
   Base64 history remains viewable but cannot be written back as UTF-8 from the editor.
 
+- **File Preview layout:** the dialog has a single vertical scroller. The title and the
+  action bar (Reload latest, history, Restore as latest, Save) stay pinned above it
+  while at least 192 CSS px remain for it. On shorter viewports, such as 200% or more
+  zoom, the whole dialog scrolls as one. Errors, statuses and the metadata warning
+  can be any length, so they open the scrolled body, before the editor. A long
+  message is shown in full and scrolls away like the file; it never hides the draft.
+  The editor fills the body and grows with its content where `field-sizing` is
+  supported. When the message is scrolled out of view, a floating "Show message"
+  button scrolls back to it. Jump buttons appear when a quarter of the body is hidden.
+- **Focus:** automatic updates never move, clear or steal focus. They include
+  request completion, feedback, resizes and scroll-state changes. Preview actions
+  that become unavailable while focused stay focusable and inert through
+  `aria-disabled`; the shared `Button` supports this with `focusableWhenDisabled`.
+  A natively disabled focused control makes browsers drop focus to the document. A
+  floating control that owns focus stays mounted until the user moves focus away.
+  Nothing calls `.focus()` or scrolls on the user's behalf. Where CSS scroll
+  anchoring is missing (Safari before 27), the region emulates it, so feedback
+  arriving above a scrolled viewport does not move the content being edited.
+
 On a conflict, the page keeps the draft and old base; it does not fetch a new token
 and retry. Copy the draft before explicitly reloading, then review/recompute it.
 A reload that discards an unsaved editor draft requires confirmation. Missing
