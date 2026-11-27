@@ -155,8 +155,10 @@ row C05/R06 in [the proposal §5.1 / §5.2](../proposals/mcp_memory_plugin_manag
    supported. A stale `"pageindex"` passes config validation and does not fail startup: the
    default resolves to `rag` and the server logs one startup WARN.
 2. Restart the server. The change is config-reload, no migration required.
-3. Replay the smoke script. Existing data written under the prior default remains pinned
-   to that plugin and is reachable only with an explicit `plugin=<prior>` argument.
+3. Replay the smoke script. Use RAG for all FileIO access: an explicit `plugin=pageindex`
+   is rejected with `INVALID_ARGUMENT`. Files PageIndex wrote earlier are readable through
+   RAG but have no RAG search chunks until they are written again
+   ([Section 6.3](#63-system-namespace)).
 
 ### 5.3 Verifying routing
 

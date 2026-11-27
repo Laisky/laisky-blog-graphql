@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -131,32 +132,42 @@ func TestDefaultLockProviderPostgresProjectsLockShareOneDeadline(t *testing.T) {
 	ordered := ProjectLockOrder(tenant, "alpha", "beta")
 	first, second := ordered[0], ordered[1]
 
-	hold := func(project string) (entered <-chan struct{}, release chan<- struct{}, done <-chan error) {
-		in, out, result := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	// hold takes project's lock in another transaction until the returned
+	// release runs. Cleanup always releases and joins the holder, and a holder
+	// that fails before taking its lock fails the test instead of hanging it.
+	hold := func(project string) (release func()) {
+		entered, unblock, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
 		go func() {
-			result <- provider.WithProjectLock(ctx, db, true, tenant, project, 2*time.Second, func(*sql.Tx) error {
-				close(in)
-				<-out
+			done <- provider.WithProjectLock(ctx, db, true, tenant, project, 2*time.Second, func(*sql.Tx) error {
+				close(entered)
+				<-unblock
 				return nil
 			})
 		}()
-		return in, out, result
+		var once sync.Once
+		release = func() { once.Do(func() { close(unblock) }) }
+		t.Cleanup(func() {
+			release()
+			require.NoError(t, <-done)
+		})
+		select {
+		case <-entered:
+		case err := <-done:
+			require.FailNow(t, "lock holder failed before taking its lock", "%s: %v", project, err)
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "lock holder did not take its lock", project)
+		}
+		return release
 	}
-	firstIn, releaseFirst, firstDone := hold(first)
-	secondIn, releaseSecond, secondDone := hold(second)
-	<-firstIn
-	<-secondIn
+	releaseFirst := hold(first)
+	hold(second)
 
 	const timeout = 400 * time.Millisecond
 	// The first scope frees up late in the budget; the second never does.
-	time.AfterFunc(timeout*3/4, func() { close(releaseFirst) })
+	time.AfterFunc(timeout*3/4, releaseFirst)
 	started := time.Now()
 	err := provider.WithProjectsLock(ctx, db, true, tenant, []string{first, second}, timeout, func(*sql.Tx) error { return nil })
 	elapsed := time.Since(started)
 	require.True(t, IsCode(err, ErrCodeResourceBusy), "%v", err)
 	require.Less(t, elapsed, timeout*5/4, "both scopes share one %s budget", timeout)
-
-	close(releaseSecond)
-	require.NoError(t, <-firstDone)
-	require.NoError(t, <-secondDone)
 }
