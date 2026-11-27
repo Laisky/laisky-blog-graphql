@@ -53,5 +53,7 @@ overrides:
   "ws@>=8 <8.21.0": "^8.21.0"
   "yaml@>=2 <2.8.3": "^2.8.3"
 
+  "zod@<4.6.6": "4.6.7"
+
 allowBuilds:
   esbuild: false

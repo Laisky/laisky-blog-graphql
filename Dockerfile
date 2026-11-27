@@ -27,6 +27,7 @@ WORKDIR /web
 RUN npm install --global pnpm@12.23.0
 
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+COPY web/vendor/mcp-inspector/inspector-client-1.0.6.tgz ./vendor/mcp-inspector/
 RUN pnpm install --frozen-lockfile
 
 COPY web/ ./
