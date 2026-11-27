@@ -19,7 +19,13 @@ The design intentionally excludes kernel-level complexity (file descriptors, per
 
 ## 2. Core Model
 
-- Each `project` is an isolated filesystem root under one tenant.
+- Each `project` is an isolated filesystem root under one tenant. Exception: the
+  reserved `@DEFAULT` project is a shared base layer. Every other project of the
+  same API key is overlaid on it: stat, read, list and existing-file resolution
+  merge both layers, and the project's own entry wins at a conflicting name.
+  Edits of an inherited file change it in `@DEFAULT`. `file_search` reads both
+  physical projects
+  ([`docs/proposals/fileio_default_project.md`](../proposals/fileio_default_project.md)).
 - The project root (`path=""`) always exists as an implicit directory.
 - Directories are implicit and derived from file paths.
 - There is no physical directory table.
@@ -105,7 +111,7 @@ type FileEntry struct {
 }
 
 type ChunkEntry struct {
-    Project            string // populated only when file_search is invoked with project="*"
+    Project            string // physical project of the hit; set when the search spans several projects (an ordinary project or "*")
     FilePath           string
     FileSeekStartBytes int64 // byte offset, inclusive
     FileSeekEndBytes   int64 // byte offset, exclusive
@@ -272,10 +278,10 @@ file_search(
 
 Parameter semantics:
 
-- `project`: target project namespace. The literal value `"*"` expands the search to every project owned by the authenticated caller and is accepted only by `file_search`. All other file tools (`file_stat`, `file_read`, `file_write`, `file_delete`, `file_rename`, `file_list`) must reject `"*"` and require an explicit project to prevent accidental cross-project mutations. `file_rename` additionally accepts an optional `target_project`: omitted or empty keeps the move inside `project`; otherwise it must be an explicit, valid project of the same caller (never `"*"`), and the file moves into it.
+- `project`: target project namespace. The literal value `"*"` expands the search to every project owned by the authenticated caller and is accepted only by `file_search`. All other file tools (`file_stat`, `file_read`, `file_write`, `file_delete`, `file_rename`, `file_list`) must reject `"*"` and require an explicit project to prevent accidental cross-project mutations. `file_rename` additionally accepts an optional `target_project`: omitted or empty keeps the move inside `project`; otherwise it must be an explicit, valid project of the same caller (never `"*"`), and the file moves into it. The source is the file a read of `project` resolves (an inherited `@DEFAULT` file leaves `@DEFAULT`); destination rules see only `target_project`'s own physical files.
 - `query`: search query string, must be non-empty after trim.
-- `path_prefix`: optional raw string prefix filter on file path; the MCP tool
-  layer applies the same leading-slash normalization as `path`.
+- `path_prefix`: optional literal, case-sensitive string prefix filter on file
+  path; the MCP tool layer applies the same leading-slash normalization as `path`.
 - `limit`: max returned chunk entries, default `5`, max `20`.
 
 Search behavior:
@@ -284,7 +290,8 @@ Search behavior:
 - Results are ordered by final score descending.
 - The implementation must return only active files (`mcp_files.deleted = FALSE`) and must never return deleted files.
 - Search results are eventually consistent with file writes and updates.
-- When `project="*"`, each returned `ChunkEntry` must carry the source `project` field. For single-project searches the field is omitted.
+- A search of an ordinary project reads the physical projects `project` and `@DEFAULT`, including documents the filesystem view hides; a search of `@DEFAULT` reads only `@DEFAULT`.
+- Whenever a search spans more than one physical project (an ordinary project or `"*"`), each returned `ChunkEntry` must carry the physical `project` that stores it. A search of `@DEFAULT` omits the field.
 - Tenant isolation by `apikey_hash` is enforced regardless of project value, so `"*"` only spans projects owned by the caller.
 
 ## 7. Search Indexing and Retrieval Pipeline
@@ -341,6 +348,8 @@ Default candidate counts are `30 + 30`, configurable in the service configuratio
 - All mutating file operations (`file_write`, `file_delete`, `file_rename`) must obtain:
   - `pg_advisory_xact_lock(hash(apikey_hash, project))`
 - A `file_rename` with a `target_project` must hold the locks of both projects in one transaction, acquired in ascending lock-key order (then project name) so opposite moves cannot each hold one project while waiting for the other.
+- A mutation of a path the `@DEFAULT` layer touches also holds the `@DEFAULT` lock, in the same global order.
+- A stat or list of an overlaid project that needs several statements reads one consistent snapshot without taking locks.
 - Lock is transaction-scoped.
 - Lock acquisition timeout is configurable.
 - Timeout/failure to acquire lock returns `RESOURCE_BUSY`.

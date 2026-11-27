@@ -50,7 +50,7 @@ old content with a newer version.
 | `file_write` | **Required:** exactly one of `expected_version` for an existing file or `create_only=true` for an absent file. Every mode, including APPEND, follows this rule. The tool schema expresses the alternatives with `oneOf`. |
 | `file_read` | Optional `expected_version`. Subsequent ranges use the first range's version. Changed, missing, or recreated files fail, including empty/EOF reads. |
 | `file_delete` | **Required:** `expected_version` for an exact file. A child-file token never authorizes recursive directory deletion. |
-| `file_rename` | **Required:** source `expected_version`. A non-overwriting move requires an absent destination. For `overwrite=true`, additionally supply `expected_destination_version` or `destination_must_not_exist=true`. With `target_project`, the source token is checked in `project` and every destination condition in `target_project`. |
+| `file_rename` | **Required:** source `expected_version`. A non-overwriting move requires an absent destination. For `overwrite=true`, additionally supply `expected_destination_version` or `destination_must_not_exist=true`. With `target_project`, the source token is checked against the file `project` shows (possibly inherited from `@DEFAULT`) and every destination condition against `target_project`'s own files, so a `@DEFAULT` file there is not a destination. |
 | Historical restore | Condition on the live file's current version; the historical numeric snapshot ID chooses the bytes to restore, not the edit base. |
 
 Rename destination conditions require a source condition and are mutually

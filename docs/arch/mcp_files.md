@@ -100,7 +100,7 @@ type FileEntry struct {
 }
 
 type ChunkEntry struct {
-    Project            string // populated only for file_search with project="*"
+    Project            string // physical project of the hit; set when the search spans several projects (an ordinary project or "*")
     FilePath           string
     FileSeekStartBytes int64 // inclusive
     FileSeekEndBytes   int64 // exclusive
@@ -428,6 +428,14 @@ Error mapping:
 
 All offsets are byte-based and follow `[start, end)`.
 
+Every path-prefix predicate below (`path + "/%"` descendants, `path_prefix`) is built by `prefixSQL`/`belowPathSQL`:
+an escaped `LIKE ... ESCAPE '\'` keeps the prefix scan, and a `substr` comparison keeps the match case-sensitive
+on SQLite, whose `LIKE` folds ASCII case. Prefixes are therefore literal (`_` is not a wildcard), case-sensitive
+and, for descendants, segment-aware on both databases.
+
+For an overlaid project (every user project except `@DEFAULT`), stat, read, list and the resolution of an
+existing file operand use the filesystem view of §10.4; `file_search` does not.
+
 ### 9.1 `file_stat(project, path)`
 
 - `exists=false` is a normal success path.
@@ -548,17 +556,26 @@ Rename/move semantics:
   - `overwrite=true`: only single-file source may replace an existing file at exact destination path
   - directory move with destination collisions is rejected (`ALREADY_EXISTS`)
 
+Same-project rename of an overlaid project: the source is the file the view shows and is renamed within its own
+physical project (a default for every project). The destination is judged on the view; overwrite replaces only a
+visible file, and a hidden default at the destination fails with `ALREADY_EXISTS`. Contract:
+[`fileio_default_project.md` §5.1](../proposals/fileio_default_project.md#51-same-project-rename).
+
 Cross-project move (`target_project` set and different from `project`):
 
 - `target_project` is validated like `project` and is scoped to the caller's `apikey_hash`; `"*"` is rejected.
-- the source is resolved in `project`; `to_path`, parent-file checks, collisions, overwrite and the
-  destination conditions (`expected_destination_version`, `destination_must_not_exist`) apply in `target_project`.
+- the source is the physical file a read of `project` resolves: its own file or, for an overlaid project, the
+  inherited `@DEFAULT` file, which then leaves `@DEFAULT` for every project. `to_path`, parent-file checks,
+  collisions, overwrite and the destination conditions (`expected_destination_version`,
+  `destination_must_not_exist`) apply to `target_project`'s own physical files only. A `@DEFAULT` file at the
+  destination is not a collision of an ordinary target project and is never overwritten or deleted by the move.
 - `from_path == to_path` is a real move, not a no-op, and the own-subtree rule does not apply.
 - moved bytes must fit `target_project`'s quota after overwritten destinations are released (`QUOTA_EXCEEDED`).
 - rows keep their id and incarnation, `mcp_file_versions` history moves with them, and the revision trigger advances
   each moved file's revision.
-- the transaction holds both project advisory locks, taken in ascending `(lock key, project)` order by
-  `MultiProjectLockProvider.WithProjectsLock`; a lock provider without it refuses the move.
+- the transaction holds both project advisory locks, plus `@DEFAULT` when the default layer touches the source
+  path, taken in `ProjectLockOrder` (ascending `(lock key, project)`) by `MultiProjectLockProvider.WithProjectsLock`;
+  a lock provider without it refuses the move. The source is re-resolved and validated under those locks.
 - memory plugins expose the move through the optional `CrossProjectRenamer` capability. `rag` delegates to the
   service above. `pageindex` moves catalog entries and trees from the source tenant namespace to the target one in
   the same transaction, using the exact FileIO move and replacement paths. It reads both catalogs but only the
@@ -578,12 +595,13 @@ Execution outline:
 1. validate `project`, `from_path`, `to_path`, and `overwrite`.
 2. reject root source or root destination.
 3. if `from_path == to_path` within one project, return `moved_count=0`.
-4. start transaction and acquire the project advisory lock (both projects' locks for a cross-project move).
-5. resolve source file set:
+4. start transaction and acquire the project advisory lock (both projects' locks for a cross-project move, plus
+   `@DEFAULT` when the default layer touches a moved path; §10.4).
+5. resolve source file set (through the view for an overlaid project):
    - exact file match at `from_path`, or
    - descendant files under `from_path + "/%"`, else `NOT_FOUND`.
 6. validate destination constraints and collision policy.
-7. if overwrite-replace applies, soft-delete the replaced destination file first.
+7. if overwrite-replace applies, snapshot the replaced destination file into history and soft-delete it first.
 8. apply transactional path remap update on `mcp_files` with `updated_at=now`.
 9. enqueue a `DELETE` for `old_path`. For a RAG-indexed destination, queue one `UPSERT` that replaces
    old chunks. For an opted-out destination, clear obsolete RAG chunks in the move transaction without
@@ -614,26 +632,32 @@ Execution outline:
 ### 9.7 `file_search(project, query, path_prefix="", limit=5)`
 
 - `query` must be non-empty after trim, else `INVALID_QUERY`.
-- `path_prefix` is a raw string-prefix filter (not directory-boundary filter);
+- `path_prefix` is a literal, case-sensitive string-prefix filter (not directory-boundary filter);
   the MCP tool layer normalizes a missing leading `/`.
 - limit default 5, max 20.
 - return only chunks from active files (never deleted).
 - order by final score descending.
 - eventual consistency accepted.
 - `project="*"` is the cross-project wildcard. It is accepted only by `file_search`; all other file tools must continue to reject `"*"` and require an explicit project. Tenant isolation by `apikey_hash` is unchanged, so the wildcard only spans projects owned by the caller.
-- For `project="*"`, every returned `ChunkEntry` must include the source `project` value. For single-project searches the field is omitted from the response.
+- Retrieval is physical (`SearchProjects`): an ordinary project searches the physical projects `project` and
+  `@DEFAULT`, including documents the filesystem view hides; `@DEFAULT` and system namespaces search only
+  themselves; `"*"` searches every project of the caller.
+- Whenever the search spans more than one physical project (an ordinary project or `"*"`), every returned
+  `ChunkEntry` must include the physical `project` that stores it. A search of `@DEFAULT` or a system namespace
+  omits the field.
 
 Execution outline:
 
 1. validate project/query/path_prefix/limit. Search-specific validator additionally accepts the `"*"` wildcard.
 2. embed query text.
-3. fetch semantic candidates (`top_n_semantic`). When `project="*"`, drop the `c.project = ?` predicate while keeping `apikey_hash` filtering.
-4. fetch lexical candidates (`top_n_lexical`). Same wildcard handling.
+3. fetch semantic candidates (`top_n_semantic`), restricted to the scope's physical projects with
+   `c.project IN (...)`; for `project="*"` drop the project predicate while keeping `apikey_hash` filtering.
+4. fetch lexical candidates (`top_n_lexical`). Same project scope.
 5. merge and dedupe candidates.
 6. rerank merged set via external rerank API.
 7. on rerank failure, apply fused fallback score.
 8. trim to `limit`, update `last_served_at` for returned chunk IDs only.
-9. return `ChunkEntry[]`. Populate the per-chunk `project` field only when the caller requested the wildcard.
+9. return `ChunkEntry[]`. Populate the per-chunk `project` field whenever the scope spans more than one physical project.
 
 ## 10. Concurrency and Consistency Design
 
@@ -663,20 +687,32 @@ Implementation detail:
 
 Contract: [`docs/proposals/fileio_default_project.md`](../proposals/fileio_default_project.md).
 
-- `@DEFAULT` is a physical project per `apikey_hash`; every other user project
-  reads a merged view: its own live files, plus `@DEFAULT` files it does not hide
-  with a file at the same path, an ancestor, or below it.
-- Read paths (`overlay.go`): `resolveActiveFile` (file lookup with shadow check),
-  `visibleDescendants` (merged directory contents), the search `searchScope`
-  predicate (`overlay_search.go`), and union history (`historyProjects`).
-- Mutations (`runUserMutation`): take the project lock, probe the default layer for
-  the mutated paths inside that transaction, and either run the unchanged
-  single-project code or roll back and rerun in overlay mode under
-  `@DEFAULT` + project locks acquired in `ProjectLockOrder`
-  (`MultiProjectLockProvider`). Overlay mode resolves each path to its physical
-  layer and writes through to `@DEFAULT` rows (`overlay_mutations.go`).
-- Plugins: `WriteResult.ResolvedProject` and `SystemStateHooks` keep PageIndex
-  trees/catalogs with the physical project; RAG chunks are always physical.
+- `@DEFAULT` is a physical project per `apikey_hash`. Every other user project is overlaid: stat, read, list and
+  the resolution of an existing file operand use its filesystem view, where a directory is the recursive union of
+  both layers and only a conflicting name (file/file, file/directory, directory/file) is replaced by the project's
+  entry. `@DEFAULT`, the search wildcard, system namespaces and contexts marked with `files.WithPhysicalProjects`
+  (memory engine, shadow replay, PageIndex source reads) stay physical (`overlayApplies`).
+- The name-conflict rule lives only in the FileIO namespace resolver, `internal/mcp/files/overlay.go`:
+  `resolveFile` resolves one path in a single statement; `visibleDescendants` reads both layers below a path in a
+  single statement and merges them with `upperShadow`; `withReadSnapshot` runs a multi-statement stat or list in
+  one read-only transaction (`REPEATABLE READ` on PostgreSQL). History is the union of both layers
+  (`historyProjects`). Retrieval code never applies the rule.
+- Mutations (`runUserMutation`): under the addressed project's locks, `defaultLayerTouches` probes whether
+  `@DEFAULT` has a live file at, above or below the touched paths. If not, the mutation runs the unchanged
+  single-project path. Otherwise it rolls back before any change and reruns holding `@DEFAULT` too, every scope in
+  `ProjectLockOrder`. That run writes through to the resolved physical row, deletes each target in its own
+  project, and moves each rename source with the ordinary move of its own physical project; a same-project
+  destination is first judged on the view (`checkOverlayDestinationTx`).
+- Retrieval (`SearchProjects`): RAG filters `project IN (P, '@DEFAULT')` and labels each hit with its physical
+  project. PageIndex search reads one catalog per physical project (`SearchInput.Catalogs`) and validates each
+  candidate against its own physical row with `files.Service.ActiveContentHash`; degraded-tree refresh reads the
+  physical row. Indexing and summaries are physical, and `WriteResult.ResolvedProject` names the project a write
+  stored.
+- Plugin state: a mutation reports `files.RenameStateChange{Project, TargetProject, Mappings, OverwrittenPaths}`
+  once per physical project pair it changed, and `files.SystemStateMovePlan.SystemProject` maps each physical user
+  project to its system namespace. The optional `files.AtomicMappedSystemFS` capability (`DeleteMappedWithState`,
+  `RenameMappedWithState`) carries such plans. `AtomicSystemFS` keeps its single-namespace signatures and refuses a
+  change that resolves to `@DEFAULT`.
 
 ## 11. Indexing Pipeline (Outbox + Worker)
 

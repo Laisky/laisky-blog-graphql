@@ -425,7 +425,7 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
           </CardContent>
         </Card>
       </div>
-      <Card><CardHeader><CardTitle className="text-xl">Search</CardTitle><CardDescription>Search indexed content; read the live file before editing a result.</CardDescription></CardHeader>
+      <Card><CardHeader><CardTitle className="text-xl">Search</CardTitle><CardDescription>Search indexed content of this project and @DEFAULT; read the live file from the result&apos;s project before editing it.</CardDescription></CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
             <Field id="file-io-search-query" label="Search Query"><Input id="file-io-search-query" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} /></Field>
