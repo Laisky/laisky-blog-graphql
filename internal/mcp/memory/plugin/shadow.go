@@ -216,8 +216,14 @@ func (s *ShadowPlugin) Write(ctx context.Context, auth files.AuthContext, projec
 		return res, err
 	}
 
+	// Replay the physical change the live plugin made. A write that resolved to
+	// a @DEFAULT file is replayed there, never as a new project copy.
+	replayProject := project
+	if res.ResolvedProject != "" {
+		replayProject = res.ResolvedProject
+	}
 	s.fireMutation(ctx, "write", project, path, liveDur, func(opCtx context.Context) error {
-		_, e := s.shadow.Write(opCtx, auth, project, path, content, contentEncoding, offset, mode)
+		_, e := s.shadow.Write(files.WithPhysicalProjects(opCtx), auth, replayProject, path, content, contentEncoding, offset, mode)
 		return e
 	})
 	return res, nil
@@ -233,7 +239,8 @@ func (s *ShadowPlugin) Delete(ctx context.Context, auth files.AuthContext, proje
 	}
 
 	s.fireMutation(ctx, "delete", project, path, liveDur, func(opCtx context.Context) error {
-		_, e := s.shadow.Delete(opCtx, auth, project, path, recursive)
+		// Physical replay: the delete must not reach a default the live delete revealed.
+		_, e := s.shadow.Delete(files.WithPhysicalProjects(opCtx), auth, project, path, recursive)
 		return e
 	})
 	return res, nil
@@ -249,7 +256,7 @@ func (s *ShadowPlugin) Rename(ctx context.Context, auth files.AuthContext, proje
 	}
 
 	s.fireMutation(ctx, "rename", project, fromPath, liveDur, func(opCtx context.Context) error {
-		_, e := s.shadow.Rename(opCtx, auth, project, fromPath, toPath, overwrite)
+		_, e := s.shadow.Rename(files.WithPhysicalProjects(opCtx), auth, project, fromPath, toPath, overwrite)
 		return e
 	})
 	return res, nil

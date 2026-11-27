@@ -10,6 +10,7 @@ import (
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
+	"github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
@@ -151,32 +152,59 @@ func TestDefaultOverlayPostgresOppositeMutationsDoNotDeadlock(t *testing.T) {
 	require.Positive(t, defaults)
 }
 
-// TestDefaultOverlayPostgresSearch runs the overlay visibility predicate on
-// PostgreSQL: tsvector retrieval, the raw-file fallback, and the wildcard.
+// keywordPostgresEmbedder embeds "needle" texts on one axis and every other
+// text on another, at the production vector dimension.
+type keywordPostgresEmbedder struct{}
+
+// EmbedTexts returns one 1536-dimension keyword vector per input.
+func (keywordPostgresEmbedder) EmbedTexts(_ context.Context, _ string, inputs []string) ([]pgvector.Vector, error) {
+	vectors := make([]pgvector.Vector, 0, len(inputs))
+	for _, input := range inputs {
+		values := make([]float32, 1536)
+		if strings.Contains(input, "needle") {
+			values[0] = 1
+		} else {
+			values[1] = 1
+		}
+		vectors = append(vectors, pgvector.NewVector(values))
+	}
+	return vectors, nil
+}
+
+// TestDefaultOverlayPostgresSearch runs physical retrieval on PostgreSQL: the
+// raw-file fallback, tsvector and pgvector retrieval, and the wildcard. A
+// project searches its own files and every default, including the defaults its
+// view hides, and every hit names its physical project.
 func TestDefaultOverlayPostgresSearch(t *testing.T) {
 	f := newRaceFixture(t, "postgres", func(s *files.Settings) {
 		s.Search.Enabled = true
 		s.Index.BatchSize = 50
 	})
-	svc, err := files.NewService(f.db[0], f.settings, nil, nil, nil, &overlayCredentialStore{data: map[string]string{}}, nil, nil, nil)
-	require.NoError(t, err)
+	newService := func(embedder files.Embedder, settings files.Settings) *files.Service {
+		svc, err := files.NewService(f.db[0], settings, embedder, nil, nil, &overlayCredentialStore{data: map[string]string{}}, nil, nil, nil)
+		require.NoError(t, err)
+		return svc
+	}
+	svc := newService(nil, f.settings)
 	write := func(project, path, content string) {
 		_, err := svc.Write(f.ctx, f.auth, project, path, content, "utf-8", 0, files.WriteModeTruncate)
 		require.NoError(t, err)
 	}
+	// The project file predates the default subtree it later hides.
+	write("alpha", "/sub", "needle alpha file hides the default subtree")
 	write(files.DefaultProject, "/u_1.md", "needle default override target")
 	write(files.DefaultProject, "/only.md", "needle default only")
 	write(files.DefaultProject, "/sub/deep.md", "needle default deep")
 	write("alpha", "/note.md", "needle alpha note")
-	// Hide the defaults through project files that predate them: rename a project
-	// file over the default name (overwrite shadows instead of deleting).
+	// Override a default through the public recipe: a project file renamed onto
+	// the default's name shadows it instead of deleting it.
 	write("alpha", "/tmp-u.md", "needle alpha override")
-	_, err = svc.Rename(f.ctx, f.auth, "alpha", "/tmp-u.md", "/u_1.md", true)
+	_, err := svc.Rename(f.ctx, f.auth, "alpha", "/tmp-u.md", "/u_1.md", true)
 	require.NoError(t, err)
 
-	search := func(project string) map[string]bool {
+	search := func(svc *files.Service, project, prefix string) map[string]bool {
 		t.Helper()
-		res, err := svc.Search(f.ctx, f.auth, project, "needle", "", 20)
+		res, err := svc.Search(f.ctx, f.auth, project, "needle", prefix, 20)
 		require.NoError(t, err)
 		out := map[string]bool{}
 		for _, chunk := range res.Chunks {
@@ -184,24 +212,45 @@ func TestDefaultOverlayPostgresSearch(t *testing.T) {
 		}
 		return out
 	}
-	want := map[string]bool{":/u_1.md": true, ":/only.md": true, ":/sub/deep.md": true, ":/note.md": true}
-	require.Equal(t, want, search("alpha"), "raw-file fallback before indexing")
+	defaults := map[string]bool{"@DEFAULT:/u_1.md": true, "@DEFAULT:/only.md": true, "@DEFAULT:/sub/deep.md": true}
+	want := map[string]bool{
+		"@DEFAULT:/u_1.md": true, "@DEFAULT:/only.md": true, "@DEFAULT:/sub/deep.md": true,
+		"alpha:/note.md": true, "alpha:/u_1.md": true, "alpha:/sub": true,
+	}
+	require.Equal(t, want, search(svc, "alpha", ""), "raw-file fallback before indexing")
 
 	require.NoError(t, svc.NewIndexWorker().RunOnce(f.ctx))
 	var defaultChunks int
 	require.NoError(t, f.db[0].QueryRowContext(f.ctx, f.query(
 		`SELECT COUNT(1) FROM mcp_file_chunks WHERE project = ? AND system_owner = ''`), files.DefaultProject).Scan(&defaultChunks))
 	require.Positive(t, defaultChunks, "defaults are indexed under their own physical project")
-	require.Equal(t, want, search("alpha"), "indexed lexical retrieval")
-	res, err := svc.Search(f.ctx, f.auth, "alpha", "override", "/u_", 20)
+	require.Equal(t, want, search(svc, "alpha", ""), "indexed tsvector retrieval")
+	require.Equal(t, map[string]bool{"@DEFAULT:/u_1.md": true, "alpha:/u_1.md": true}, search(svc, "alpha", "/u_"),
+		"both documents at one path are hits, and the prefix is literal")
+	require.Empty(t, search(svc, "alpha", "/U_"), "the prefix is case-sensitive")
+	require.Equal(t, defaults, search(svc, "beta", ""))
+	require.Equal(t, want, search(svc, files.ProjectWildcard, ""))
+
+	// pgvector retrieval has the same physical scope.
+	vectorSettings := f.settings
+	vectorSettings.Search.LexicalCandidates = 0
+	vector := newService(keywordPostgresEmbedder{}, vectorSettings)
+	_, err = vector.Write(f.ctx, f.auth, files.DefaultProject, "/vector.md", "needle default vector", "utf-8", 0, files.WriteModeTruncate)
 	require.NoError(t, err)
-	require.Len(t, res.Chunks, 1)
-	require.Contains(t, res.Chunks[0].ChunkContent, "alpha override", "the project file, not the default, answers")
-	require.Equal(t, map[string]bool{":/u_1.md": true, ":/only.md": true, ":/sub/deep.md": true}, search("beta"))
-	require.Equal(t, map[string]bool{
-		"@DEFAULT:/u_1.md": true, "@DEFAULT:/only.md": true, "@DEFAULT:/sub/deep.md": true,
-		"alpha:/u_1.md": true, "alpha:/note.md": true,
-	}, search(files.ProjectWildcard))
+	_, err = vector.Write(f.ctx, f.auth, "gamma", "/tmp-vector.md", "needle gamma vector", "utf-8", 0, files.WriteModeTruncate)
+	require.NoError(t, err)
+	_, err = vector.Rename(f.ctx, f.auth, "gamma", "/tmp-vector.md", "/vector.md", true)
+	require.NoError(t, err)
+	_, err = vector.Write(f.ctx, f.auth, "gamma", "/plain.md", "unrelated words", "utf-8", 0, files.WriteModeTruncate)
+	require.NoError(t, err)
+	require.NoError(t, vector.NewIndexWorker().RunOnce(f.ctx))
+	res, err := vector.Search(f.ctx, f.auth, "gamma", "needle", "/vector", 2)
+	require.NoError(t, err)
+	var vectorHits []string
+	for _, chunk := range res.Chunks {
+		vectorHits = append(vectorHits, chunk.Project+":"+chunk.FilePath)
+	}
+	require.ElementsMatch(t, []string{"gamma:/vector.md", "@DEFAULT:/vector.md"}, vectorHits)
 }
 
 // overlayCredentialStore keeps credential envelopes in memory for indexing tests.

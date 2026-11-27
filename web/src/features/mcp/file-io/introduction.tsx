@@ -10,7 +10,7 @@ const descriptions = [
   ['file_restore_version', 'Restore history with the original live expected_version, or create_only=true after deletion. History IDs do not authorize overwriting.'],
   ['file_list', 'Browse project files and directories. Listing entries is not a file-edit snapshot.'],
   ['file_stat', 'Inspect metadata and the current file version. Do not pair a later stat version with earlier read content.'],
-  ['file_search', 'Find relevant indexed content. Read the live file before editing; search chunks are not an edit base.'],
+  ['file_search', 'Find relevant indexed content; each hit names the project that stores it. Read the live file from that project before editing; search chunks are not an edit base.'],
   ['file_delete', 'Delete one file with its expected_version. Recursive directory deletion is not supported by this versioned client contract.'],
   ['file_rename', 'Move one file with its source version, optionally into another project with target_project. Require an absent destination, or protect an existing destination with its own version.'],
 ];
@@ -47,6 +47,7 @@ export function FileIOIntroduction() {
         <div className="rounded-lg border border-border/60 p-4 text-sm space-y-2">
           <p><strong><code>@DEFAULT</code> holds shared defaults for this API key.</strong> Its files appear in every other project, read and edited like the project&apos;s own files, unless that project has its own file at the same path.</p>
           <p>Editing, renaming, or deleting a default from any project changes it for all projects. New files stay in the project you write to. Other API keys never see these files.</p>
+          <p>Search covers the project&apos;s own files and the <code>@DEFAULT</code> files, including ones the project overrides, and each result names the project that stores it.</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {descriptions.map(([name, text]) => <div key={name} className="rounded-lg border border-border/50 bg-card/50 p-4">

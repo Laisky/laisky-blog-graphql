@@ -545,14 +545,29 @@
       "TestPageIndexRenameIdentityFollowsCatalog",
       "TestPageIndexRenameDuringPublication",
       "TestPageIndexRenameRejectsStaleTreeAndDropsNonIndexableState",
-      "TestPageIndexLegacyAtomicSystemFSStillRenamesAtomically"
+      "TestPageIndexLegacyAtomicSystemFSStillRenamesAtomically",
+      "TestPageIndexDefaultOverlaySamePathDocumentsAreBothHits",
+      "TestPageIndexDefaultOverlayStaleProjectEntryIsSkipped",
+      "TestPageIndexDefaultOverlayCrossProjectMoveOfInheritedDefault"
     ]
   },
   {
     "package": "./internal/mcp/files",
     "tests": [
       "TestRenameOverwritePreservesReplacementSearch",
-      "TestRenameOptOutNeverPublishesRAG"
+      "TestRenameOptOutNeverPublishesRAG",
+      "TestDefaultViewDirectoryUnion",
+      "TestDefaultViewPathsAreCaseSensitiveAndSegmentAware",
+      "TestDefaultViewReadResolvesOneSnapshot",
+      "TestDefaultCrossProjectMoves",
+      "TestDefaultSameProjectRenameReplacesOnlyVisibleFiles",
+      "TestDefaultOverlaySearch"
+    ]
+  },
+  {
+    "package": "./internal/mcp/memory",
+    "tests": [
+      "TestMemoryEngineKeepsSharedDefaultsOutOfProjectState"
     ]
   }
 ]

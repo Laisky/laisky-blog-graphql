@@ -3,7 +3,9 @@ package files
 import (
 	"context"
 	"database/sql"
+	"maps"
 	"sort"
+	"strings"
 	"testing"
 
 	errors "github.com/Laisky/errors/v2"
@@ -416,21 +418,41 @@ func TestDefaultOverlayRenameSemantics(t *testing.T) {
 	f.requireCode(err, ErrCodeInvalidPath)
 }
 
-// TestDefaultOverlaySearch covers RAG search over the merged view.
+// keywordEmbedder embeds a text as [1, 0] when it mentions "needle" and as
+// [0, 1] otherwise, so semantic retrieval separates matches deterministically.
+type keywordEmbedder struct{}
+
+// EmbedTexts returns one keyword vector per input.
+func (keywordEmbedder) EmbedTexts(_ context.Context, _ string, inputs []string) ([]pgvector.Vector, error) {
+	vectors := make([]pgvector.Vector, 0, len(inputs))
+	for _, input := range inputs {
+		if strings.Contains(input, "needle") {
+			vectors = append(vectors, pgvector.NewVector([]float32{1, 0}))
+		} else {
+			vectors = append(vectors, pgvector.NewVector([]float32{0, 1}))
+		}
+	}
+	return vectors, nil
+}
+
+// TestDefaultOverlaySearch covers physical retrieval: a project searches its
+// own files and every default, including defaults its filesystem view hides,
+// and every hit names the project that stores it.
 func TestDefaultOverlaySearch(t *testing.T) {
 	t.Parallel()
 	f := newOverlayFixture(t)
-	// Lexical retrieval only: a constant test vector would rank every chunk equally.
-	f.svc.embedder = errTestEmbedder{}
+	f.svc.embedder = errTestEmbedder{} // lexical retrieval first
 	f.put(DefaultProject, "/u.md", "needle default override-target")
 	f.put(DefaultProject, "/only.md", "needle default only")
 	f.put(DefaultProject, "/sub/deep.md", "needle default deep")
+	f.put(DefaultProject, "/dirname", "needle default file hidden by a project directory")
 	f.svc.mustWritePhysical(t, f.auth, "alpha", "/u.md", "needle alpha override")
 	f.svc.mustWritePhysical(t, f.auth, "alpha", "/sub", "alpha file hides the default subtree")
+	f.svc.mustWritePhysical(t, f.auth, "alpha", "/dirname/own.md", "alpha directory at a default file's name")
 	_, err := f.svc.Write(f.ctx, f.foreign, DefaultProject, "/foreign.md", "needle foreign tenant", "utf-8", 0, WriteModeTruncate)
 	require.NoError(t, err)
 
-	paths := func(project string) map[string]string {
+	hits := func(project string) map[string]string {
 		t.Helper()
 		res, err := f.svc.Search(f.ctx, f.auth, project, "needle", "", 20)
 		require.NoError(t, err)
@@ -440,30 +462,79 @@ func TestDefaultOverlaySearch(t *testing.T) {
 		}
 		return out
 	}
-
-	// Retrieval is physical: alpha searches its own files and every default,
-	// also those its filesystem view hides, and each hit names its project.
-	alphaHits := map[string]string{
-		"alpha:/u.md": "needle alpha override", "@DEFAULT:/u.md": "needle default override-target",
-		"@DEFAULT:/only.md": "needle default only", "@DEFAULT:/sub/deep.md": "needle default deep",
+	defaults := map[string]string{
+		"@DEFAULT:/u.md": "needle default override-target", "@DEFAULT:/only.md": "needle default only",
+		"@DEFAULT:/sub/deep.md": "needle default deep", "@DEFAULT:/dirname": "needle default file hidden by a project directory",
 	}
-	require.Equal(t, alphaHits, paths("alpha"), "the raw-file fallback searches both physical projects")
+	alphaHits := maps.Clone(defaults)
+	alphaHits["alpha:/u.md"] = "needle alpha override"
 
+	require.Equal(t, alphaHits, hits("alpha"), "the raw-file fallback searches both physical projects")
 	require.NoError(t, f.svc.NewIndexWorker().RunOnce(f.ctx))
 	var defaultChunks int
 	require.NoError(t, f.svc.db.QueryRowContext(f.ctx,
 		`SELECT COUNT(1) FROM mcp_file_chunks WHERE apikey_hash = ? AND project = ? AND system_owner = ''`,
 		f.auth.APIKeyHash, DefaultProject).Scan(&defaultChunks))
-	require.Positive(t, defaultChunks, "defaults are indexed under their own physical project")
-	require.Equal(t, alphaHits, paths("alpha"), "indexed search keeps both same-path documents")
-	require.Equal(t, map[string]string{
-		"@DEFAULT:/u.md": "needle default override-target", "@DEFAULT:/only.md": "needle default only", "@DEFAULT:/sub/deep.md": "needle default deep",
-	}, paths("beta"))
+	require.Positive(t, defaultChunks, "defaults are indexed once, under their own physical project")
+	var copies int
+	require.NoError(t, f.svc.db.QueryRowContext(f.ctx,
+		`SELECT COUNT(1) FROM mcp_file_chunks WHERE apikey_hash = ? AND project = ? AND file_path = '/only.md' AND system_owner = ''`,
+		f.auth.APIKeyHash, "alpha").Scan(&copies))
+	require.Zero(t, copies, "an inheriting project never gets its own index of a default")
+	require.Equal(t, alphaHits, hits("alpha"), "indexed lexical retrieval keeps same-path and hidden documents")
+	require.Equal(t, defaults, hits("beta"))
+
+	// Each hit is readable from its physical source, also where alpha's view
+	// shows a different file at the same path.
+	read, err := f.svc.Read(f.ctx, f.auth, DefaultProject, "/u.md", 0, -1)
+	require.NoError(t, err)
+	require.Equal(t, "needle default override-target", read.Content)
+	require.Equal(t, "needle alpha override", f.read("alpha", "/u.md"))
+
+	// Semantic retrieval (the in-memory vector path) has the same scope.
+	semantic := newOverlayFixture(t)
+	semantic.svc.embedder = keywordEmbedder{}
+	semantic.svc.settings.Search.LexicalCandidates = 0
+	semantic.put(DefaultProject, "/u.md", "needle default")
+	semantic.svc.mustWritePhysical(t, semantic.auth, "alpha", "/u.md", "needle alpha")
+	semantic.put("alpha", "/other.md", "unrelated words")
+	require.NoError(t, semantic.svc.NewIndexWorker().RunOnce(semantic.ctx))
+	res, err := semantic.svc.Search(semantic.ctx, semantic.auth, "alpha", "needle", "", 2)
+	require.NoError(t, err)
+	var semanticHits []string
+	for _, chunk := range res.Chunks {
+		semanticHits = append(semanticHits, chunk.Project+":"+chunk.FilePath)
+	}
+	require.ElementsMatch(t, []string{"alpha:/u.md", "@DEFAULT:/u.md"}, semanticHits)
+
+	// Creating or deleting an override never changes which defaults are found.
+	f.put("alpha", "/new-override.md", "needle temporary")
+	_, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/new-override.md", "/only.md", true)
+	require.NoError(t, err)
+	require.NoError(t, f.svc.NewIndexWorker().RunOnce(f.ctx))
+	withOverride := hits("alpha")
+	require.Equal(t, "needle default only", withOverride["@DEFAULT:/only.md"])
+	require.Equal(t, "needle temporary", withOverride["alpha:/only.md"])
+	ctx, err := WithFilePreconditions(f.ctx, f.auth, "alpha", "/only.md", FileOperationDelete, FilePreconditions{ExpectedVersion: f.put("alpha", "/only.md", "needle temporary").Version})
+	require.NoError(t, err)
+	_, err = f.svc.Delete(ctx, f.auth, "alpha", "/only.md", false)
+	require.NoError(t, err)
+	require.NoError(t, f.svc.NewIndexWorker().RunOnce(f.ctx))
+	require.Equal(t, alphaHits, hits("alpha"), "after the override is deleted the default is still the same hit")
+
 	require.Equal(t, map[string]string{
 		"@DEFAULT:/u.md": "needle default override-target", "@DEFAULT:/only.md": "needle default only",
-		"@DEFAULT:/sub/deep.md": "needle default deep", "alpha:/u.md": "needle alpha override",
-	}, paths(ProjectWildcard), "the wildcard search stays physical and labels each project")
-	require.Len(t, paths(DefaultProject), 3)
+		"@DEFAULT:/sub/deep.md": "needle default deep", "@DEFAULT:/dirname": "needle default file hidden by a project directory",
+		"alpha:/u.md": "needle alpha override",
+	}, hits(ProjectWildcard), "the wildcard search stays physical and labels each project")
+	physical := map[string]string{}
+	for key, content := range hits(DefaultProject) {
+		physical[key] = content
+	}
+	require.Len(t, physical, 4)
+	for key := range physical {
+		require.True(t, strings.HasPrefix(key, ":"), "a single-project search of the default layer is unlabeled: %s", key)
+	}
 }
 
 // TestDefaultProjectDiscovery lists the default layer like any project with files.

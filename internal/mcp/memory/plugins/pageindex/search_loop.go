@@ -111,11 +111,8 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 			break
 		}
 		catalog := in.Catalogs[cand.catalog]
-		if in.ValidateSource != nil {
-			valid, validateErr := in.ValidateSource(ctx, catalog.Project, cand.userPath, cand.entry.SourceContentHash)
-			if validateErr != nil || !valid {
-				continue
-			}
+		if !in.validSource(ctx, catalog.Project, cand) {
+			continue
 		}
 		stepBudget--
 		if in.OnCandidate != nil {
@@ -174,6 +171,16 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 		allChunks = allChunks[:in.Limit]
 	}
 	return files.SearchResult{Chunks: allChunks}, nil
+}
+
+// validSource reports whether cand still describes the live file stored in its
+// physical project; without a validator every candidate is current.
+func (in SearchInput) validSource(ctx context.Context, project string, cand rankedCandidate) bool {
+	if in.ValidateSource == nil {
+		return true
+	}
+	valid, err := in.ValidateSource(ctx, project, cand.userPath, cand.entry.SourceContentHash)
+	return err == nil && valid
 }
 
 // searchCandidates keeps the first CandidateDocs catalog entries matching the

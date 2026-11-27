@@ -16,8 +16,13 @@ import (
 
 // fileProjectDescription documents the project argument of every FileIO tool,
 // including the reserved per-API-key default layer.
-const fileProjectDescription = "Target project namespace. Files in the reserved project \"@DEFAULT\" appear in every project of this API key " +
-	"unless that project has its own file at the path; editing, renaming, or deleting such a file from any project changes the shared default."
+const fileProjectDescription = "Target project namespace. Every project of this API key also shows the files of the reserved project \"@DEFAULT\" " +
+	"wherever it has no entry of the same name; editing, renaming, or deleting such an inherited file changes the shared default."
+
+// fileSearchProjectDescription documents the physical scope of file_search.
+const fileSearchProjectDescription = "Target project namespace. A project's search also covers the reserved project \"@DEFAULT\", " +
+	"including defaults the project overrides, and each returned chunk then names the project that stores it; read a chunk with that project. " +
+	"Use \"*\" to search across every project owned by the caller; each chunk then includes its source project too."
 
 // Shared field names used across tool responses and JSON Schema fragments.
 // Declared once so the redaction, encoding and schema paths cannot drift.

@@ -184,7 +184,7 @@ func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, pat
 
 	// Re-read the complete post-write content so APPEND/OVERWRITE/TRUNCATE index and
 	// summarize the whole file, not just the request delta.
-	full, readErr := p.userFS.Read(ctx, auth, layer, path, 0, -1)
+	full, readErr := p.userFS.Read(files.WithPhysicalProjects(ctx), auth, layer, path, 0, -1)
 	if readErr != nil {
 		return res, errors.Wrap(readErr, "read post-write content for pageindex")
 	}
