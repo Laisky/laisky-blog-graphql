@@ -191,6 +191,72 @@ func pageIndexMoveTreePaths(change files.RenameStateChange, source, target map[s
 	return slices.Collect(maps.Keys(sourceSet)), targetPaths, nil
 }
 
+// pageIndexTreeMove holds one validated destination publication.
+type pageIndexTreeMove struct {
+	entry IndexEntry
+	tree  Tree
+	path  string
+}
+
+// pageIndexGatherMoves validates affected source trees before mutating either
+// namespace. The caller owns private catalog maps in the FileIO transaction.
+func pageIndexGatherMoves(change files.RenameStateChange, sourceIndex Index, source map[string][]byte) ([]pageIndexTreeMove, []string, error) {
+	var incoming []pageIndexTreeMove
+	var removed []string
+	for _, mapping := range change.Mappings {
+		entry := sourceIndex[mapping.OldPath]
+		delete(sourceIndex, mapping.OldPath)
+		if entry.DocID != "" {
+			removed = append(removed, entry.DocID)
+		}
+		if !isLongDocPath(mapping.NewPath) {
+			continue
+		}
+		if !isLongDocPath(mapping.OldPath) || pageIndexDocKind(mapping.OldPath) != pageIndexDocKind(mapping.NewPath) {
+			return nil, nil, errors.WithStack(files.NewError(files.ErrCodeInvalidArgument,
+				"destination changes the document format; write the document with the new extension instead", false))
+		}
+		tree, err := pageIndexCurrentMoveTree(mapping, entry, source[treePath(entry.DocID)])
+		if err != nil {
+			return nil, nil, err
+		}
+		incoming = append(incoming, pageIndexTreeMove{entry: entry, tree: tree, path: mapping.NewPath})
+	}
+	return incoming, removed, nil
+}
+
+// pageIndexCurrentMoveTree requires the tree to describe the active FileIO bytes
+// and format. No synchronous model work runs under project locks.
+func pageIndexCurrentMoveTree(mapping files.RenameMapping, entry IndexEntry, body []byte) (Tree, error) {
+	var tree Tree
+	if !mapping.SkipRAGIndex || mapping.ContentHash == "" || entry.SourceContentHash != mapping.ContentHash ||
+		len(body) == 0 || json.Unmarshal(body, &tree) != nil || tree.DocID != entry.DocID ||
+		tree.SourceContentHash != mapping.ContentHash || tree.Type != pageIndexDocKind(mapping.NewPath) {
+		return Tree{}, errors.WithStack(files.NewError(files.ErrCodeResourceBusy,
+			"PageIndex tree is not current; retry after indexing completes", true))
+	}
+	return tree, nil
+}
+
+// pageIndexDisplaceMoveTargets removes catalog entries for the actual FileIO
+// replacement paths, including stale entries without a corresponding live row.
+func pageIndexDisplaceMoveTargets(change files.RenameStateChange, target Index) []string {
+	var removed []string
+	displace := func(path string) {
+		if old, ok := target[path]; ok {
+			removed = append(removed, old.DocID)
+			delete(target, path)
+		}
+	}
+	for _, mapping := range change.Mappings {
+		displace(mapping.NewPath)
+	}
+	for _, overwritten := range change.OverwrittenPaths {
+		displace(overwritten)
+	}
+	return removed
+}
+
 // pageIndexMappedMoveState applies only file changes selected by FileIO.
 // Documents without a usable tree are refused before either namespace commits.
 func pageIndexMappedMoveState(derive func(string) string) files.SystemStateMoveMutator {
@@ -209,49 +275,11 @@ func pageIndexMappedMoveState(derive func(string) string) files.SystemStateMoveM
 		} else {
 			target = source
 		}
-		type treeMove struct {
-			entry IndexEntry
-			tree  Tree
-			path  string
+		incoming, sourceRemoved, err := pageIndexGatherMoves(change, sourceIndex, source)
+		if err != nil {
+			return err
 		}
-		var incoming []treeMove
-		var sourceRemoved, targetRemoved []string
-		for _, mapping := range change.Mappings {
-			entry := sourceIndex[mapping.OldPath]
-			delete(sourceIndex, mapping.OldPath)
-			if entry.DocID != "" {
-				sourceRemoved = append(sourceRemoved, entry.DocID)
-			}
-			if !isLongDocPath(mapping.NewPath) {
-				continue
-			}
-			if !isLongDocPath(mapping.OldPath) || pageIndexDocKind(mapping.OldPath) != pageIndexDocKind(mapping.NewPath) {
-				return errors.WithStack(files.NewError(files.ErrCodeInvalidArgument,
-					"destination changes the document format; write the document with the new extension instead", false))
-			}
-			var tree Tree
-			body := source[treePath(entry.DocID)]
-			if !mapping.SkipRAGIndex || mapping.ContentHash == "" || entry.SourceContentHash != mapping.ContentHash ||
-				len(body) == 0 || json.Unmarshal(body, &tree) != nil || tree.DocID != entry.DocID ||
-				tree.SourceContentHash != mapping.ContentHash || tree.Type != pageIndexDocKind(mapping.NewPath) {
-				return errors.WithStack(files.NewError(files.ErrCodeResourceBusy,
-					"PageIndex tree is not current; retry after indexing completes", true))
-			}
-			incoming = append(incoming, treeMove{entry: entry, tree: tree, path: mapping.NewPath})
-		}
-		// A catalog entry at a destination without a live file is stale too.
-		for _, mapping := range change.Mappings {
-			if old, ok := targetIndex[mapping.NewPath]; ok {
-				targetRemoved = append(targetRemoved, old.DocID)
-				delete(targetIndex, mapping.NewPath)
-			}
-		}
-		for _, overwritten := range change.OverwrittenPaths {
-			if old, ok := targetIndex[overwritten]; ok {
-				targetRemoved = append(targetRemoved, old.DocID)
-				delete(targetIndex, overwritten)
-			}
-		}
+		targetRemoved := pageIndexDisplaceMoveTargets(change, targetIndex)
 		if len(sourceRemoved) == 0 && len(targetRemoved) == 0 && len(incoming) == 0 {
 			return nil
 		}
