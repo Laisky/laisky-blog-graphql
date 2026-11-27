@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -38,42 +37,6 @@ func (overlayEmbedder) EmbedTexts(_ context.Context, _ string, inputs []string) 
 		vectors = append(vectors, pgvector.NewVector([]float32{1, 0}))
 	}
 	return vectors, nil
-}
-
-// overlayCredentialStore keeps encrypted credential envelopes in memory.
-type overlayCredentialStore struct {
-	mu   sync.Mutex
-	data map[string]string
-}
-
-// Store saves one envelope.
-func (s *overlayCredentialStore) Store(_ context.Context, key, payload string, _ time.Duration) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.data == nil {
-		s.data = map[string]string{}
-	}
-	s.data[key] = payload
-	return nil
-}
-
-// Load returns one envelope or sql.ErrNoRows.
-func (s *overlayCredentialStore) Load(_ context.Context, key string) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	value, ok := s.data[key]
-	if !ok {
-		return "", sql.ErrNoRows
-	}
-	return value, nil
-}
-
-// Delete removes one envelope.
-func (s *overlayCredentialStore) Delete(_ context.Context, key string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.data, key)
-	return nil
 }
 
 // overlayStack is one real FileIO service behind both public interfaces, wired

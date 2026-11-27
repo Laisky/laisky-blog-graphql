@@ -2,12 +2,9 @@ package files_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	errors "github.com/Laisky/errors/v2"
 	"github.com/pgvector/pgvector-go"
@@ -251,37 +248,4 @@ func TestDefaultOverlayPostgresSearch(t *testing.T) {
 		vectorHits = append(vectorHits, chunk.Project+":"+chunk.FilePath)
 	}
 	require.ElementsMatch(t, []string{"gamma:/vector.md", "@DEFAULT:/vector.md"}, vectorHits)
-}
-
-// overlayCredentialStore keeps credential envelopes in memory for indexing tests.
-type overlayCredentialStore struct {
-	mu   sync.Mutex
-	data map[string]string
-}
-
-// Store keeps one envelope.
-func (s *overlayCredentialStore) Store(_ context.Context, key, payload string, _ time.Duration) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.data[key] = payload
-	return nil
-}
-
-// Load returns one envelope or sql.ErrNoRows.
-func (s *overlayCredentialStore) Load(_ context.Context, key string) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	payload, ok := s.data[key]
-	if !ok {
-		return "", sql.ErrNoRows
-	}
-	return payload, nil
-}
-
-// Delete removes one envelope.
-func (s *overlayCredentialStore) Delete(_ context.Context, key string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.data, key)
-	return nil
 }
