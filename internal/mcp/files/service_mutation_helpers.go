@@ -27,28 +27,22 @@ func (s *Service) ensureNoDescendantFile(ctx context.Context, tx *sql.Tx, apiKey
 
 // ensureNoParentFile validates that no parent segment is an existing file.
 func (s *Service) ensureNoParentFile(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) error {
-	return s.ensureNoFileAt(ctx, tx, apiKeyHash, project, parentPaths(path))
-}
-
-// ensureNoFileAt validates that none of the directory paths is an existing
-// file. Paths are checked in bounded batches to stay below bind limits.
-func (s *Service) ensureNoFileAt(ctx context.Context, tx *sql.Tx, apiKeyHash, project string, directories []string) error {
 	owner := systemOwnerFromContext(ctx)
-	for len(directories) > 0 {
-		batch := directories[:min(len(directories), 200)]
-		directories = directories[len(batch):]
-		var count int64
-		inClause, inArgs := buildInClause(batch, s.isPostgres, 4)
-		query := rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
-		args := make([]any, 0, 3+len(inArgs))
-		args = append(args, apiKeyHash, project, owner)
-		args = append(args, inArgs...)
-		if err := tx.QueryRowContext(ctx, strings.Replace(query, "%s", inClause, 1), args...).Scan(&count); err != nil {
-			return errors.Wrap(err, "check parent files")
-		}
-		if count > 0 {
-			return NewError(ErrCodeNotDirectory, "parent path is a file", false)
-		}
+	parents := parentPaths(path)
+	if len(parents) == 0 {
+		return nil
+	}
+	var count int64
+	inClause, inArgs := buildInClause(parents, s.isPostgres, 4)
+	query := rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
+	args := make([]any, 0, 3+len(inArgs))
+	args = append(args, apiKeyHash, project, owner)
+	args = append(args, inArgs...)
+	if err := tx.QueryRowContext(ctx, strings.Replace(query, "%s", inClause, 1), args...).Scan(&count); err != nil {
+		return errors.Wrap(err, "check parent files")
+	}
+	if count > 0 {
+		return NewError(ErrCodeNotDirectory, "parent path is a file", false)
 	}
 	return nil
 }

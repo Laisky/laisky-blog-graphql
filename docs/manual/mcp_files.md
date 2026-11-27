@@ -29,8 +29,7 @@ This manual is for end users and integrators who want to call `file_stat`, `file
       - [Example B: recursively delete a directory](#example-b-recursively-delete-a-directory)
     - [5.7 `file_rename`](#57-file_rename)
       - [Example A: rename one file](#example-a-rename-one-file)
-      - [Example B: move a directory subtree](#example-b-move-a-directory-subtree)
-      - [Example C: move a file into another project](#example-c-move-a-file-into-another-project)
+      - [Example B: move a file into another project](#example-b-move-a-file-into-another-project)
   - [6. Common error codes](#6-common-error-codes)
   - [7. Minimal end-to-end flow](#7-minimal-end-to-end-flow)
   - [8. Integration best practices](#8-integration-best-practices)
@@ -472,11 +471,24 @@ Rename or move a file/directory path, optionally into another project.
 
 - Required: `project`, `from_path`, `to_path`, `expected_version` (the source file's version; see [FileIO versioning](fileio_versioning.md))
 - Optional:
-  - `overwrite`: default `false`; only applies to file rename target replacement
+  - `overwrite`: default `false`. It lets a single file replace an existing file at `to_path`. It never applies
+    to a directory: a directory move with `overwrite=true` fails with `INVALID_ARGUMENT`.
   - `target_project`: destination project for a cross-project move. Omit it or pass `""` to rename within `project`.
     `to_path`, the collision and overwrite rules, `expected_destination_version` and `destination_must_not_exist`
     all apply in `target_project`, and the moved bytes count against its storage quota. The file keeps its identity
     and version history; its revision advances, so re-read before editing it again. `"*"` is rejected.
+
+The public `file_rename` tool and GraphQL `FileRename` move one file: they require its `expected_version`, and a
+file token never authorizes a directory-wide mutation (see [FileIO versioning](fileio_versioning.md)). Directory
+moves made by the FileIO service follow these rules.
+
+A directory move is a relocation, never a merge or a replacement. `to_path` must be vacant in the destination
+project: no file at `to_path`, no file anywhere below it (an existing directory is occupied even when its children
+have other names) and no file at an ancestor. An occupied destination fails with `ALREADY_EXISTS` (`NOT_DIRECTORY`
+for a file ancestor) and changes nothing. Within one project, a directory cannot move into its own subtree
+(`INVALID_PATH`) or into its own parent or another ancestor, which already holds it (`ALREADY_EXISTS`). Every moved
+file's new path must also be a valid path, including the 512-byte limit (`INVALID_PATH`). Moving a path onto itself
+in the same project is a no-op; the same path in another project is a real move.
 
 Under PageIndex, a rename never waits for indexing and never fails because of the search index. Any extension
 change is allowed, and the bytes are never converted. A document whose tree is current and keeps its format
@@ -502,26 +514,7 @@ mcp_call '{
 }'
 ```
 
-#### Example B: move a directory subtree
-
-```bash
-mcp_call '{
-	"jsonrpc":"2.0",
-	"id":110,
-	"method":"tools/call",
-	"params":{
-		"name":"file_rename",
-		"arguments":{
-			"project":"demo",
-			"from_path":"/docs",
-			"to_path":"/archive/docs",
-			"overwrite":false
-		}
-	}
-}'
-```
-
-#### Example C: move a file into another project
+#### Example B: move a file into another project
 
 ```bash
 mcp_call '{

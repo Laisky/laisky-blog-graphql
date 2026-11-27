@@ -285,6 +285,20 @@ Search behavior:
 - When `project="*"`, each returned `ChunkEntry` must carry the source `project` field. For single-project searches the field is omitted.
 - Tenant isolation by `apikey_hash` is enforced regardless of project value, so `"*"` only spans projects owned by the caller.
 
+### 6.8 `file_rename`
+
+`file_rename(project, from_path, to_path, overwrite=false, target_project="")` renames a file or relocates a
+directory subtree, within `project` or into `target_project` of the same caller, in one transaction.
+
+- A file may replace an existing destination file only with `overwrite=true`, and never replaces a directory.
+- A directory is relocated, never merged or replaced. The destination must be vacant: no file at `to_path`, no
+  file below it and no file ancestor. An existing destination directory is rejected even when its children are
+  disjoint from the source's. `overwrite=true` is rejected for a directory source.
+- Within one project, a directory cannot move into its own subtree or into its own parent or another ancestor.
+- Every generated destination path must satisfy the path rules (§4), including the length limit.
+- Moving a path onto itself in the same project is a no-op; the same path in another project is a real move.
+- A rejected rename changes no file, history or index outbox row.
+
 ## 7. Search Indexing and Retrieval Pipeline
 
 ### 7.1 Indexing Trigger and Worker Model

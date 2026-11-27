@@ -542,10 +542,18 @@ Rename/move semantics:
 - destination parent segments must not resolve to active files (`NOT_DIRECTORY`).
 - directory move must not target its own subtree (`INVALID_PATH`), for example:
   - `from_path=/docs`, `to_path=/docs/sub/new`
-- destination conflicts:
-  - `overwrite=false`: any active destination collision => `ALREADY_EXISTS`
-  - `overwrite=true`: only single-file source may replace an existing file at exact destination path
-  - directory move with destination collisions is rejected (`ALREADY_EXISTS`)
+- single-file destination (`checkFileDestinationTx`):
+  - an active descendant of `to_path` (the destination is a directory) => `ALREADY_EXISTS`, even with `overwrite=true`
+  - an active file at `to_path`: `overwrite=false` => `ALREADY_EXISTS`; `overwrite=true` replaces it
+- directory destination (`checkVacantDestinationTx`): relocation only, never merge or replacement:
+  - `overwrite=true` => `INVALID_ARGUMENT`
+  - an active file at `to_path`, or any active file below it (directories are implicit, so every existing directory
+    has one, whatever its children are called) => `ALREADY_EXISTS`. A move into its own parent or another ancestor is
+    therefore rejected too.
+  - descendants are matched by a literal, case-sensitive path prefix (escaped `LIKE` plus `substr`), so `_`, `%` and
+    ASCII case never widen the match; the source subtree is selected the same way
+- every generated destination path must pass `ValidatePath`, including the 512-byte limit (`INVALID_PATH`)
+- every check runs under the project locks before the first row, history or outbox change.
 
 Cross-project move (`target_project` set and different from `project`):
 
@@ -589,10 +597,10 @@ Execution outline:
 4. start transaction and acquire the project advisory lock (both projects' locks for a cross-project move).
 5. resolve source file set:
    - exact file match at `from_path`, or
-   - descendant files under `from_path + "/%"`, else `NOT_FOUND`.
-6. validate destination constraints and collision policy. For a directory source, the directories it creates
-   below `to_path` must not be active files of the destination (`NOT_DIRECTORY`). Files move in ascending
-   source-path length, so moving a directory into its own parent never reuses a path before it is freed.
+   - descendant files strictly below `from_path` (literal prefix `from_path + "/"`), else `NOT_FOUND`.
+6. validate the destination (`planRenameMoveTx`): the single-file rules, or for a directory a vacant `to_path`,
+   then compute and validate every new path. Because a directory destination is vacant, no new path can equal
+   another moved file's old path, so the remap order does not matter.
 7. if overwrite-replace applies, soft-delete the replaced destination file first.
 8. apply transactional path remap update on `mcp_files` with `updated_at=now`.
 9. enqueue a `DELETE` for `old_path`. For a RAG-indexed destination, queue one `UPSERT` that replaces

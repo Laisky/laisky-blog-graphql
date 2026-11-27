@@ -1,10 +1,8 @@
 package files
 
 import (
-	"cmp"
 	"context"
 	"database/sql"
-	"slices"
 	"strings"
 	"time"
 
@@ -136,49 +134,83 @@ func (s *Service) validateRenameRequest(auth AuthContext, req RenameRequest) err
 	return nil
 }
 
+// renameMove is one validated physical move: the source rows of req.Project,
+// their destination paths in req.TargetProject, and the one destination file a
+// file rename replaces.
+type renameMove struct {
+	req         RenameRequest
+	sources     []renameSourceFile
+	mappings    []RenameMapping
+	overwritten []string
+}
+
 // applyRenameTx resolves the sources, validates the destination in the target
-// project and moves the rows, returning how many files moved.
+// project and moves the rows. Every check runs before the first change, so a
+// rejected rename leaves rows, history and the index outbox untouched.
 func (s *Service) applyRenameTx(ctx context.Context, tx *sql.Tx, auth AuthContext, req RenameRequest) (RenameStateChange, error) {
-	owner := systemOwnerFromContext(ctx)
-	sourceFiles, sourceIsDirectory, err := s.resolveRenameSources(ctx, tx, auth.APIKeyHash, req.Project, req.FromPath)
+	sources, sourceIsDirectory, err := s.resolveRenameSources(ctx, tx, auth.APIKeyHash, req.Project, req.FromPath)
 	if err != nil {
 		return RenameStateChange{}, err
 	}
-	if !req.crossProject() && sourceIsDirectory && strings.HasPrefix(req.ToPath, req.FromPath+"/") {
-		return RenameStateChange{}, NewError(ErrCodeInvalidPath, "destination cannot be within source subtree", false)
-	}
-	if err := s.ensureNoParentFile(ctx, tx, auth.APIKeyHash, req.TargetProject, req.ToPath); err != nil {
-		return RenameStateChange{}, err
-	}
-	mappings, err := buildRenameMappings(sourceFiles, req.FromPath, req.ToPath, sourceIsDirectory)
+	move, err := s.planRenameMoveTx(ctx, tx, auth.APIKeyHash, req, sources, sourceIsDirectory)
 	if err != nil {
 		return RenameStateChange{}, err
 	}
+	return s.applyRenameMoveTx(ctx, tx, auth, move)
+}
+
+// planRenameMoveTx validates moving sources, the rows of req.Project that
+// req.FromPath selects, to req.ToPath in req.TargetProject, and computes their
+// new paths. It changes nothing. A file keeps the ordinary contract checked by
+// checkFileDestinationTx; a directory is relocated, never merged or replaced:
+// overwrite is rejected and the destination must be vacant.
+func (s *Service) planRenameMoveTx(ctx context.Context, tx *sql.Tx, apiKeyHash string, req RenameRequest,
+	sources []renameSourceFile, sourceIsDirectory bool,
+) (renameMove, error) {
+	var overwritten []string
 	if sourceIsDirectory {
-		// Directories created below to_path must not be files of the destination.
-		if err := s.ensureNoFileAt(ctx, tx, auth.APIKeyHash, req.TargetProject, renameInnerDirectories(mappings, req.ToPath, req.crossProject())); err != nil {
-			return RenameStateChange{}, err
+		if req.Overwrite {
+			return renameMove{}, NewError(ErrCodeInvalidArgument, "overwrite applies only to a file; a directory moves only to a vacant path", false)
+		}
+		if !req.crossProject() && strings.HasPrefix(req.ToPath, req.FromPath+"/") {
+			return renameMove{}, NewError(ErrCodeInvalidPath, "destination cannot be within source subtree", false)
+		}
+		if err := s.checkVacantDestinationTx(ctx, tx, apiKeyHash, req.TargetProject, req.ToPath); err != nil {
+			return renameMove{}, err
+		}
+	} else {
+		var err error
+		if overwritten, err = s.checkFileDestinationTx(ctx, tx, apiKeyHash, req.TargetProject, req.ToPath, req.Overwrite); err != nil {
+			return renameMove{}, err
 		}
 	}
-	now := s.clock()
-	overwritePaths, err := s.validateRenameDestinations(ctx, tx, auth.APIKeyHash, req.TargetProject, mappings, req.ToPath, sourceIsDirectory, req.Overwrite)
+	mappings, err := buildRenameMappings(sources, req.FromPath, req.ToPath, sourceIsDirectory)
 	if err != nil {
+		return renameMove{}, err
+	}
+	return renameMove{req: req, sources: sources, mappings: mappings, overwritten: overwritten}, nil
+}
+
+// applyRenameMoveTx applies one planned move: it releases the overwritten
+// destination file, enforces the target quota of a cross-project move and
+// remaps the rows, their history and their index jobs.
+func (s *Service) applyRenameMoveTx(ctx context.Context, tx *sql.Tx, auth AuthContext, move renameMove) (RenameStateChange, error) {
+	owner := systemOwnerFromContext(ctx)
+	now := s.clock()
+	if err := s.softDeleteRenameDestinationsTx(ctx, tx, auth, move.req.TargetProject, owner, move.overwritten, now); err != nil {
 		return RenameStateChange{}, err
 	}
-	if err := s.softDeleteRenameDestinationsTx(ctx, tx, auth, req.TargetProject, owner, overwritePaths, now); err != nil {
-		return RenameStateChange{}, err
-	}
-	if req.crossProject() {
+	if move.req.crossProject() {
 		// Overwritten destinations are already released, so the quota sees the
 		// target project exactly as it will be after the move commits.
-		if err := s.ensureProjectQuota(ctx, tx, auth.APIKeyHash, req.TargetProject, renameSourceBytes(sourceFiles), nil); err != nil {
+		if err := s.ensureProjectQuota(ctx, tx, auth.APIKeyHash, move.req.TargetProject, renameSourceBytes(move.sources), nil); err != nil {
 			return RenameStateChange{}, err
 		}
 	}
-	if err := s.applyRenameMappingsTx(ctx, tx, auth, req, owner, mappings, now); err != nil {
+	if err := s.applyRenameMappingsTx(ctx, tx, auth, move.req, owner, move.mappings, now); err != nil {
 		return RenameStateChange{}, err
 	}
-	return RenameStateChange{Mappings: mappings, OverwrittenPaths: overwritePaths}, nil
+	return RenameStateChange{Mappings: move.mappings, OverwrittenPaths: move.overwritten}, nil
 }
 
 // ValidateTargetProject validates a rename destination project and names it in
@@ -259,10 +291,10 @@ func (s *Service) resolveRenameSources(ctx context.Context, tx *sql.Tx, apiKeyHa
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, false, errors.Wrap(err, "query rename source file")
 	}
-	prefix := buildPathPrefix(fromPath)
+	below, belowArgs := belowPathSQL("path", fromPath)
 	rows, err := tx.QueryContext(ctx,
-		rebindSQL(`SELECT id, path, size, skip_rag_index, content_hash FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ? ORDER BY path ASC`, s.isPostgres),
-		apiKeyHash, project, prefix, owner,
+		rebindSQL(`SELECT id, path, size, skip_rag_index, content_hash FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND `+below+` ORDER BY path ASC`, s.isPostgres),
+		append([]any{apiKeyHash, project, owner}, belowArgs...)...,
 	)
 	if err != nil {
 		return nil, false, errors.Wrap(err, "query rename source descendants")
@@ -285,34 +317,9 @@ func (s *Service) resolveRenameSources(ctx context.Context, tx *sql.Tx, apiKeyHa
 	return descendants, true, nil
 }
 
-// renameInnerDirectories returns the directories that a directory move creates
-// strictly below toPath, each once. Within one project, the old path of a moved
-// file is free after the move, so it is not checked.
-func renameInnerDirectories(mappings []RenameMapping, toPath string, crossProject bool) []string {
-	seen := make(map[string]struct{})
-	if !crossProject {
-		for _, mapping := range mappings {
-			seen[mapping.OldPath] = struct{}{}
-		}
-	}
-	var directories []string
-	for _, mapping := range mappings {
-		for _, parent := range parentPaths(mapping.NewPath) {
-			if _, ok := seen[parent]; ok || !strings.HasPrefix(parent, toPath+"/") {
-				continue
-			}
-			seen[parent] = struct{}{}
-			directories = append(directories, parent)
-		}
-	}
-	return directories
-}
-
-// buildRenameMappings computes destination paths for the selected rename
-// source files. Mappings are ordered by ascending source path length: when a
-// directory moves into its own parent, a new path can equal another moved
-// file's old path, and that file is always the shorter one, so it moves first
-// and the path is free before it is reused.
+// buildRenameMappings computes the destination path of every selected source
+// and validates each one, so a directory move cannot create a path the
+// ordinary path rules reject, such as one over the length limit.
 func buildRenameMappings(sourceFiles []renameSourceFile, fromPath, toPath string, sourceIsDirectory bool) ([]RenameMapping, error) {
 	mappings := make([]RenameMapping, 0, len(sourceFiles))
 	for _, source := range sourceFiles {
@@ -324,85 +331,77 @@ func buildRenameMappings(sourceFiles []renameSourceFile, fromPath, toPath string
 			}
 			newPath = toPath + suffix
 		}
+		if err := ValidatePath(newPath); err != nil {
+			return nil, errors.WithStack(err)
+		}
 		mappings = append(mappings, RenameMapping{ID: source.ID, OldPath: source.Path, NewPath: newPath, SkipRAGIndex: source.SkipRAGIndex, ContentHash: source.ContentHash})
 	}
-	slices.SortStableFunc(mappings, func(a, b RenameMapping) int { return cmp.Compare(len(a.OldPath), len(b.OldPath)) })
 	return mappings, nil
 }
 
-// validateRenameDestinations checks rename collisions and returns overwrite targets.
-func (s *Service) validateRenameDestinations(
-	ctx context.Context, tx *sql.Tx, apiKeyHash, project string, mappings []RenameMapping,
-	toPath string, sourceIsDirectory, overwrite bool,
-) ([]string, error) {
-	destinationPaths := make([]string, 0, len(mappings))
-	sourcePathByID := make(map[uint64]string, len(mappings))
-	pathSet := make(map[string]struct{}, len(mappings))
-	for _, mapping := range mappings {
-		sourcePathByID[mapping.ID] = mapping.OldPath
-		if _, exists := pathSet[mapping.NewPath]; exists {
-			return nil, NewError(ErrCodeAlreadyExists, "destination path collision", false)
-		}
-		pathSet[mapping.NewPath] = struct{}{}
-		destinationPaths = append(destinationPaths, mapping.NewPath)
+// checkVacantDestinationTx is the destination check of a directory move. The
+// destination is occupied by a file at toPath, by any file below it (FileIO
+// directories are implicit, so every existing directory has one) or by a file
+// ancestor, and an occupied destination is rejected: directories are relocated,
+// never merged or replaced. It runs under the project locks before any change.
+func (s *Service) checkVacantDestinationTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, toPath string) error {
+	if err := s.ensureNoParentFile(ctx, tx, apiKeyHash, project, toPath); err != nil {
+		return err
 	}
-	owner := systemOwnerFromContext(ctx)
-	if !sourceIsDirectory {
-		var descendantCount int64
-		if err := tx.QueryRowContext(ctx,
-			rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-			apiKeyHash, project, buildPathPrefix(toPath), owner,
-		).Scan(&descendantCount); err != nil {
-			return nil, errors.Wrap(err, "check destination descendants")
-		}
-		if descendantCount > 0 {
-			return nil, NewError(ErrCodeAlreadyExists, "destination path already exists", false)
-		}
-	}
-	if sourceIsDirectory {
-		var destinationRootFileCount int64
-		if err := tx.QueryRowContext(ctx,
-			rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-			apiKeyHash, project, toPath, owner,
-		).Scan(&destinationRootFileCount); err != nil {
-			return nil, errors.Wrap(err, "check destination root collision")
-		}
-		if destinationRootFileCount > 0 {
-			return nil, NewError(ErrCodeAlreadyExists, "destination path already exists", false)
-		}
-	}
-	inClause, inArgs := buildInClause(destinationPaths, s.isPostgres, 4)
-	query := rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
-	args := make([]any, 0, 3+len(inArgs))
-	args = append(args, apiKeyHash, project, owner)
-	args = append(args, inArgs...)
-	rows, err := tx.QueryContext(ctx, strings.Replace(query, "%s", inClause, 1), args...)
+	below, belowArgs := belowPathSQL("path", toPath)
+	occupied, err := s.liveFileExistsTx(ctx, tx, apiKeyHash, project, "(path = ? OR "+below+")", append([]any{toPath}, belowArgs...))
 	if err != nil {
-		return nil, errors.Wrap(err, "query destination collisions")
+		return err
 	}
-	defer func() { _ = rows.Close() }()
-	var destinationFiles []renameSourceFile
-	for rows.Next() {
-		var row renameSourceFile
-		if scanErr := rows.Scan(&row.ID, &row.Path); scanErr != nil {
-			return nil, errors.Wrap(scanErr, "scan destination collision")
-		}
-		destinationFiles = append(destinationFiles, row)
+	if occupied {
+		return NewError(ErrCodeAlreadyExists, "destination path already exists; a directory moves only to a vacant path", false)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "iterate destination collisions")
+	return nil
+}
+
+// checkFileDestinationTx is the destination check of a single-file rename. The
+// destination must not be a directory or have a file ancestor; an existing
+// file there is replaced only with overwrite, and is returned for release.
+func (s *Service) checkFileDestinationTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, toPath string, overwrite bool) ([]string, error) {
+	if err := s.ensureNoParentFile(ctx, tx, apiKeyHash, project, toPath); err != nil {
+		return nil, err
 	}
-	overwritePaths := make([]string, 0, len(destinationFiles))
-	for _, destination := range destinationFiles {
-		if sourcePath, ok := sourcePathByID[destination.ID]; ok && sourcePath == destination.Path {
-			continue
-		}
-		if !overwrite || sourceIsDirectory {
-			return nil, NewError(ErrCodeAlreadyExists, "destination path already exists", false)
-		}
-		overwritePaths = append(overwritePaths, destination.Path)
+	below, belowArgs := belowPathSQL("path", toPath)
+	isDirectory, err := s.liveFileExistsTx(ctx, tx, apiKeyHash, project, below, belowArgs)
+	if err != nil {
+		return nil, err
 	}
-	return overwritePaths, nil
+	if isDirectory {
+		return nil, NewError(ErrCodeAlreadyExists, "destination path already exists", false)
+	}
+	exists, err := s.liveFileExistsTx(ctx, tx, apiKeyHash, project, "path = ?", []any{toPath})
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, nil
+	}
+	if !overwrite {
+		return nil, NewError(ErrCodeAlreadyExists, "destination path already exists", false)
+	}
+	return []string{toPath}, nil
+}
+
+// liveFileExistsTx reports whether project has a live file whose row matches
+// predicate, a SQL condition with placeholders bound to args.
+func (s *Service) liveFileExistsTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, predicate string, args []any) (bool, error) {
+	var one int
+	err := tx.QueryRowContext(ctx,
+		rebindSQL(`SELECT 1 FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND `+predicate+` LIMIT 1`, s.isPostgres),
+		append([]any{apiKeyHash, project, systemOwnerFromContext(ctx)}, args...)...,
+	).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, errors.Wrap(err, "query rename destination")
+	}
+	return true, nil
 }
 
 // softDeleteRenameDestinationsTx frees overwritten names before applying the remap.
