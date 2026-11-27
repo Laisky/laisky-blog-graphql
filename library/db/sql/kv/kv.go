@@ -25,8 +25,8 @@ var (
 	ErrKeyExpired = errors.New("key expired")
 )
 
-// maxTTL bounds how far in the future an item may expire.
-const maxTTL = 30 * 24 * time.Hour
+// MaxTTL bounds how far in the future an item may expire.
+const MaxTTL = 30 * 24 * time.Hour
 
 // maxKeyLength bounds the length of a key in bytes, well below PostgreSQL's
 // B-tree entry limit for the primary key.
@@ -186,7 +186,7 @@ func (kv *Kv) SetWithTTL(ctx context.Context, key, value string, ttl time.Durati
 	if ttl <= 0 {
 		return errors.Errorf("ttl must be greater than 0: %s", ttl)
 	}
-	if ttl > maxTTL {
+	if ttl > MaxTTL {
 		return errors.Errorf("ttl is too far in the future: %s", ttl)
 	}
 
@@ -205,7 +205,7 @@ func (kv *Kv) SetWithExpireAt(ctx context.Context, key, value string, expireAt t
 	if expireAt.Before(now) {
 		return errors.Errorf("expire time is in the past: %s", expireAt)
 	}
-	if expireAt.After(now.Add(maxTTL)) {
+	if expireAt.After(now.Add(MaxTTL)) {
 		return errors.Errorf("expire time is too far in the future: %s", expireAt)
 	}
 	if err := kv.validKey(key); err != nil {
@@ -276,13 +276,15 @@ func (kv *Kv) Del(ctx context.Context, key string) error {
 }
 
 // DeleteExpired removes at most limit expired items and reports how many it
-// removed, so a periodic sweep keeps each statement bounded.
+// removed, so a periodic sweep keeps each statement bounded. The outer
+// predicate repeats the cutoff, so an item renewed after the subquery chose it
+// survives.
 func (kv *Kv) DeleteExpired(ctx context.Context, limit int) (int64, error) {
 	if limit <= 0 {
 		return 0, errors.Errorf("limit must be greater than 0: %d", limit)
 	}
 	//nolint:gosec // G202: table name is not user input, validated by regexpTableName
-	stmt := `DELETE FROM ` + kv.opt.tableName + ` WHERE key IN (
+	stmt := `DELETE FROM ` + kv.opt.tableName + ` WHERE expire_at < $1 AND key IN (
   SELECT key FROM ` + kv.opt.tableName + ` WHERE expire_at < $1 ORDER BY expire_at LIMIT $2)`
 	result, err := kv.db.ExecContext(ctx, stmt, kv.opt.now(), limit)
 	if err != nil {

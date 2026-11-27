@@ -301,6 +301,8 @@ Search behavior:
 directory subtree, within `project` or into `target_project` of the same caller, in one transaction.
 
 - A file may replace an existing destination file only with `overwrite=true`, and never replaces a directory.
+  The replacement works like a write: history belongs to the destination path, and the replaced bytes become a
+  version of that path that can be read and restored.
 - A directory is relocated, never merged or replaced. The destination must be vacant: no file at `to_path`, no
   file below it and no file ancestor. An existing destination directory is rejected even when its children are
   disjoint from the source's. `overwrite=true` is rejected for a directory source.

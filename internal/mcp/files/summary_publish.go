@@ -52,7 +52,12 @@ func (s *Service) buildSummaryPublication(ctx context.Context, apiKey, content, 
 		existing.SummaryContentHash == fileContentHash &&
 		existing.SummaryGenerationKey == genKey &&
 		(existing.SummaryStatus == string(SummaryStatusReady) || existing.SummaryStatus == string(SummaryStatusDegraded)) {
-		return summaryPublication{contentHash: fileContentHash, publish: false}
+		// A reused degraded summary still needs its refresh. A move leaves the
+		// queued one behind at the old path; dedup keeps this to one per path.
+		return summaryPublication{
+			contentHash: fileContentHash, publish: false, generationKey: genKey,
+			enqueueRefresh: existing.SummaryStatus == string(SummaryStatusDegraded),
+		}
 	}
 
 	pub = summaryPublication{

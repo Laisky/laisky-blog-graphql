@@ -243,12 +243,10 @@ func (s *Service) planRenameMoveTx(ctx context.Context, tx *sql.Tx, apiKeyHash s
 func (s *Service) applyRenameMoveTx(ctx context.Context, tx *sql.Tx, auth AuthContext, move renameMove) (int, error) {
 	owner := systemOwnerFromContext(ctx)
 	now := s.clock()
-	// A replaced destination keeps a history snapshot. Its index rows are
-	// replaced by the moved file's upsert, or cleared for an unindexed file.
-	if len(move.overwritten) > 0 {
-		if err := s.softDeletePathsTx(ctx, tx, auth, move.req.TargetProject, move.overwritten, now, false); err != nil {
-			return 0, err
-		}
+	// An overwrite replaces the destination like a write: the replaced bytes
+	// stay restorable in the destination path's history.
+	if err := s.softDeletePathsTx(ctx, tx, auth, move.req.TargetProject, move.overwritten, now, false); err != nil {
+		return 0, err
 	}
 	if move.req.crossProject() {
 		// Overwritten destinations are already released, so the quota sees the

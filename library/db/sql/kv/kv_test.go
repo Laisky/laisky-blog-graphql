@@ -179,7 +179,7 @@ func TestKeyAndTTLValidation(t *testing.T) {
 	require.Error(t, kvInstance.SetWithTTL(ctx, "has/slash", "v", time.Minute))
 	require.Error(t, kvInstance.SetWithTTL(ctx, "", "v", time.Minute))
 	require.Error(t, kvInstance.SetWithTTL(ctx, "k", "v", 0))
-	require.Error(t, kvInstance.SetWithTTL(ctx, "k", "v", maxTTL+time.Second))
+	require.Error(t, kvInstance.SetWithTTL(ctx, "k", "v", MaxTTL+time.Second))
 	require.Error(t, kvInstance.SetWithExpireAt(ctx, "k", "v", time.Now().Add(-time.Second)))
 	require.Error(t, kvInstance.SetWithExpireAt(ctx, "has:colon", "v", time.Now().Add(time.Minute)))
 }

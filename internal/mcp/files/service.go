@@ -9,6 +9,7 @@ import (
 	errors "github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
+	"github.com/Laisky/zap"
 	"github.com/pgvector/pgvector-go"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
@@ -71,8 +72,14 @@ func NewServiceWithContext(ctx context.Context, db *sql.DB, settings Settings, e
 	if logger == nil {
 		logger = log.Logger.Named("mcp_files_service")
 	}
-	if settings.Security.CredentialCacheTTL <= 0 {
+	switch ttl := settings.Security.CredentialCacheTTL; {
+	case ttl <= 0:
 		settings.Security.CredentialCacheTTL = defaultCredentialCacheTTL
+	case ttl > kv.MaxTTL:
+		// The kv store refuses longer TTLs, which would fail every mutation.
+		logger.Warn("credential_cache_ttl_seconds exceeds the envelope store maximum; using the maximum",
+			zap.Duration("configured", ttl), zap.Duration("maximum", kv.MaxTTL))
+		settings.Security.CredentialCacheTTL = kv.MaxTTL
 	}
 	if lockProvider == nil {
 		lockProvider = DefaultLockProvider{}

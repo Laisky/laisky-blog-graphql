@@ -9,6 +9,8 @@ import (
 
 	"github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Laisky/laisky-blog-graphql/library/db/sql/kv"
 )
 
 // TestIndexWorkerDeletesCredentialAfterSuccess verifies credential envelopes are removed after processing.
@@ -179,4 +181,22 @@ func TestCredentialKeyFitsTheLongestReference(t *testing.T) {
 		require.NoError(t, svc.credentials.SetWithTTL(context.Background(), ref.credentialKey(), "envelope", time.Minute), "%+v", ref)
 	}
 	require.Equal(t, len(refs), credentialEnvelopeCount(t, svc), "each reference has its own envelope")
+}
+
+// TestCredentialTTLAboveTheStoreMaximumIsClamped verifies a configured
+// envelope TTL above the kv maximum cannot make every write fail: the service
+// uses the maximum instead.
+func TestCredentialTTLAboveTheStoreMaximumIsClamped(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	settings.Security.CredentialCacheTTL = 60 * 24 * time.Hour
+	svc := newTestService(t, settings, nil)
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key"}
+
+	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "kept", "utf-8", 0, WriteModeTruncate)
+	require.NoError(t, err)
+	var expireAt time.Time
+	require.NoError(t, svc.db.QueryRowContext(context.Background(), "SELECT expire_at FROM kv").Scan(&expireAt))
+	require.WithinDuration(t, svc.clock().Add(kv.MaxTTL), expireAt, time.Second)
 }

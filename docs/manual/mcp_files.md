@@ -552,7 +552,7 @@ project inherits it afterwards.
 Success response example:
 
 ```json
-{ "moved_count": 3 }
+{ "moved_count": 1 }
 ```
 
 ## 6. Common error codes

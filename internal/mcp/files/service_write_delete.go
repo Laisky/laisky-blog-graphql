@@ -237,10 +237,15 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 	return DeleteResult{DeletedCount: deletedCount}, nil
 }
 
-// softDeletePathsTx deletes live files of one physical project: it snapshots
-// their history, soft-deletes the rows, prunes history, and optionally enqueues
-// RAG delete jobs, all inside the caller's mutation transaction.
+// softDeletePathsTx deletes live files of one project inside the caller's
+// mutation transaction: it snapshots their content into each path's history,
+// soft-deletes the rows, prunes history, and optionally enqueues RAG delete
+// jobs. Delete and an overwriting rename share it, so replaced bytes stay
+// restorable either way.
 func (s *Service) softDeletePathsTx(ctx context.Context, tx *sql.Tx, auth AuthContext, project string, paths []string, now time.Time, enqueueIndex bool) error {
+	if len(paths) == 0 {
+		return nil
+	}
 	owner := systemOwnerFromContext(ctx)
 	snapshots, err := s.loadFilesForSnapshotTx(ctx, tx, auth.APIKeyHash, project, paths)
 	if err != nil {

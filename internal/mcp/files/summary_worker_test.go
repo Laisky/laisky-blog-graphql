@@ -461,3 +461,41 @@ func TestSummaryStaleJobDiscardedByContentHash(t *testing.T) {
 	require.Equal(t, summaryHash, summaryHash2, "current generation summary must be preserved")
 	require.Equal(t, "Summary of the current v2 content generation.", summary2)
 }
+
+// TestSummaryRefreshFollowsARenamedDegradedFile verifies a degraded summary
+// that moves with its file keeps a refresh eligible at the new path: the
+// refresh queued for the old path ends without a file, and the destination's
+// index job, which reuses the degraded summary, queues one for the new path.
+func TestSummaryRefreshFollowsARenamedDegradedFile(t *testing.T) {
+	stub := &stubFileSummarizer{err: errTestProvider}
+	svc, setClock := newSummaryTestService(t, stub)
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+	ctx := context.Background()
+	base := time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC)
+	worker := svc.NewIndexWorker()
+
+	_, err := svc.Write(ctx, auth, "proj", "/a.txt", "alpha beta gamma delta moved", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+	require.NoError(t, worker.RunOnce(ctx))
+	_, status, _, _, _ := summaryRow(t, svc, "hash", "proj", "/a.txt")
+	require.Equal(t, string(SummaryStatusDegraded), status)
+
+	_, err = svc.Rename(ctx, auth, RenameRequest{Project: "proj", FromPath: "/a.txt", ToPath: "/b.txt"})
+	require.NoError(t, err)
+	require.NoError(t, worker.RunOnce(ctx))
+	_, status, _, _, _ = summaryRow(t, svc, "hash", "proj", "/b.txt")
+	require.Equal(t, string(SummaryStatusDegraded), status, "the move reuses the degraded summary")
+
+	storeCredentialForTest(t, svc, auth, "proj", "/b.txt", base)
+	stub.mu.Lock()
+	stub.err = nil
+	stub.result = "A validated model summary of the moved file."
+	stub.mu.Unlock()
+	setClock(base.Add(10 * time.Second))
+	require.NoError(t, worker.RunOnce(ctx))
+
+	summary, status, _, _, source := summaryRow(t, svc, "hash", "proj", "/b.txt")
+	require.Equal(t, string(SummaryStatusReady), status, "a refresh stays eligible at the new path")
+	require.Equal(t, string(SummarySourceModel), source)
+	require.Equal(t, "A validated model summary of the moved file.", summary)
+}
