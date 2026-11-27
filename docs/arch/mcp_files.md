@@ -697,7 +697,7 @@ Workers run continuously:
 1. claim pending jobs in batches via `FOR UPDATE SKIP LOCKED`
 2. deduplicate by latest file state for `(apikey_hash, project, file_path)`
 3. process each job:
-   - `UPSERT`: load encrypted credential envelope from Redis, decrypt in memory, re-read active file, chunk content, regenerate embeddings/tokens, upsert index rows, and delete envelope immediately after external calls complete
+   - `UPSERT`: load the encrypted credential envelope from the `kv` table, decrypt in memory, re-read active file, chunk content, regenerate embeddings/tokens, upsert index rows, and delete envelope immediately after external calls complete
    - `DELETE`: delete chunk rows by `(apikey_hash, project, file_path)` cascade removes embeddings/BM25
 4. mark job done or reschedule with backoff on failure
 
@@ -709,8 +709,12 @@ Retry behavior uses:
 Credential behavior:
 
 - worker must never persist or log plaintext API keys.
-- if credential envelope is missing/expired, worker must retry later.
+- if the credential envelope is missing, expired or does not decrypt, the worker indexes lexically and summary
+  refresh moves to `waiting_auth`; the next authenticated mutation of the path stores a new envelope and
+  reactivates the refresh.
 - worker must not fall back to platform credentials.
+- each worker pass first sweeps expired envelopes when due: at most one sweep per credential TTL per service,
+  at most 500 rows per statement, and another sweep on the next pass while full batches remain.
 
 Job status lifecycle:
 
@@ -852,9 +856,9 @@ Search/index:
 
 Async credential handoff:
 
-- `settings.mcp.files.security.encryption_keks` (required; map of `kek_id -> secret`, longest ID used for new encryption)
-- `settings.mcp.files.security.credential_cache_prefix` (default `mcp:files:cred`)
+- `settings.mcp.files.security.encryption_keks` (required for semantic indexing; map of `kek_id -> secret`, longest ID used for new encryption; without it no envelope is stored and indexing stays lexical)
 - `settings.mcp.files.security.credential_cache_ttl_seconds` (default `300`)
+- the former Redis namespace key `credential_cache_prefix` is no longer read
 
 Credential-source rule (v1 confirmed):
 
@@ -880,7 +884,7 @@ Credential-source rule (v1 confirmed):
 ### Phase 3: Search and Worker
 
 1. Implement outbox producer in write/delete/rename code paths.
-2. Implement credential-envelope service (Redis TTL cache + KMS encrypt/decrypt).
+2. Implement credential-envelope service (expiring `kv` table rows + KMS encrypt/decrypt).
 3. Implement index workers, retry/backoff, dedupe, and retention purge.
 4. Implement chunker with stable byte offsets.
 5. Implement semantic + lexical retrieval and rerank + fallback.
@@ -926,7 +930,8 @@ Use `github.com/stretchr/testify/require` throughout.
 - outbox enqueue on write/delete/rename
 - worker dedupe and retry/backoff
 - credential envelope encrypt/decrypt round-trip and immediate delete after use
-- missing/expired envelope triggers retry and never platform-key fallback
+- missing/expired envelope degrades to lexical indexing and never platform-key fallback
+- envelope rows roll back with a failed mutation, stay tenant-bound through the AAD and survive a service restart
 - index freshness checks (commit-to-search delay)
 - rerank success/failure fallback correctness
 - guarantee that deleted files never appear in search
@@ -979,21 +984,29 @@ Expose at least:
 For async index workers:
 
 - never persist user raw API keys in plaintext storage.
-- store a credential envelope in Redis with short TTL (for example 300s), keyed by job-scoped reference.
-- envelope must contain encrypted data only (`kek_id`, `dek_id`, `ciphertext`, `aad`, `expires_at`).
+- store a credential envelope in the FileIO database's `kv` table (`library/db/sql/kv`) with short TTL (for
+  example 300s), keyed by `mcp_files_credential_` plus the SHA-256 of the job reference AAD
+  (`apikey_hash|project|path|file_updated_at_unix_nano`). FileIO and RAG need no Redis.
+- write the envelope on the mutation's transaction, after its index job, so it commits or rolls back with the file
+  rows and the outbox. A write or rename that opted out of RAG indexing stores none.
+- envelope must contain encrypted data only (`kek_id`, `dek_id`, `ciphertext`); `expire_at` is a column. The
+  encryption keys stay in configuration.
+- schema step 2 of the FileIO migration ledger creates the `kv` table and its `expire_at` index; services open it
+  without DDL.
 - initialize KMS with `github.com/Laisky/go-utils/v6/crypto/kms/mem` using all entries in `settings.mcp.files.security.encryption_keks`.
 - construct KMS by hashing each configured KEK secret and passing `map[uint16][]byte` into `mem.New(...)`.
 - producer encryption call sequence:
   - `encryptedData, err := kmsClient.Encrypt(ctx, []byte(apiKey), aad)`
   - `payload, err := encryptedData.MarshalToString()`
-  - write payload to Redis with TTL
+  - upsert payload into `kv` with `expire_at = now + TTL`
 - each envelope uses a unique `dek_id` generated by KMS; DEK is derived from `(kek_id, dek_id)` internally.
 - worker decryption call sequence:
   - `var encryptedData kms.EncryptedData`
   - `encryptedData.UnmarshalFromString(payload)`
   - `plaintext, err := kmsClient.Decrypt(ctx, &encryptedData, aad)`
-- worker decrypts in memory, uses caller API key for external requests, and deletes Redis envelope immediately after use.
-- if transient credentials are unavailable, the worker must retry later without falling back to platform credentials.
+- worker decrypts in memory, uses caller API key for external requests, and deletes the envelope immediately after use.
+- if transient credentials are unavailable, the worker degrades to lexical indexing (summary refresh waits for
+  authentication) without falling back to platform credentials.
 - all decrypt/encrypt failures must be logged without sensitive payload fields.
 
 ## 21. Definition of Done Checklist

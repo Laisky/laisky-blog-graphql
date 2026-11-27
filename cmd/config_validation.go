@@ -340,7 +340,6 @@ func validateFileIOConfigAtPrefix(get configGetter, prefix string, errs *[]strin
 	validateOptionalIntMin(get, joinConfigKey(prefix, "index.retry_max"), 0, errs)
 
 	validateOptionalIntMin(get, joinConfigKey(prefix, "security.credential_cache_ttl_seconds"), 1, errs)
-	validateOptionalStringNonEmpty(get, joinConfigKey(prefix, "security.credential_cache_prefix"), errs)
 }
 
 // validateWebsearchConfig validates web search engine configuration.

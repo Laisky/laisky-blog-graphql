@@ -24,7 +24,7 @@ func TestFileIOStartupCheckpointFastPath(t *testing.T) {
 			mock.ExpectQuery(regexp.QuoteMeta(fileMigrationCheckpointQuery(postgres))).
 				WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(version))
 			called := false
-			err = runFileMigrations(context.Background(), db, postgres, func(*sql.Tx) error {
+			err = runFileMigrations(context.Background(), db, postgres, func(*sql.Tx, int64) error {
 				called = true
 				return errors.New("migration callback must not run")
 			})
@@ -51,7 +51,7 @@ func TestFileIOStartupCheckpointErrors(t *testing.T) {
 		db, mock, err := sqlmock.New()
 		require.NoError(t, err)
 		mock.ExpectQuery(regexp.QuoteMeta(fileMigrationCheckpointQuery(true))).WillReturnError(failure)
-		err = runFileMigrations(context.Background(), db, true, func(*sql.Tx) error {
+		err = runFileMigrations(context.Background(), db, true, func(*sql.Tx, int64) error {
 			t.Error("migration must not be attempted after a checkpoint read error")
 			return nil
 		})
@@ -81,7 +81,7 @@ func TestFileIOStartupRechecksAfterLock(t *testing.T) {
 		mock.ExpectQuery(query).WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(fileSchemaVersion))
 		mock.ExpectCommit()
 		called := false
-		err = runFileMigrations(context.Background(), db, postgres, func(*sql.Tx) error {
+		err = runFileMigrations(context.Background(), db, postgres, func(*sql.Tx, int64) error {
 			called = true
 			return nil
 		})
@@ -102,7 +102,7 @@ func TestFileIOStartupReadOnlyRestart(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	// Use the real constructor: operators must not have to call a migration CLI.
-	svc, err := NewService(db, versionsTestSettings(), nil, nil, nil, nil, nil, nil, nil)
+	svc, err := NewService(db, versionsTestSettings(), nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	auth := AuthContext{APIKeyHash: "startup"}
 	written, err := svc.Write(ctx, auth, "project", "/a", "retained bytes", "utf-8", 0, WriteModeTruncate)
@@ -138,11 +138,11 @@ func TestFileIOStartupMigrationRollback(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, keeper.Close()) })
 		ctx, cancel := context.WithCancel(context.Background())
-		err = runFileMigrations(ctx, db, false, func(tx *sql.Tx) error {
+		err = runFileMigrations(ctx, db, false, func(tx *sql.Tx, from int64) error {
 			if _, err := tx.ExecContext(ctx, "CREATE TABLE fileio_rollback_probe (id INTEGER)"); err != nil {
 				return err
 			}
-			if err := migrateFileSchema(ctx, tx, nil, false); err != nil {
+			if err := migrateFileSchema(ctx, tx, nil, false, from); err != nil {
 				return err
 			}
 			if cancelAttempt {
@@ -155,7 +155,7 @@ func TestFileIOStartupMigrationRollback(t *testing.T) {
 		require.Error(t, err)
 		var count int
 		require.NoError(t, db.QueryRowContext(context.Background(),
-			"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND (name = 'fileio_rollback_probe' OR name LIKE 'mcp_file%')").Scan(&count))
+			"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND (name IN ('fileio_rollback_probe', 'kv') OR name LIKE 'mcp_file%')").Scan(&count))
 		require.Zero(t, count, "failed migration must not leave DDL or a completion marker")
 		require.NoError(t, RunMigrations(context.Background(), db, nil))
 		version, err := readFileMigrationVersion(context.Background(), db, false, false)

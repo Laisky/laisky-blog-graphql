@@ -478,10 +478,6 @@ func runAPI(ctx context.Context) error {
 		filesSettings := files.LoadSettingsFromConfig()
 		if mcpDB != nil {
 			memorySettings := mcpmemory.LoadSettingsFromConfig()
-			var credStore files.CredentialStore
-			if args.Rdb != nil {
-				credStore = files.NewRedisCredentialStore(args.Rdb.GetDB())
-			}
 			credential, credErr := buildFileCredentialProtector(filesSettings)
 			if credErr != nil {
 				return errors.Wrap(credErr, "invalid mcp files credential configuration")
@@ -489,7 +485,7 @@ func runAPI(ctx context.Context) error {
 			embedder := rag.NewOpenAIEmbedder(filesSettings.EmbeddingBaseURL, filesSettings.EmbeddingModel, nil,
 				rag.WithLogger(logger.Named("files_embedder")))
 			rerankClient := files.NewCohereRerankClient(filesSettings.Search.RerankEndpoint, filesSettings.Search.RerankModel, filesSettings.Search.RerankTimeout)
-			fileSvc, err := files.NewServiceWithContext(ctx, mcpDB.DB, filesSettings, embedder, rerankClient, credential, credStore, logger.Named("mcp_files"), nil, nil)
+			fileSvc, err := files.NewServiceWithContext(ctx, mcpDB.DB, filesSettings, embedder, rerankClient, credential, logger.Named("mcp_files"), nil, nil)
 			if err != nil {
 				logger.Warn("file service unavailable", zap.Error(err))
 			} else {

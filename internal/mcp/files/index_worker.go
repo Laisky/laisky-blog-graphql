@@ -79,8 +79,10 @@ func (w *IndexWorker) Start(ctx context.Context) error {
 	}
 }
 
-// RunOnce processes a batch of pending jobs.
+// RunOnce sweeps expired credential envelopes when due and processes a batch
+// of pending jobs.
 func (w *IndexWorker) RunOnce(ctx context.Context) error {
+	w.svc.purgeExpiredCredentials(ctx)
 	jobs, err := w.claimJobs(ctx)
 	if err != nil {
 		return err
@@ -249,6 +251,9 @@ func (w *IndexWorker) runSummaryRefresh(ctx context.Context, job FileIndexJob) e
 	}
 	apiKey, credErr := svc.loadCredential(ctx, ref)
 	if credErr != nil || strings.TrimSpace(apiKey) == "" {
+		if credErr != nil && !credentialUnavailable(credErr) {
+			w.logger.Warn("load credential for summary refresh", zap.Error(credErr), zap.Int64("job_id", job.ID))
+		}
 		return w.markSummaryRefreshStatus(ctx, job, "waiting_auth", "credential_unavailable")
 	}
 
@@ -262,7 +267,7 @@ func (w *IndexWorker) runSummaryRefresh(ctx context.Context, job FileIndexJob) e
 	if err := svc.publishSummaryStandalone(ctx, job, file.Version, pub); err != nil {
 		return w.handleJobError(ctx, job, err)
 	}
-	_ = svc.deleteCredential(ctx, ref)
+	svc.deleteCredential(ctx, ref)
 	svc.summaryRefreshOutcome(ctx, "rag", "done")
 	return w.markSummaryRefreshStatus(ctx, job, "done", "")
 }
@@ -406,13 +411,20 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 	}
 	if s.contextualizer != nil || s.embedder != nil || s.summarizer != nil {
 		loadedAPIKey, loadErr := s.loadCredential(ctx, ref)
-		if loadErr != nil {
-			s.LoggerFromContext(ctx).Debug("load credential failed before indexing",
+		switch {
+		case loadErr != nil && credentialUnavailable(loadErr):
+			s.LoggerFromContext(ctx).Debug("credential unavailable, indexing lexically",
 				zap.String("project", job.Project),
 				zap.String("file_path", job.FilePath),
 				zap.Error(loadErr),
 			)
-		} else {
+		case loadErr != nil:
+			s.LoggerFromContext(ctx).Warn("load credential failed, indexing lexically",
+				zap.String("project", job.Project),
+				zap.String("file_path", job.FilePath),
+				zap.Error(loadErr),
+			)
+		default:
 			apiKey = loadedAPIKey
 		}
 	}
@@ -437,9 +449,7 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 	}
 
 	if s.embedder != nil || s.contextualizer != nil || s.summarizer != nil {
-		if err := s.deleteCredential(ctx, ref); err != nil {
-			return err
-		}
+		s.deleteCredential(ctx, ref)
 	}
 
 	s.LoggerFromContext(ctx).Debug("file index upsert completed",
@@ -694,35 +704,6 @@ func (s *Service) deleteIndexRowsTx(ctx context.Context, tx *sql.Tx, apiKeyHash,
 	// system_owner-checked: orphan cleanup; mcp_file_chunks already filtered by system_owner above
 	if _, err := tx.ExecContext(ctx, "DELETE FROM mcp_file_chunk_bm25 WHERE chunk_id NOT IN (SELECT id FROM mcp_file_chunks)"); err != nil {
 		return errors.Wrap(err, "cleanup bm25")
-	}
-	return nil
-}
-
-// loadCredential decrypts the cached credential envelope for a job.
-func (s *Service) loadCredential(ctx context.Context, ref CredentialReference) (string, error) {
-	if s.credential == nil || s.credStore == nil {
-		return "", errors.New("credential store not configured")
-	}
-	key := ref.CacheKey(s.settings.Security.CredentialCachePrefix)
-	payload, err := s.credStore.Load(ctx, key)
-	if err != nil {
-		return "", errors.Wrap(err, "load credential envelope")
-	}
-	apiKey, err := s.credential.DecryptCredential(ctx, payload, ref.AAD())
-	if err != nil {
-		return "", errors.Wrap(err, "decrypt credential")
-	}
-	return apiKey, nil
-}
-
-// deleteCredential removes the cached credential envelope after use.
-func (s *Service) deleteCredential(ctx context.Context, ref CredentialReference) error {
-	if s.credStore == nil {
-		return nil
-	}
-	key := ref.CacheKey(s.settings.Security.CredentialCachePrefix)
-	if err := s.credStore.Delete(ctx, key); err != nil {
-		s.LoggerFromContext(ctx).Warn("delete credential envelope", zap.Error(err), zap.String("key", key))
 	}
 	return nil
 }

@@ -92,11 +92,14 @@ type FileSummarySettings struct {
 	PromptVersion        string
 }
 
-// SecuritySettings configures credential handoff encryption and cache usage.
+// defaultCredentialCacheTTL is how long an encrypted credential envelope stays
+// usable by the index worker when no TTL is configured.
+const defaultCredentialCacheTTL = 300 * time.Second
+
+// SecuritySettings configures credential handoff encryption and envelope expiry.
 type SecuritySettings struct {
-	EncryptionKEKs        map[uint16]string
-	CredentialCachePrefix string
-	CredentialCacheTTL    time.Duration
+	EncryptionKEKs     map[uint16]string
+	CredentialCacheTTL time.Duration
 }
 
 // KEKs returns all configured non-empty KEKs.
@@ -164,9 +167,8 @@ func LoadSettingsFromConfig() Settings {
 			},
 		},
 		Security: SecuritySettings{
-			EncryptionKEKs:        uint16StringMapFromConfig(configKeyWithFallback(ragFilesConfigKey("security.encryption_keks"), legacyFilesConfigKey("security.encryption_keks"))),
-			CredentialCachePrefix: strings.TrimSpace(gconfig.S.GetString(configKeyWithFallback(ragFilesConfigKey("security.credential_cache_prefix"), legacyFilesConfigKey("security.credential_cache_prefix")))),
-			CredentialCacheTTL:    time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("security.credential_cache_ttl_seconds"), legacyFilesConfigKey("security.credential_cache_ttl_seconds")), 300)) * time.Second,
+			EncryptionKEKs:     uint16StringMapFromConfig(configKeyWithFallback(ragFilesConfigKey("security.encryption_keks"), legacyFilesConfigKey("security.encryption_keks"))),
+			CredentialCacheTTL: time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("security.credential_cache_ttl_seconds"), legacyFilesConfigKey("security.credential_cache_ttl_seconds")), 300)) * time.Second,
 		},
 	}
 
@@ -253,11 +255,8 @@ func LoadSettingsFromConfig() Settings {
 		settings.Index.FreshnessSLO = 30 * time.Second
 	}
 	applyFileSummaryDefaults(&settings.Index)
-	if settings.Security.CredentialCachePrefix == "" {
-		settings.Security.CredentialCachePrefix = "mcp:files:cred"
-	}
 	if settings.Security.CredentialCacheTTL <= 0 {
-		settings.Security.CredentialCacheTTL = 300 * time.Second
+		settings.Security.CredentialCacheTTL = defaultCredentialCacheTTL
 	}
 	if settings.Security.EncryptionKEKs == nil {
 		settings.Security.EncryptionKEKs = make(map[uint16]string)

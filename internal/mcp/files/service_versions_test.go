@@ -21,7 +21,7 @@ func versionsTestSettings() Settings {
 // newVersionsTestService constructs a service for version tests.
 func newVersionsTestService(t *testing.T) *Service {
 	t.Helper()
-	return newTestService(t, versionsTestSettings(), testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	return newTestService(t, versionsTestSettings(), testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 }
 
 // versionsTestAuth returns the canonical auth context for version tests.

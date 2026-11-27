@@ -16,7 +16,7 @@ func TestWriteReadFlow(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	writeRes, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "hello", "utf-8", 0, WriteModeAppend)
@@ -47,7 +47,7 @@ func TestDeleteAndListFlow(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/dir/file.txt", "data", "utf-8", 0, WriteModeAppend)
@@ -79,7 +79,7 @@ func TestRootDeleteForbidden(t *testing.T) {
 	settings.AllowRootWipe = false
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "data", "utf-8", 0, WriteModeAppend)
@@ -90,7 +90,7 @@ func TestRootDeleteForbidden(t *testing.T) {
 	require.True(t, IsCode(err, ErrCodePermissionDenied))
 
 	settings.AllowRootWipe = true
-	svc = newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc = newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	_, err = svc.Write(context.Background(), auth, "proj", "/a.txt", "data", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
 
@@ -109,7 +109,7 @@ func TestFileStatDirectoryUpdatedAt(t *testing.T) {
 	clock := func() time.Time { return time.Date(2026, 2, 11, 1, 2, 3, 0, time.UTC) }
 	credential, err := NewCredentialProtector(settings.Security)
 	require.NoError(t, err)
-	svc, err := NewService(newTestDB(t), settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, nil, credential, &memoryCredentialStore{}, nil, nil, clock)
+	svc, err := NewService(newTestDB(t), settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, nil, credential, nil, nil, clock)
 	require.NoError(t, err)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
@@ -130,7 +130,7 @@ func TestWriteInvalidOffset(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "hello", "utf-8", 0, WriteModeAppend)
@@ -148,7 +148,7 @@ func TestProjectQuotaEnforced(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 4
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "hello", "utf-8", 0, WriteModeAppend)
@@ -163,7 +163,7 @@ func TestReadOffsetBeyondEOF(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "hello", "utf-8", 0, WriteModeAppend)
@@ -181,7 +181,7 @@ func TestWritePathConflictWithDirectory(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/dir/file.txt", "data", "utf-8", 0, WriteModeAppend)
@@ -199,7 +199,7 @@ func TestWritePathConflictWithParentFile(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/dir", "data", "utf-8", 0, WriteModeAppend)
@@ -217,7 +217,7 @@ func TestReadDirectoryReturnsError(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/dir/file.txt", "data", "utf-8", 0, WriteModeAppend)
@@ -235,7 +235,7 @@ func TestListSortedAndLimited(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/b.txt", "b", "utf-8", 0, WriteModeAppend)
@@ -260,7 +260,7 @@ func TestTenantIsolation(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	authA := AuthContext{APIKeyHash: "hash-a", APIKey: "key-a", UserIdentity: "user:a"}
 	authB := AuthContext{APIKeyHash: "hash-b", APIKey: "key-b", UserIdentity: "user:b"}
 
@@ -293,7 +293,7 @@ func TestDeleteRootAlwaysForbidden(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Delete(context.Background(), auth, "proj", "", false)
@@ -312,7 +312,7 @@ func TestStatRootExistsWhenEmpty(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	statRes, err := svc.Stat(context.Background(), auth, "proj", "")
@@ -329,7 +329,7 @@ func TestStatRootDirectory(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "hello", "utf-8", 0, WriteModeAppend)

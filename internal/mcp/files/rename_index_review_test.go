@@ -14,7 +14,7 @@ func TestRenameOverwritePreservesReplacementSearch(t *testing.T) {
 	for _, target := range []string{"alpha", "archive"} {
 		t.Run(target, func(t *testing.T) {
 			stub := &stubFileSummarizer{}
-			svc, _, setClock := newSummaryTestService(t, stub)
+			svc, setClock := newSummaryTestService(t, stub)
 			ctx := context.Background()
 			auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 			now := time.Date(2026, 11, 27, 1, 0, 0, 0, time.UTC)
@@ -54,7 +54,7 @@ func TestRenameOptOutNeverPublishesRAG(t *testing.T) {
 	for _, target := range []string{"alpha", "archive"} {
 		t.Run(target, func(t *testing.T) {
 			stub := &stubFileSummarizer{result: "This is a valid summary describing a document kept only in its own index."}
-			svc, _, setClock := newSummaryTestService(t, stub)
+			svc, setClock := newSummaryTestService(t, stub)
 			ctx := context.Background()
 			auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 			now := time.Date(2026, 11, 27, 1, 0, 0, 0, time.UTC)

@@ -64,7 +64,7 @@ func TestWriteDeleteAndRenamePersistExpectedIndexJobs(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/docs/a.txt", "aaa", "utf-8", 0, WriteModeAppend)
@@ -103,7 +103,7 @@ func TestRenameDirectoryEnqueuesPerFileJobs(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/docs/a.txt", "aaa", "utf-8", 0, WriteModeAppend)

@@ -208,7 +208,7 @@ func newTestMemoryService(t *testing.T) (*Service, *sql.DB) {
 	fileSettings.MaxProjectBytes = 2_000_000
 	fileSettings.MaxFileBytes = 1_000_000
 	fileSettings.MaxPayloadBytes = 1_000_000
-	fileService, err := files.NewService(db, fileSettings, nil, nil, nil, nil, log.Logger.Named("memory_service_test_files"), nil, nil)
+	fileService, err := files.NewService(db, fileSettings, nil, nil, nil, log.Logger.Named("memory_service_test_files"), nil, nil)
 	require.NoError(t, err)
 	ragPlugin, err := ragplugin.New(fileService)
 	require.NoError(t, err)

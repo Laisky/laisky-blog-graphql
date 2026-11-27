@@ -57,6 +57,7 @@ If no tool dependencies are met the server skips MCP initialisation.
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `extract_key_info` | `settings.db.mcp.*` connection info, `settings.openai.embedding_model`, and `settings.mcp.tools.extract_key_info.enabled=true`. Requires pgvector-enabled PostgreSQL. |
 | `mcp_pipe`         | No additional infrastructure dependencies. It is enabled/disabled via `settings.mcp.tools.mcp_pipe.enabled` and can call only tools that are enabled and configured.  |
+| `file_*` and RAG memory | Only the binary and the `settings.db.mcp.*` PostgreSQL database (pgvector for semantic search); Redis is not used. The index worker receives the caller's key as an encrypted, expiring envelope in the `kv` table, created by the FileIO startup migration. Semantic indexing also needs `settings.mcp.tools.memory.plugins.rag.security.encryption_keks`; without it, files are indexed lexically. |
 
 ## Authentication Model
 

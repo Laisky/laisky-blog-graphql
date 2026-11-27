@@ -7,6 +7,8 @@ import (
 
 	errors "github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
+
+	"github.com/Laisky/laisky-blog-graphql/library/db/sql/kv"
 )
 
 // systemOwnerTables enumerates every mcp_files-family table that carries a
@@ -16,9 +18,26 @@ var systemOwnerTables = []string{
 	"mcp_file_chunk_bm25", tableMcpFileIndexJobs, "mcp_file_versions",
 }
 
-// migrateFileSchema applies the baseline and revision schema inside the startup
-// migration transaction. RunMigrations skips this entire function after success.
-func migrateFileSchema(ctx context.Context, db *sql.Tx, logger logSDK.Logger, isPostgres bool) error {
+// migrateFileSchema applies every numbered step after the recorded version from
+// inside the startup migration transaction. RunMigrations skips this entire
+// function after success.
+func migrateFileSchema(ctx context.Context, db *sql.Tx, logger logSDK.Logger, isPostgres bool, from int64) error {
+	if from < 1 {
+		if err := migrateFileBaseline(ctx, db, logger, isPostgres); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+	// Step 2: encrypted credential envelopes for the index worker live in the
+	// shared kv table, so they commit with file rows and need no Redis.
+	if err := kv.CreateTable(ctx, db); err != nil {
+		return errors.Wrap(err, "create credential envelope table")
+	}
+	return nil
+}
+
+// migrateFileBaseline applies schema step 1: the file tables, their indexes and
+// the revision schema.
+func migrateFileBaseline(ctx context.Context, db *sql.Tx, logger logSDK.Logger, isPostgres bool) error {
 	if err := ensureVectorExtension(ctx, db, logger, isPostgres); err != nil {
 		return errors.WithStack(err)
 	}

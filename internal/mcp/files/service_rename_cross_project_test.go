@@ -17,7 +17,7 @@ func newCrossProjectTestService(t *testing.T, maxProjectBytes int64) *Service {
 	settings.Search.Enabled = false
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = maxProjectBytes
-	return newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	return newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 }
 
 // crossProjectTestAuth returns the tenant used by cross-project rename tests.

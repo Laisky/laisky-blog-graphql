@@ -78,7 +78,7 @@ func TestRenameWithStateHookSharesTheTransaction(t *testing.T) {
 func TestRenameWithPendingAndFailedRAGIndexing(t *testing.T) {
 	for _, target := range []string{"alpha", "archive"} {
 		t.Run(target, func(t *testing.T) {
-			svc, _, setClock := newSummaryTestService(t, &stubFileSummarizer{})
+			svc, setClock := newSummaryTestService(t, &stubFileSummarizer{})
 			ctx := context.Background()
 			auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 			now := time.Date(2026, 11, 27, 2, 0, 0, 0, time.UTC)

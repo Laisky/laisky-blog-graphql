@@ -218,7 +218,10 @@ Initial schema privileges must permit table alteration, index/trigger/function
 creation and backfill updates. Startup does not grant privileges. Permission or
 connection errors do not masquerade as an absent checkpoint. An unknown newer
 schema version fails closed. Future schema changes must add an ordered numbered
-step, not repurpose a completed one or replay the whole baseline. Manual schema
+step, not repurpose a completed one or replay the whole baseline. Step 1 is the
+file baseline. Step 2 creates the `kv` table (`library/db/sql/kv`) and its
+`expire_at` index, which hold the index worker's encrypted credential envelopes;
+a database at step 1 runs only step 2. Manual schema
 drift with a retained marker is not automatically repaired by scanning all
 objects on every startup. No new service, scheduler, or CI is required.
 

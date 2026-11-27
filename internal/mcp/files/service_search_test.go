@@ -64,7 +64,7 @@ func TestSearchUsesRequestAPIKeyForExternalCalls(t *testing.T) {
 
 	embedder := &captureEmbedder{vector: pgvector.NewVector([]float32{1, 0})}
 	reranker := &captureRerankClient{}
-	svc := newTestService(t, settings, embedder, &memoryCredentialStore{})
+	svc := newTestService(t, settings, embedder)
 	svc.rerank = reranker
 	auth := AuthContext{APIKeyHash: "hash-tenant", APIKey: "tenant-user-key", UserIdentity: "user:test"}
 
@@ -96,7 +96,7 @@ func TestSearchEndToEnd(t *testing.T) {
 	settings.Index.ChunkBytes = 8
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/notes.txt", "hello world", "utf-8", 0, WriteModeAppend)
@@ -121,7 +121,7 @@ func TestSearchHonorsDeletes(t *testing.T) {
 	settings.Index.ChunkBytes = 8
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/notes.txt", "hello world", "utf-8", 0, WriteModeAppend)
@@ -148,7 +148,7 @@ func TestSearchFallbackWhenRerankFails(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	svc.rerank = stubRerankClient{err: errors.New("rerank backend unavailable")}
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
@@ -175,7 +175,7 @@ func TestSearchPathPrefixFilter(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/dir/a.txt", "match data", "utf-8", 0, WriteModeAppend)
@@ -203,7 +203,7 @@ func TestSearchUpdatesLastServedOnlyForReturned(t *testing.T) {
 	settings.Index.ChunkBytes = 4
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "hello world", "utf-8", 0, WriteModeAppend)
@@ -232,7 +232,7 @@ func TestSearchTenantIsolation(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	authA := AuthContext{APIKeyHash: "hash-a", APIKey: "key-a", UserIdentity: "user:a"}
 	authB := AuthContext{APIKeyHash: "hash-b", APIKey: "key-b", UserIdentity: "user:b"}
 
@@ -268,7 +268,7 @@ func TestSearchFallsBackWhenSemanticBackendFails(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "alpha beta gamma", "utf-8", 0, WriteModeAppend)
@@ -297,7 +297,7 @@ func TestSearchKeepsLexicalResultsWhenEmbeddingFails(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, errTestEmbedder{}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, errTestEmbedder{})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "alpha beta gamma", "utf-8", 0, WriteModeAppend)
@@ -333,13 +333,12 @@ func TestSearchKeepsLexicalResultsWhenCredentialMissing(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	store := &memoryCredentialStore{}
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, store)
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "alpha beta gamma", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
-	store.data = map[string]string{}
+	dropCredentialEnvelopes(t, svc)
 
 	worker := svc.NewIndexWorker()
 	require.NoError(t, worker.RunOnce(context.Background()))
@@ -387,7 +386,7 @@ func TestSearchFallbackReturnsResultsBeforeIndexReady(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/notes.txt", "MCP fallback should find this text", "utf-8", 0, WriteModeAppend)
@@ -411,7 +410,7 @@ func TestSearchWildcardSpansProjects(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj_a", "/a.txt", "alpha sentinel marker", "utf-8", 0, WriteModeAppend)
@@ -446,7 +445,7 @@ func TestSearchSingleProjectOmitsProjectField(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj_a", "/a.txt", "alpha sentinel marker", "utf-8", 0, WriteModeAppend)
@@ -480,7 +479,7 @@ func TestSearchWildcardHonorsTenantIsolation(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	authA := AuthContext{APIKeyHash: "hash-a", APIKey: "key-a", UserIdentity: "user:a"}
 	authB := AuthContext{APIKeyHash: "hash-b", APIKey: "key-b", UserIdentity: "user:b"}
 
@@ -518,7 +517,7 @@ func TestSearchWildcardHonorsPathPrefix(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj_a", "/dir/a.txt", "match data", "utf-8", 0, WriteModeAppend)
@@ -552,7 +551,7 @@ func TestSearchWildcardRawFallbackPopulatesProject(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj_a", "/a.txt", "MCP raw fallback marker", "utf-8", 0, WriteModeAppend)
@@ -580,7 +579,7 @@ func TestSearchWildcardEmptyAuthRejected(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 
 	_, err := svc.Search(context.Background(), AuthContext{}, ProjectWildcard, "anything", "", 5)
 	require.Error(t, err)
@@ -595,7 +594,7 @@ func TestNonSearchOperationsRejectWildcard(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	wildcard := ProjectWildcard
@@ -643,7 +642,7 @@ func TestSearchFallbackHonorsPathPrefix(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/dir/a.txt", "contains MCP marker", "utf-8", 0, WriteModeAppend)

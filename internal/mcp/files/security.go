@@ -58,17 +58,12 @@ func (p *CredentialProtector) DecryptCredential(ctx context.Context, payload str
 	return string(plaintext), nil
 }
 
-// CredentialReference identifies a cached credential envelope.
+// CredentialReference identifies a stored credential envelope.
 type CredentialReference struct {
 	APIKeyHash string
 	Project    string
 	Path       string
 	UpdatedAt  time.Time
-}
-
-// CacheKey builds the redis key for the credential envelope.
-func (c CredentialReference) CacheKey(prefix string) string {
-	return fmt.Sprintf("%s:%s:%s:%s:%d", prefix, c.APIKeyHash, c.Project, c.Path, c.UpdatedAt.UnixNano())
 }
 
 // AAD returns additional authenticated data for credential encryption.

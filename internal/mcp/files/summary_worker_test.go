@@ -50,7 +50,7 @@ func (s *stubFileSummarizer) doc() string {
 
 // newSummaryTestService builds a service wired with the stub summarizer and a mutable
 // clock so refresh-job availability windows can be advanced deterministically.
-func newSummaryTestService(t *testing.T, stub FileSummarizer) (*Service, *memoryCredentialStore, func(time.Time)) {
+func newSummaryTestService(t *testing.T, stub FileSummarizer) (*Service, func(time.Time)) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
@@ -60,8 +60,7 @@ func newSummaryTestService(t *testing.T, stub FileSummarizer) (*Service, *memory
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 1_000_000
 
-	store := &memoryCredentialStore{}
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, store)
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	svc.summarizer = stub
 	base := time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC)
 	current := base
@@ -76,7 +75,7 @@ func newSummaryTestService(t *testing.T, stub FileSummarizer) (*Service, *memory
 		defer mu.Unlock()
 		current = ts
 	}
-	return svc, store, setClock
+	return svc, setClock
 }
 
 func storeCredentialForTest(t *testing.T, svc *Service, auth AuthContext, project, path string, updatedAt time.Time) {
@@ -113,7 +112,7 @@ func countRefreshJobs(t *testing.T, svc *Service, apiKeyHash, project, path stri
 // file_summary bound to the same generation as the chunk.
 func TestSummarySearchHitIncludesSummary(t *testing.T) {
 	stub := &stubFileSummarizer{result: "This document describes the retry queue saturation incident and its mitigation timeline."}
-	svc, _, _ := newSummaryTestService(t, stub)
+	svc, _ := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 	ctx := context.Background()
 
@@ -139,7 +138,7 @@ func TestSummarySearchHitIncludesSummary(t *testing.T) {
 // the same summary with independent offsets.
 func TestSummaryRepeatedAcrossChunks(t *testing.T) {
 	stub := &stubFileSummarizer{result: "A grounded overview of the alpha document used across many chunks."}
-	svc, _, _ := newSummaryTestService(t, stub)
+	svc, _ := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 	ctx := context.Background()
 
@@ -163,7 +162,7 @@ func TestSummaryRepeatedAcrossChunks(t *testing.T) {
 // resulting file, not only the appended bytes.
 func TestSummaryAppendSummarizesCompleteFile(t *testing.T) {
 	stub := &stubFileSummarizer{result: "A valid grounded summary sentence."}
-	svc, _, _ := newSummaryTestService(t, stub)
+	svc, _ := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 	ctx := context.Background()
 	worker := svc.NewIndexWorker()
@@ -187,7 +186,7 @@ func TestSummaryAppendSummarizesCompleteFile(t *testing.T) {
 // rename reuses the summary and makes zero summary-provider calls.
 func TestSummaryRenameReusesWithoutModelCall(t *testing.T) {
 	stub := &stubFileSummarizer{result: "A grounded overview reused across the rename."}
-	svc, _, _ := newSummaryTestService(t, stub)
+	svc, _ := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 	ctx := context.Background()
 	worker := svc.NewIndexWorker()
@@ -213,7 +212,7 @@ func TestSummaryRenameReusesWithoutModelCall(t *testing.T) {
 // generation inputs must not reuse a ready summary from the old configuration.
 func TestSummaryGenerationKeyChangeRegenerates(t *testing.T) {
 	stub := &stubFileSummarizer{result: "The original generation summary."}
-	svc, _, _ := newSummaryTestService(t, stub)
+	svc, _ := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 	ctx := context.Background()
 	worker := svc.NewIndexWorker()
@@ -242,7 +241,7 @@ func TestSummaryGenerationKeyChangeRegenerates(t *testing.T) {
 // and raw fallback must not reintroduce it.
 func TestSummarySearchEnforcesSummary(t *testing.T) {
 	stub := &stubFileSummarizer{result: "A valid summary for the searchable document."}
-	svc, _, _ := newSummaryTestService(t, stub)
+	svc, _ := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 	ctx := context.Background()
 
@@ -266,7 +265,7 @@ func TestSummarySearchEnforcesSummary(t *testing.T) {
 // a deterministic fallback (degraded) and enqueues a bounded refresh; write is durable.
 func TestSummaryProviderFailurePublishesDegraded(t *testing.T) {
 	stub := &stubFileSummarizer{err: errTestProvider}
-	svc, _, _ := newSummaryTestService(t, stub)
+	svc, _ := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 	ctx := context.Background()
 
@@ -291,13 +290,13 @@ func TestSummaryProviderFailurePublishesDegraded(t *testing.T) {
 // fallback remains available and the summarizer is never called.
 func TestSummaryMissingCredentialUsesFallback(t *testing.T) {
 	stub := &stubFileSummarizer{result: "should not be used"}
-	svc, store, _ := newSummaryTestService(t, stub)
+	svc, _ := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 	ctx := context.Background()
 
 	_, err := svc.Write(ctx, auth, "proj", "/a.txt", "alpha beta gamma delta", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
-	store.data = map[string]string{} // drop the credential envelope
+	dropCredentialEnvelopes(t, svc)
 
 	require.NoError(t, svc.NewIndexWorker().RunOnce(ctx))
 	require.Equal(t, 0, stub.callCount(), "no summarizer call without a caller credential")
@@ -311,7 +310,7 @@ func TestSummaryMissingCredentialUsesFallback(t *testing.T) {
 // upgrades a degraded fallback to a validated model summary.
 func TestSummaryRefreshUpgradesDegradedToReady(t *testing.T) {
 	stub := &stubFileSummarizer{err: errTestProvider}
-	svc, _, setClock := newSummaryTestService(t, stub)
+	svc, setClock := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 	ctx := context.Background()
 	base := time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC)
@@ -349,7 +348,7 @@ func TestSummaryRefreshUpgradesDegradedToReady(t *testing.T) {
 // parks in waiting_auth instead of hot-looping.
 func TestSummaryRefreshWaitsForAuth(t *testing.T) {
 	stub := &stubFileSummarizer{err: errTestProvider}
-	svc, store, setClock := newSummaryTestService(t, stub)
+	svc, setClock := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 	ctx := context.Background()
 	base := time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC)
@@ -359,7 +358,7 @@ func TestSummaryRefreshWaitsForAuth(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, worker.RunOnce(ctx))
 
-	store.data = map[string]string{} // no credential for the refresh
+	dropCredentialEnvelopes(t, svc) // no credential for the refresh
 	setClock(base.Add(10 * time.Second))
 	require.NoError(t, worker.RunOnce(ctx))
 
@@ -400,7 +399,7 @@ func (contentEchoSummarizer) GenerateFileSummary(_ context.Context, _ string, do
 // TestSummaryTenantIsolation covers S01/A6: a tenant never receives another owner's
 // summary for the same project/path.
 func TestSummaryTenantIsolation(t *testing.T) {
-	svc, _, _ := newSummaryTestService(t, contentEchoSummarizer{})
+	svc, _ := newSummaryTestService(t, contentEchoSummarizer{})
 	ctx := context.Background()
 	worker := svc.NewIndexWorker()
 	authA := AuthContext{APIKeyHash: "tenantA", APIKey: "kA", UserIdentity: "user:a"}
@@ -435,7 +434,7 @@ func TestSummaryTenantIsolation(t *testing.T) {
 // current generation.
 func TestSummaryStaleJobDiscardedByContentHash(t *testing.T) {
 	stub := &stubFileSummarizer{result: "Summary of the current v2 content generation."}
-	svc, _, _ := newSummaryTestService(t, stub)
+	svc, _ := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 	ctx := context.Background()
 	worker := svc.NewIndexWorker()

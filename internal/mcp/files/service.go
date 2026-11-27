@@ -3,6 +3,7 @@ package files
 import (
 	"context"
 	"database/sql"
+	"sync/atomic"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
@@ -11,6 +12,7 @@ import (
 	"github.com/pgvector/pgvector-go"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
+	"github.com/Laisky/laisky-blog-graphql/library/db/sql/kv"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -32,13 +34,6 @@ type RerankClient interface {
 	Rerank(ctx context.Context, apiKey, query string, docs []string) ([]float64, error)
 }
 
-// CredentialStore persists encrypted credential envelopes.
-type CredentialStore interface {
-	Store(ctx context.Context, key, payload string, ttl time.Duration) error
-	Load(ctx context.Context, key string) (string, error)
-	Delete(ctx context.Context, key string) error
-}
-
 // Service coordinates FileIO operations and indexing.
 type Service struct {
 	db             *sql.DB
@@ -51,25 +46,33 @@ type Service struct {
 	rerank         RerankClient
 	chunker        Chunker
 	credential     *CredentialProtector
-	credStore      CredentialStore
-	lockProvider   LockProvider
-	clock          Clock
+	// credentials holds encrypted credential envelopes in the FileIO database,
+	// so they commit or roll back with the file rows and outbox jobs.
+	credentials *kv.Kv
+	// nextCredentialPurge is the UnixNano time before which index workers
+	// skip the expired-envelope sweep.
+	nextCredentialPurge atomic.Int64
+	lockProvider        LockProvider
+	clock               Clock
 }
 
 // NewService constructs a FileIO service and runs migrations.
-func NewService(db *sql.DB, settings Settings, embedder Embedder, rerank RerankClient, credential *CredentialProtector, store CredentialStore, logger logSDK.Logger, lockProvider LockProvider, clock Clock) (*Service, error) {
-	return NewServiceWithContext(context.Background(), db, settings, embedder, rerank, credential, store, logger, lockProvider, clock)
+func NewService(db *sql.DB, settings Settings, embedder Embedder, rerank RerankClient, credential *CredentialProtector, logger logSDK.Logger, lockProvider LockProvider, clock Clock) (*Service, error) {
+	return NewServiceWithContext(context.Background(), db, settings, embedder, rerank, credential, logger, lockProvider, clock)
 }
 
 // NewServiceWithContext constructs a FileIO service and runs migrations within the caller's lifetime.
 func NewServiceWithContext(ctx context.Context, db *sql.DB, settings Settings, embedder Embedder, rerank RerankClient,
-	credential *CredentialProtector, store CredentialStore, logger logSDK.Logger, lockProvider LockProvider, clock Clock,
+	credential *CredentialProtector, logger logSDK.Logger, lockProvider LockProvider, clock Clock,
 ) (*Service, error) {
 	if db == nil {
 		return nil, errors.New("sql db is required")
 	}
 	if logger == nil {
 		logger = log.Logger.Named("mcp_files_service")
+	}
+	if settings.Security.CredentialCacheTTL <= 0 {
+		settings.Security.CredentialCacheTTL = defaultCredentialCacheTTL
 	}
 	if lockProvider == nil {
 		lockProvider = DefaultLockProvider{}
@@ -93,6 +96,9 @@ func NewServiceWithContext(ctx context.Context, db *sql.DB, settings Settings, e
 	if err != nil {
 		return nil, errors.Wrap(err, "detect database dialect")
 	}
+	if settings.Search.Enabled && credential == nil {
+		logger.Warn("file search has no credential encryption keys; indexing cannot reuse caller credentials and stays lexical")
+	}
 
 	svc := &Service{
 		db:             db,
@@ -104,12 +110,15 @@ func NewServiceWithContext(ctx context.Context, db *sql.DB, settings Settings, e
 		rerank:         rerank,
 		chunker:        DefaultChunker{MaxBytes: settings.Index.ChunkBytes},
 		credential:     credential,
-		credStore:      store,
 		lockProvider:   lockProvider,
 		clock:          clock,
 	}
 	if settings.Index.FileSummary.Enabled {
 		svc.summarizer = NewOpenAIFileSummarizer(settings.Index.FileSummary, nil)
+	}
+	// Envelopes expire on the service clock, read at call time.
+	if svc.credentials, err = openCredentialEnvelopes(db, func() time.Time { return svc.clock() }); err != nil {
+		return nil, errors.WithStack(err)
 	}
 
 	return svc, nil

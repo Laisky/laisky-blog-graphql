@@ -71,7 +71,7 @@ Every entrypoint that reads a credential, and the call that authenticates it. `T
 | Blog posts (`internal/web/blog/service/posts.go`) | SSO JWT bearer | JWT signature (not an API key) |
 | SSO code exchange and userinfo (`internal/web/sso_code.go`) | SSO bearer | SSO token signature (not an API key) |
 
-Keys used later without a request: the file index worker reuses the caller's key from the encrypted credential store within `credential_cache_ttl_seconds`; Telegram uploads reuse the bound key. Both only send the key to one-api, whose `TokenAuth` refuses it once revoked.
+Keys used later without a request: the file index worker reuses the caller's key from an encrypted envelope in the FileIO database's `kv` table within `credential_cache_ttl_seconds`; Telegram uploads reuse the bound key. Both only send the key to one-api, whose `TokenAuth` refuses it once revoked.
 
 ## 4. one-api call inventory
 

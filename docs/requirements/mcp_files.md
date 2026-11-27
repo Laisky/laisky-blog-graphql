@@ -310,7 +310,12 @@ directory subtree, within `project` or into `target_project` of the same caller,
 - Indexing is tenant/project/path scoped by `(apikey_hash, project, path)`.
 - Async workers must use caller credentials only through encrypted short-lived handoff data.
 - `UPSERT` jobs that call external model APIs must carry a credential-envelope reference key (not plaintext API key).
-- The credential envelope is stored in Redis with short TTL and deleted immediately after worker use.
+- The credential envelope is stored in the FileIO SQL database (the shared `kv` table), written in the same
+  transaction as the file change and its index jobs, with a short TTL, and deleted immediately after worker use.
+  FileIO and RAG need no Redis.
+- A missing or expired envelope never blocks a file operation or fails indexing: the worker indexes lexically,
+  summary refresh waits for authentication, and the next authenticated mutation of the path restores semantic
+  indexing. A write or rename that opted out of RAG indexing stores no envelope.
 
 ### 7.2 Chunking Rules
 
@@ -534,9 +539,11 @@ Credential handling requirements:
 
 Required config keys:
 
-- `settings.mcp.files.security.encryption_keks` (required; map of `kek_id -> secret`)
-- `settings.mcp.files.security.credential_cache_prefix` (default: `mcp:files:cred`)
+- `settings.mcp.files.security.encryption_keks` (required for semantic indexing; map of `kek_id -> secret`). Without
+  it, file operations still succeed, no envelope is stored, and indexing stays lexical.
 - `settings.mcp.files.security.credential_cache_ttl_seconds` (default: `300`)
+
+The former `credential_cache_prefix` key named a Redis namespace. It is no longer read.
 
 Implementation requirements:
 
@@ -544,25 +551,32 @@ Implementation requirements:
 - Build KMS by hashing each `encryption_keks` secret and passing all KEKs to `mem.New(map[uint16][]byte{...})`.
 - For each credential envelope, call `kmsClient.Encrypt(ctx, plaintextAPIKey, aad)`:
   - encryption output includes `kek_id`, unique `dek_id`, and `ciphertext`
-  - serialize with `EncryptedData.MarshalToString()` before Redis write
+  - serialize with `EncryptedData.MarshalToString()` before the envelope is stored
 - Worker reads serialized envelope and calls:
   - `EncryptedData.UnmarshalFromString(...)`
   - `kmsClient.Decrypt(ctx, encryptedData, aad)`
-- Store only encrypted envelope in Redis.
+- Store only the encrypted envelope, in the `kv` table of the FileIO database. Its key is
+  `mcp_files_credential_` plus the SHA-256 of the AAD, so it names no tenant, project or path in clear text.
+- The AAD is `apikey_hash|project|path|file_updated_at_unix_nano`; an envelope copied under another reference
+  does not decrypt.
+- The envelope row commits or rolls back with the file mutation and its index jobs. A rejected or failed mutation
+  leaves no envelope.
+- Encryption keys stay in configuration, never in the database.
 - Worker flow:
   - load envelope by reference key
   - decrypt via KMS with the same AAD used at encryption
   - call external model/rerank API
   - delete envelope immediately after use
-  - if envelope is missing/expired, retry job later
+  - if envelope is missing, expired or undecryptable, index lexically; summary refresh moves to `waiting_auth`
+    until an authenticated mutation stores a new envelope
+- Index workers sweep expired envelopes at most once per TTL, deleting at most 500 rows per statement and
+  sweeping again while full batches remain.
 
-Recommended Redis envelope fields:
+Envelope row (`kv` table):
 
-- `kek_id`
-- `dek_id`
-- `ciphertext`
-- `aad`
-- `expires_at`
+- `key`: `mcp_files_credential_<sha256(aad)>`
+- `value`: serialized `EncryptedData` (`kek_id`, `dek_id`, `ciphertext`)
+- `created_at`, `expire_at`: UTC
 
 ## 13. Non-Goals (v1)
 

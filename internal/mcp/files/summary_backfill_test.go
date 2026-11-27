@@ -12,7 +12,7 @@ import (
 // repeated run does not create duplicate work.
 func TestBackfillRAGSummariesIsBoundedAndResumable(t *testing.T) {
 	stub := &stubFileSummarizer{result: "A model summary after deterministic backfill."}
-	svc, _, _ := newSummaryTestService(t, stub)
+	svc, _ := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 	ctx := context.Background()
 

@@ -556,7 +556,18 @@
       "TestRenameOverwritePreservesReplacementSearch",
       "TestRenameOptOutNeverPublishesRAG",
       "TestRenameWithStateHookSharesTheTransaction",
-      "TestRenameWithPendingAndFailedRAGIndexing"
+      "TestRenameWithPendingAndFailedRAGIndexing",
+      "TestIndexWorkerDeletesCredentialAfterSuccess",
+      "TestPurgeExpiredCredentialsIsBoundedAndThrottled"
+    ]
+  },
+  {
+    "package": "./library/db/sql/kv",
+    "tests": [
+      "TestKeyExpiration",
+      "TestWithTxCommitsAndRollsBackWithTheTransaction",
+      "TestDeleteExpiredIsBounded",
+      "TestOpenRunsNoDDL"
     ]
   }
 ]

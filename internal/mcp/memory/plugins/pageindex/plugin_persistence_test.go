@@ -228,7 +228,7 @@ func newPersistenceTestServiceWithLimit(t testing.TB, maxFileBytes int64) (*sql.
 		DeleteRetention:  time.Hour,
 		Search:           files.SearchSettings{Enabled: false},
 		Index:            files.IndexSettings{Workers: 1, BatchSize: 1, ChunkBytes: 4096},
-	}, nil, nil, nil, nil, nil, nil, nil)
+	}, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	return db, service
 }
