@@ -92,6 +92,14 @@ Each `FR-*` lists its mapped acceptance criterion from
   only and never affects ranking. Full contract:
   [`docs/proposals/file_search_file_summaries.md`](../proposals/file_search_file_summaries.md).
   _Acceptance:_ the file-summaries proposal §9 (A1–A12).
+- **FR-16 — Single execution.** Each `file_write` (including `APPEND`), `file_delete`
+  and `file_rename` runs exactly once, on the plugin the call resolves to, and produces
+  only that operation's file revision, history rows and RAG outbox jobs. No mutation is
+  replayed through another plugin and no background replay is started; the removed
+  shadow replay is not reintroduced in another form. `settings.mcp.tools.memory.shadow.*`
+  is ignored and cannot fail startup; `enabled=true` logs one startup WARN.
+  _Acceptance:_ proposal §7.8; `TestFileToolMutationsExecuteOnce`,
+  `TestStaleShadowSettingsNeitherWrapNorReplay`.
 
 ## 5. Quality requirements
 
@@ -144,8 +152,9 @@ Tracked in [../proposals/mcp_memory_plugin_manager.md#3-risks--open-questions](.
 
 ## 7.1 Phase 2 acceptance status
 
-The Phase 2 wave-B drop lands the `pageindex_plugin` runtime, the foundation
-`system_owner` schema, and the shadow-replay scaffolding. The table maps each
+The Phase 2 wave-B drop lands the `pageindex_plugin` runtime and the foundation
+`system_owner` schema. (Its shadow-replay scaffolding was later removed; see the
+proposal §7.8: every file mutation runs once, on the selected plugin.) The table maps each
 in-scope acceptance criterion to its current verification state. "verified" means
 the implementation is present and at least one test or audit asserts the observable
 contract; "pending" means the bar requires a dataset or wiring step that has not

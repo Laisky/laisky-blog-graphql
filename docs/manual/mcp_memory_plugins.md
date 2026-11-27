@@ -521,56 +521,19 @@ are on the final `pageindex.progress` event (`charged_tokens` is their sum) and 
 the `pageindex.write index error` warning of a run that failed, which was still
 charged for the requests it sent.
 
-## 6.7 Phase 3: Shadow replay (deferred)
+## 6.7 Phase 3: Shadow replay (removed)
 
-The shadow-replay scaffolding exists for offline evaluation and future promotion work,
-but it is not part of the runtime routing contract. Runtime selection remains simple:
-the caller may pass the optional `plugin` field on each `file_*` request, otherwise the
-server uses `settings.mcp.tools.memory.default_plugin` and defaults to `rag`.
+Shadow replay is removed. RAG and PageIndex use the same FileIO service, so replaying a
+mutation through a second plugin changed the same file twice; there is no requirement
+for it, so it is not repaired or replaced (proposal §7.8). Each `file_write`,
+`file_delete` and `file_rename` runs once, on the plugin selected by the optional
+`plugin` field or `settings.mcp.tools.memory.default_plugin` (default `rag`). The
+`cmd/promote-pageindex` analyzer is removed with it; compare plugins offline with the
+eval harness (Section 7).
 
-The wrapper lives at [../../internal/mcp/memory/plugin/shadow.go](../../internal/mcp/memory/plugin/shadow.go).
-Operating semantics:
-
-- **Live first, shadow fire-and-forget.** Mutations (`file_write`, `file_delete`,
-  `file_rename`) call live first; on success the same operation is dispatched to
-  shadow on a bounded goroutine pool. The user only ever sees live's response. A
-  shadow failure is logged but never alters or delays the live path.
-- **Search dual-read.** Both plugins answer; the live result is returned, the shadow
-  result is captured for offline scoring.
-- **Recorder output.** Each pair appends one JSONL record to the operator-chosen
-  recorder path; no fixed runtime config path is required because the server does not
-  auto-enable shadow replay.
-- **Promotion gate.** Per proposal §7.8, the analyzer at
-  [../../cmd/promote-pageindex/main.go](../../cmd/promote-pageindex/main.go) computes
-  the win-rate over a captured period:
-
-  | Win-rate            | Decision                                                       |
-  | ------------------- | -------------------------------------------------------------- |
-  | ≥ 55% with p < 0.05 | Promote: flip `default_plugin` to `pageindex` for the project. |
-  | 45–55%              | Stay on `rag_plugin` (no statistically significant gain).      |
-  | < 45%               | File a bug; pageindex regression.                              |
-
-  The statistical test is a paired two-sided permutation test, B = 10 000 shuffles,
-  matching §7.6.
-
-### 6.6.1 Real-judge mode
-
-The driver ships a `--judge=stub` mode for wiring smoke tests and two real
-modes that call the OpenAI Responses API. Secrets are read from the
-environment only — `OPENAI_API_KEY` is required; there is no `--api-key` flag.
-
-```bash
-OPENAI_API_KEY=sk-... go run ./cmd/promote-pageindex \
-    --records=/var/log/mcp/shadow.jsonl \
-    --judge=ensemble \
-    --judge-model=gpt-5.4-mini \
-    --judge-base-url=https://api.openai.com   # optional
-```
-
-`--judge=openai` runs a single model. `--judge=ensemble` runs the primary
-model alongside `gpt-4o-mini` in parallel and majority-votes (split → TIE) per
-§7.8 position-bias mitigation. The driver echoes only the SHA-256 prefix of
-the API key to stderr.
+Remove any `settings.mcp.tools.memory.shadow.*` block from the configuration. The keys
+are ignored and do not fail startup; `enabled: true` logs one startup warning,
+`memory plugin shadow replay was removed; the setting is ignored`.
 
 ## 7. Eval harness
 
@@ -631,6 +594,7 @@ The resolved plugin name is recorded on every request log entry regardless of pl
 | Tool returns `NOT_FOUND` with hint "path exists under plugin=A; pass plugin=A to read it" | Path was written via plugin A and the current call is pinned to plugin B (or vice versa).                        | Re-issue the call with `plugin=A`. The manager does not silently cross plugins by design.         |
 | Tool returns `INVALID_ARGUMENT` for `plugin="pageindex"` with hint about `llm.api_key`    | `pageindex_plugin` is not registered because `settings.mcp.tools.memory.plugins.pageindex.llm.api_key` is empty. | Set the api_key (Section 6.1) and restart, or drop the `plugin` field to route via default.       |
 | Single startup WARN about deprecated `settings.mcp.files.*`                               | Legacy-config shim translated old keys.                                                                          | Move keys to `settings.mcp.tools.memory.plugins.rag.*` before the shim is removed (post-Phase 3). |
+| Single startup WARN `memory plugin shadow replay was removed; the setting is ignored`     | `settings.mcp.tools.memory.shadow.enabled` is still `true`; shadow replay was removed (Section 6.7).             | Delete the `settings.mcp.tools.memory.shadow.*` block. Nothing is replayed either way.            |
 | Two routing layers seem active                                                            | There is no second layer. The only inputs are the per-call `plugin` argument and `default_plugin`.               | Confirm by reading the request log entry's resolved-plugin field.                                 |
 | PageIndex trees are all `degraded` or every PageIndex call fails | The provider cannot serve the Responses API as configured: it rejects `max_output_tokens`, has no quota for the key, or (before origins were mapped to `/v1`) `llm.base_url` reached the gateway's web UI. | Check `pageindex.llm.respond failed` in the logs, then run `PAGEINDEX_CONTRACT_BASE_URL=<llm.base_url> PAGEINDEX_CONTRACT_API_KEY=<key> go test -run TestLiveResponsesProviderContract ./internal/mcp/memory/plugins/pageindex`. |
 

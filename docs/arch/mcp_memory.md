@@ -676,11 +676,12 @@ covered by the existing predicate audits referenced in [`docs/proposals/mcp_memo
 companion `WriteOpts.SkipRAGIndex` write option suppresses pgvector + BM25
 indexing for system rows so they do not pollute user search.
 
-Phase-3 shadow-replay scaffolding lives at
-[`../../internal/mcp/memory/plugin/shadow.go`](../../internal/mcp/memory/plugin/shadow.go)
-(`ShadowPlugin` wrapper) and its companion `shadow_recorder.go` / `shadow_score.go`.
-Production wiring remains deferred; runtime plugin selection is still done only by the
-optional per-call `plugin` argument and the global `settings.mcp.tools.memory.default_plugin`
-fallback. The promotion-gate analyzer is a separate
-binary at [`../../cmd/promote-pageindex/main.go`](../../cmd/promote-pageindex/main.go)
-that consumes the JSONL recorder output and emits the §7.8 win-rate verdict.
+The Phase-3 shadow-replay subsystem (live/shadow wrapper, mutation replay, JSONL
+recorder, win-rate scorer and `cmd/promote-pageindex`) is removed: both plugins share
+one FileIO service, so a replayed mutation changed the same file twice, and there is
+no requirement for it ([proposal §7.8](../proposals/mcp_memory_plugin_manager.md)).
+The manager registers each plugin as itself (`cmd/api_mcp_file_manager.go`), so every
+file operation runs once, on the plugin selected by the optional per-call `plugin`
+argument or the global `settings.mcp.tools.memory.default_plugin` fallback. Stale
+`settings.mcp.tools.memory.shadow.*` keys are ignored; `enabled=true` logs one startup
+warning.

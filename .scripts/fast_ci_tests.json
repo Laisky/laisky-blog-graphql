@@ -98,7 +98,9 @@
       "TestValidateStartupConfigImageLifecycleMode",
       "TestSizeImageMemoryAtStartup",
       "TestValidateStartupConfigRefusesUnsafeValidationBounds",
-      "TestValidateStartupConfigChecksAuthorityURLsAndGateways"
+      "TestValidateStartupConfigChecksAuthorityURLsAndGateways",
+      "TestStaleShadowSettingsNeitherWrapNorReplay",
+      "TestNewMCPFileManagerWarnsOnlyForEnabledShadow"
     ]
   },
   {
@@ -558,7 +560,8 @@
       "TestRenameWithStateHookSharesTheTransaction",
       "TestRenameWithPendingAndFailedRAGIndexing",
       "TestIndexWorkerDeletesCredentialAfterSuccess",
-      "TestPurgeExpiredCredentialsIsBoundedAndThrottled"
+      "TestPurgeExpiredCredentialsIsBoundedAndThrottled",
+      "TestFileToolMutationsExecuteOnce"
     ]
   },
   {

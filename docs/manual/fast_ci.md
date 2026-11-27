@@ -25,7 +25,7 @@ the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
 `internal/web/blog/service`, `internal/web/blog/oneapi`, `internal/web/blog/controller`,
 `internal/mcp/imageproc`, `internal/mcp/storage`, `internal/mcp/tools`,
 `internal/web/arweave/controller`, `internal/web/general/controller`, `library/search/firecrawl`,
-`library/search/bing`, `library/memlimit` and `internal/mcp/memory/plugins/pageindex`. The MCP ingress
+`library/search/bing`, `library/memlimit`, `internal/mcp/files` and `internal/mcp/memory/plugins/pageindex`. The MCP ingress
 selections cover API key validation at every entrypoint (transport, console APIs,
 ask_user console, GraphQL shared fields), caching, flood bounds, outage
 fail-closed behavior, production wiring, the prod-mode refusal of disabled
@@ -123,6 +123,19 @@ The race run also skips the timing assertions:
 go test -count=1 ./internal/mcp/memory/plugins/pageindex
 go test -race -count=3 ./internal/mcp/memory/plugins/pageindex
 ```
+
+The memory-plugin single-execution selections pin the removal of shadow replay
+(proposal §7.8). `TestFileToolMutationsExecuteOnce` (`internal/mcp/files`, SQLite)
+drives an `APPEND`, a rename and a delete through the MCP file tools and the plugin
+manager and checks that each runs once: the file content, the history rows and the
+RAG outbox jobs of that operation only, nothing for another registered plugin or
+another tenant, and nothing more after the manager stops.
+`TestStaleShadowSettingsNeitherWrapNorReplay` and
+`TestNewMCPFileManagerWarnsOnlyForEnabledShadow` (`cmd`) check that stale
+`settings.mcp.tools.memory.shadow.*` keys pass startup validation, log one warning
+only when `enabled` is true, and neither wrap a plugin nor replay an operation. The
+PostgreSQL variant, `TestFileToolMutationsExecuteOncePostgres`, needs
+`FILEIO_TEST_POSTGRES_DSN` and is deliberate acceptance.
 
 The user-request image selections (issues #83 and #87) cover first-frame-only
 GIF decoding with frame-count-independent allocation, the decode memory

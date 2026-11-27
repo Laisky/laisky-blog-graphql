@@ -3,7 +3,7 @@ title: MCP memory plugin manager (rag_plugin + pageindex_plugin)
 status: accepted
 owner: mcp team
 created: 2026-05-05
-updated: 2026-05-06
+updated: 2026-11-27
 v1_runtime: pure-Go, in-process; pure-Go go.mod additions only, no cgo, no external binary, no Python sidecar (see §0)
 runtime_egress: only HTTPS to OpenAI's Responses API
 implementation:
@@ -22,11 +22,11 @@ implementation:
       - internal/mcp/memory/plugins/pageindex/ # 16 source files, ~4.3k LOC, pure Go
       - cmd/api.go # enablement gate on settings.mcp.tools.memory.plugins.pageindex.llm.api_key
   phase_3:
-    status: scaffolding shipped
-    paths:
+    status: removed # shadow replay removed 2026-11-27; see §7.8
+    removed_paths:
       - internal/mcp/memory/plugin/{shadow,shadow_recorder,shadow_score}.go
-      - cmd/promote-pageindex/main.go # stub | openai | ensemble judge modes
-    deferred: production wiring of ShadowPlugin in cmd/api.go (per §8 Phase 3)
+      - cmd/promote-pageindex/
+    ignored_settings: settings.mcp.tools.memory.shadow.* # enabled=true logs one startup warning
 supersedes: any prior draft that proposed a Python sidecar, gRPC bridge, or subprocess-based PageIndex backend
 forbidden_under_v1:
   - third_party/pageindex_sidecar/ (proto + Python server.py + requirements.txt + Dockerfile)
@@ -1814,21 +1814,23 @@ or manually dispatched; its metrics, assertions and baseline rules are unchanged
   permutation-test result block. PR status check is red if any **hard gate** drops; an
   automated comment highlights any **watch** regression.
 
-### 7.8 Shadow-replay promotion gate (Phase 3)
+### 7.8 Shadow-replay promotion gate (Phase 3) — removed
 
-Before turning `pageindex_plugin` on for a project in production:
+The shadow-replay subsystem is removed: the live/shadow `ShadowPlugin` wrapper, its
+mutation replay and dual-read search, the JSONL recorder, the win-rate scorer and the
+`cmd/promote-pageindex` analyzer. RAG and PageIndex use the same authoritative FileIO
+service (`cmd/api.go`), so replaying a mutation through the second plugin applied it to
+the same physical file a second time (an `APPEND` landed twice), and replayed deletes and
+renames did not keep the scope of the original call. There is no business requirement
+for shadow evaluation, so the dual-write semantics are not repaired and nothing replaces
+them: no physical-project replay map, shadow outbox or second datastore.
 
-1. Dual-write `file_write` to both plugins for that project for 7 days.
-2. Replay every `file_search` against both plugins; **only** the active plugin's result
-   is served; the other is logged.
-3. Score the pair with the same RAGAS and BEAM judges, plus an LLM-judge head-to-head
-   "which result better answers the question" (position-swapped, ensemble of two judges
-   to mitigate position bias — standard 2026 vendor practice).
-4. **Promotion criterion:** `pageindex_plugin` win-rate ≥ 55% with p < 0.05 on the
-   period's harvested queries, **and** §7.5 hard gates green for that period's slice.
-
-If win-rate is in `[45%, 55%]`, the project stays on `rag_plugin` (no statistically
-significant improvement). Below 45%, file a bug.
+Each `file_write`, `file_delete` and `file_rename` runs exactly once, on the plugin the
+call selects (§2.4), and produces only that operation's file revision, history rows and
+RAG outbox jobs. `settings.mcp.tools.memory.shadow.*` keys are ignored: they cannot
+enable replay and do not fail startup, and `enabled=true` logs one startup warning.
+Offline plugin comparison remains available through the §7 harness
+(`cmd/eval-plugin`), which drives each plugin separately.
 
 ### 7.9 Source benchmarks and references
 
@@ -1868,7 +1870,7 @@ significant improvement). Below 45%, file a bug.
    plugin links into the existing binary. Default config does not enable it. Run E02/E03
    in staging only. Acceptance: A3, A4, A6, A7, A8, A11, **Q1–Q4, Q9–Q12** (full §7
    scorecard filled in for `pageindex_plugin` against the same golden sets).
-3. **Phase 3 — shadow replay promotion gate.**
-   Keep runtime routing simple: the optional per-call `plugin` field remains the only
-   caller-controlled selector, with `default_plugin` as the global fallback. Any future
-   shadow replay stays outside the request-routing contract unless separately approved.
+3. **Phase 3 — shadow replay promotion gate (removed, see §7.8).**
+   Runtime routing stays simple: the optional per-call `plugin` field remains the only
+   caller-controlled selector, with `default_plugin` as the global fallback. No mutation
+   is replayed through a second plugin.
