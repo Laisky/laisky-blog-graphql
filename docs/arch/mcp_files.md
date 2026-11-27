@@ -660,7 +660,8 @@ Each mutating transaction (`file_write`, `file_delete`, `file_rename`) must:
 
 1. compute lock key from `apikey_hash + ":" + project`
 2. acquire transaction-scoped advisory lock (`pg_advisory_xact_lock` equivalent behavior)
-3. fail with `RESOURCE_BUSY` when timeout exceeds `settings.mcp.files.lock_timeout_ms`
+3. fail with `RESOURCE_BUSY` when timeout exceeds `settings.mcp.files.lock_timeout_ms`; a cross-project rename
+   takes both project locks within that one budget
 
 Implementation detail:
 

@@ -34,7 +34,8 @@ func (p DefaultLockProvider) WithProjectLock(ctx context.Context, db *sql.DB, is
 }
 
 // WithProjectsLock acquires every project scope in ProjectLockOrder inside one
-// transaction and executes the callback while all of them are held.
+// transaction and executes the callback while all of them are held. All scopes
+// share one timeout: time spent waiting for one is not granted again to the next.
 func (p DefaultLockProvider) WithProjectsLock(ctx context.Context, db *sql.DB, isPostgres bool, apiKeyHash string, projects []string, timeout time.Duration, fn func(tx *sql.Tx) error) error {
 	ordered := ProjectLockOrder(apiKeyHash, projects...)
 	if len(ordered) == 0 {
@@ -54,8 +55,9 @@ func (p DefaultLockProvider) WithProjectsLock(ctx context.Context, db *sql.DB, i
 		return errors.Wrap(err, "begin transaction")
 	}
 
+	deadline := time.Now().Add(timeout)
 	for _, project := range ordered {
-		if err = acquireProjectLock(ctx, tx, isPostgres, apiKeyHash, project, timeout); err != nil {
+		if err = acquireProjectLock(ctx, tx, isPostgres, apiKeyHash, project, deadline); err != nil {
 			if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
 				return errors.Wrap(rollbackErr, "rollback lock transaction")
 			}
@@ -77,8 +79,9 @@ func (p DefaultLockProvider) WithProjectsLock(ctx context.Context, db *sql.DB, i
 	return nil
 }
 
-// acquireProjectLock obtains a project-scoped advisory lock within the transaction.
-func acquireProjectLock(ctx context.Context, tx *sql.Tx, isPostgres bool, apiKeyHash, project string, timeout time.Duration) error {
+// acquireProjectLock obtains a project-scoped advisory lock within the
+// transaction, retrying until deadline.
+func acquireProjectLock(ctx context.Context, tx *sql.Tx, isPostgres bool, apiKeyHash, project string, deadline time.Time) error {
 	if tx == nil {
 		return errors.New("transaction is required")
 	}
@@ -87,7 +90,6 @@ func acquireProjectLock(ctx context.Context, tx *sql.Tx, isPostgres bool, apiKey
 	}
 
 	key := hashLockKey(apiKeyHash, project)
-	deadline := time.Now().Add(timeout)
 	for {
 		var locked bool
 		if err := tx.QueryRowContext(ctx, "SELECT pg_try_advisory_xact_lock($1)", key).Scan(&locked); err != nil {

@@ -119,3 +119,44 @@ func TestDefaultLockProviderPostgresProjectsLockOrder(t *testing.T) {
 	close(release)
 	require.NoError(t, <-done)
 }
+
+// TestDefaultLockProviderPostgresProjectsLockShareOneDeadline verifies that a
+// multi-project lock waits at most one lock timeout in total: time spent
+// waiting for the first scope is not granted again to the second.
+func TestDefaultLockProviderPostgresProjectsLockShareOneDeadline(t *testing.T) {
+	db := openPostgresTestDB(t)
+	provider := DefaultLockProvider{}
+	ctx := context.Background()
+	const tenant = "tenant-lock-deadline"
+	ordered := ProjectLockOrder(tenant, "alpha", "beta")
+	first, second := ordered[0], ordered[1]
+
+	hold := func(project string) (entered <-chan struct{}, release chan<- struct{}, done <-chan error) {
+		in, out, result := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+		go func() {
+			result <- provider.WithProjectLock(ctx, db, true, tenant, project, 2*time.Second, func(*sql.Tx) error {
+				close(in)
+				<-out
+				return nil
+			})
+		}()
+		return in, out, result
+	}
+	firstIn, releaseFirst, firstDone := hold(first)
+	secondIn, releaseSecond, secondDone := hold(second)
+	<-firstIn
+	<-secondIn
+
+	const timeout = 400 * time.Millisecond
+	// The first scope frees up late in the budget; the second never does.
+	time.AfterFunc(timeout*3/4, func() { close(releaseFirst) })
+	started := time.Now()
+	err := provider.WithProjectsLock(ctx, db, true, tenant, []string{first, second}, timeout, func(*sql.Tx) error { return nil })
+	elapsed := time.Since(started)
+	require.True(t, IsCode(err, ErrCodeResourceBusy), "%v", err)
+	require.Less(t, elapsed, timeout*5/4, "both scopes share one %s budget", timeout)
+
+	close(releaseSecond)
+	require.NoError(t, <-firstDone)
+	require.NoError(t, <-secondDone)
+}
