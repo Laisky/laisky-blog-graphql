@@ -241,8 +241,11 @@ describe('File Preview scroll stability in a real browser', () => {
     const show = await screen.findByRole('button', { name: 'Show message' });
     show.focus();
     await userEvent.keyboard('{Enter}');
-    await waitFor(() => expect(inView(screen.getByRole('alert'), scroller)).toBe(true));
-    expect(document.activeElement).toBe(show);
-    expect(show.getAttribute('aria-disabled')).toBe('true');
+    // Smooth scrolling can paint the alert before React processes the last scroll event.
+    await waitFor(() => {
+      expect(inView(screen.getByRole('alert'), scroller)).toBe(true);
+      expect(document.activeElement).toBe(show);
+      expect(show).toHaveAttribute('aria-disabled', 'true');
+    });
   });
 });

@@ -28,14 +28,14 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/project-quality /tmp/quality-tools
           go version > /tmp/project-quality/versions.txt
-          go install golang.org/x/tools/cmd/goimports@v0.50.0
-          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          go install golang.org/x/tools/cmd/goimports@v0.53.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
           cd /tmp/quality-tools
-          curl --retry 3 -fsSLO https://github.com/golangci/golangci-lint/releases/download/v2.14.0/golangci-lint-2.14.0-linux-amd64.tar.gz
-          curl --retry 3 -fsSLO https://github.com/golangci/golangci-lint/releases/download/v2.14.0/golangci-lint-2.14.0-checksums.txt
-          sha256sum --check --ignore-missing golangci-lint-2.14.0-checksums.txt
-          tar -xzf golangci-lint-2.14.0-linux-amd64.tar.gz
-          echo /tmp/quality-tools/golangci-lint-2.14.0-linux-amd64 >> "$GITHUB_PATH"
+          curl --retry 3 -fsSLO https://github.com/golangci/golangci-lint/releases/download/v2.15.0/golangci-lint-2.15.0-linux-amd64.tar.gz
+          curl --retry 3 -fsSLO https://github.com/golangci/golangci-lint/releases/download/v2.15.0/golangci-lint-2.15.0-checksums.txt
+          sha256sum --check --ignore-missing golangci-lint-2.15.0-checksums.txt
+          tar -xzf golangci-lint-2.15.0-linux-amd64.tar.gz
+          echo /tmp/quality-tools/golangci-lint-2.15.0-linux-amd64 >> "$GITHUB_PATH"
       - name: Verify formatting gate never rewrites dirty source
         run: ./.scripts/check_go_format_test.sh
       - name: Snapshot exact reviewed source
@@ -87,10 +87,10 @@ jobs:
           persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 12.23.0
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24.22.3'
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - name: Install locked dependencies
@@ -122,10 +122,10 @@ jobs:
           persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 12.23.0
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24.22.3'
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - name: Install locked dependencies

@@ -1,8 +1,8 @@
 .PHONY: install
 install:
 	# go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	go install golang.org/x/tools/cmd/goimports@latest
-	go install golang.org/x/vuln/cmd/govulncheck@latest
+	go install golang.org/x/tools/cmd/goimports@v0.53.0
+	go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
 	go install google.golang.org/protobuf/protoc-gen-go@latest
 
 .PHONY: gen

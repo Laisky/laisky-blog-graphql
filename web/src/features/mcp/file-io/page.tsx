@@ -27,7 +27,7 @@ type HistoryContent = { content: string; content_encoding: string; size: number;
 type FileSearchChunk = { file_path: string; file_seek_start_bytes: number; file_seek_end_bytes: number; chunk_content: string; score: number };
 type DirCache = Record<string, { entries: FileEntry[]; hasMore: boolean }>;
 const inputLabelClass = 'text-xs font-medium uppercase tracking-wide text-muted-foreground';
-const selectClass = 'h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm disabled:opacity-60';
+const selectClass = 'h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs disabled:opacity-60';
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
 
 function formatTimestamp(value: string) {

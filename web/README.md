@@ -24,6 +24,7 @@ The frontend follows Chrome's [modern web guidance](https://developer.chrome.com
 
 - Never put `overflow-x: hidden` on `html`, `body` or the layout wrapper; use `overflow-x: clip`, which does not break the sticky header.
 - Use `dvh` for full-height layouts.
+- Tailwind 4 output needs Safari 16.4+, Chrome 111+ and Firefox 128+ (`@property` and `color-mix()`). `src/index.css` keeps Tailwind 3 behavior where v4 changed it: button pointer cursor, `hover:` on touch devices, the class-based `dark:` selector, and border colors on pseudo-elements. Do not remove those rules as cleanup.
 - Respect reduced motion per animation (`motion-safe:` for spatial movement), not with a global duration override. Spinners slow down instead of stopping.
 - Background polling uses `createVisibilityPoller` (`src/lib/visibility-poller.ts`): it never overlaps runs, pauses while the tab is hidden and sends its requests with `priority: 'low'`.
 - Read and write Web Storage through `src/lib/safe-storage.ts`; blocked site data must degrade to "not remembered", never break the page.

@@ -1,5 +1,13 @@
 # Frontend Audit Advisories (2026-10-07)
 
+> **Superseded in part by the Tailwind 4 dependency refresh (2026-11-24).**
+> Tailwind 3 is retired, `braces` is no longer in the dependency graph, and the
+> `GHSA-vfj7-8cjw-p6xm` ignore has been removed. The repository now pins
+> pnpm 12.23.0 (`web/package.json` `packageManager`, the Docker web stage and
+> hosted frontend jobs), and overrides live in `web/pnpm-workspace.yaml`.
+> Regenerate `pnpm-lock.yaml` with that pinned version. The notes below record
+> the Tailwind 3 state and are kept for history.
+
 `project-quality / frontend-quality` runs `pnpm audit` and fails on any finding.
 Three advisories published in September–October 2026 hit the Tailwind CSS 3
 build toolchain (`tailwindcss-animate > tailwindcss@3.4.19`). Sources: the GitHub

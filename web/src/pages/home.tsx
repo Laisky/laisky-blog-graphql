@@ -197,7 +197,7 @@ export function HomePage() {
           </div>
         </div>
 
-        <div className="rounded-md border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-md border border-border bg-card p-4 shadow-xs">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
             <Terminal className="h-4 w-4 text-primary" />
             Agent connection
@@ -289,7 +289,7 @@ function ToolCard({
     <Card
       className={cn(
         'group h-full transition-colors',
-        enabled ? 'hover:border-primary/40 hover:shadow-sm' : 'cursor-not-allowed opacity-50',
+        enabled ? 'hover:border-primary/40 hover:shadow-xs' : 'cursor-not-allowed opacity-50',
         href && enabled && 'cursor-pointer'
       )}
     >

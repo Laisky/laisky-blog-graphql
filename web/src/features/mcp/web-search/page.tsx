@@ -197,7 +197,7 @@ function WebSearchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; i
                 )}
 
                 {lastResult && (
-                  <div className="mt-6 space-y-4">
+                  <div className="space-y-4">
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-medium text-foreground">Results:</h3>
                       {lastResult.engine_type && (
@@ -248,7 +248,7 @@ function WebSearchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; i
               tabIndex={0}
               role="region"
               aria-labelledby="web-search-history-caption"
-              className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className="overflow-x-auto focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
               <table className="w-full text-left text-sm">
                 <caption id="web-search-history-caption" className="sr-only">

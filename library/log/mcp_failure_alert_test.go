@@ -235,10 +235,10 @@ func TestMCPFailureMethodsMatchSDK(t *testing.T) {
 		ast.Inspect(file, func(node ast.Node) bool {
 			switch node := node.(type) {
 			case *ast.FuncDecl:
-				if node.Name.Name != "HandleMessage" || node.Body == nil {
+				if (node.Name.Name != "HandleMessage" && node.Name.Name != "handleMessage") || node.Body == nil {
 					return true
 				}
-				// Every request HandleMessage dispatches reports baseMessage.Method to OnError on failure.
+				// Every request the SDK dispatches reports baseMessage.Method to OnError on failure.
 				ast.Inspect(node.Body, func(inner ast.Node) bool {
 					dispatch, ok := inner.(*ast.SwitchStmt)
 					if !ok || !isSelector(dispatch.Tag, "baseMessage", "Method") {

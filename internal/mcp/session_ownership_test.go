@@ -109,14 +109,17 @@ func TestMCPReviewConcurrentSessionOwners(t *testing.T) {
 			t.Run(fmt.Sprint(i), func(t *testing.T) {
 				t.Parallel()
 				headers := alpha.Clone()
+				// Concurrent JSON-RPC calls in one session need distinct request IDs.
+				message := reviewSessionMessage("tools/list")
+				message["id"] = i + 3
 				switch i % 3 {
 				case 0:
-					assertReviewCatalog(t, s.Handler(), headers, false)
+					assertReviewCatalogResponse(t, sendSDKWireRequest(t, s.Handler(), message, headers), false)
 				case 1:
-					assertReviewCatalog(t, s.Handler(), beta.Clone(), true)
+					assertReviewCatalogResponse(t, sendSDKWireRequest(t, s.Handler(), message, beta.Clone()), true)
 				default:
 					headers.Set("Authorization", reviewBeta)
-					response := sendSDKWireRequest(t, s.Handler(), reviewSessionMessage("tools/list"), headers)
+					response := sendSDKWireRequest(t, s.Handler(), message, headers)
 					require.GreaterOrEqual(t, response.Code, 400)
 					require.Less(t, response.Code, 500)
 				}
@@ -163,7 +166,11 @@ func initializeReviewSession(t *testing.T, handler http.Handler, version, author
 // assertReviewCatalog verifies a successful caller-specific tools/list response.
 func assertReviewCatalog(t *testing.T, handler http.Handler, headers http.Header, pipeVisible bool) {
 	t.Helper()
-	response := sendSDKWireRequest(t, handler, reviewSessionMessage("tools/list"), headers)
+	assertReviewCatalogResponse(t, sendSDKWireRequest(t, handler, reviewSessionMessage("tools/list"), headers), pipeVisible)
+}
+
+func assertReviewCatalogResponse(t *testing.T, response *httptest.ResponseRecorder, pipeVisible bool) {
+	t.Helper()
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 	payload := decodeMCPResponse(t, response.Body.Bytes())
 	result, ok := payload["result"].(map[string]any)

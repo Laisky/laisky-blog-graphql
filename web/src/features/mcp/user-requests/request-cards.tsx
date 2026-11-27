@@ -98,7 +98,7 @@ export function PendingRequestCard({
       ref={setNodeRef}
       style={style}
       className={cn(
-        'border border-primary/30 bg-card shadow-sm min-h-32 max-h-56 flex flex-col relative group w-full min-w-0',
+        'border border-primary/30 bg-card shadow-xs min-h-32 max-h-56 flex flex-col relative group w-full min-w-0',
         isDragging && 'ring-2 ring-primary'
       )}
     >

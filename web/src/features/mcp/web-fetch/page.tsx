@@ -222,7 +222,7 @@ function WebFetchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; is
                 )}
 
                 {lastResult && (
-                  <div className="mt-6 space-y-4">
+                  <div className="space-y-4">
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-medium text-foreground">Fetched Content:</h3>
                       <Badge variant="outline" className="font-mono text-xs">
@@ -235,7 +235,7 @@ function WebFetchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; is
                       tabIndex={0}
                       role="region"
                       aria-label="Fetched content"
-                      className="max-h-[600px] overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="max-h-[600px] overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-4 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-muted-foreground">
                         {lastResult.content}
@@ -256,7 +256,7 @@ function WebFetchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; is
               tabIndex={0}
               role="region"
               aria-labelledby="web-fetch-history-caption"
-              className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className="overflow-x-auto focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
               <table className="w-full text-left text-sm">
                 <caption id="web-fetch-history-caption" className="sr-only">

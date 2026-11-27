@@ -1,4 +1,4 @@
-import { Github, Lock } from 'lucide-react';
+import { GitFork, Lock } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
@@ -85,7 +85,7 @@ export function SsoGithubCallbackPage() {
         <ThemeToggle />
       </div>
       <main className="z-10 w-full max-w-lg">
-        <Card className="border-border/60 bg-card/80 text-card-foreground shadow-2xl backdrop-blur-sm">
+        <Card className="border-border/60 bg-card/80 text-card-foreground shadow-2xl backdrop-blur-xs">
           <CardHeader className="space-y-4 border-b border-border/40 pb-6">
             <Link to="/" className="flex items-center justify-center gap-2 font-semibold text-foreground hover:text-primary">
               <Lock className="h-5 w-5 text-primary" />
@@ -94,7 +94,7 @@ export function SsoGithubCallbackPage() {
               </span>
             </Link>
             <h1 className="flex justify-center">
-              <Github className="h-8 w-8 text-primary" aria-hidden="true" />
+              <GitFork className="h-8 w-8 text-primary" aria-hidden="true" />
               <span className="sr-only">Signing in with GitHub</span>
             </h1>
           </CardHeader>

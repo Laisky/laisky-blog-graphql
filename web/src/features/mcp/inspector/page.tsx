@@ -6,6 +6,7 @@ import { useApiKey } from '@/lib/api-key-context';
 import { readStorage, writeStorage } from '@/lib/safe-storage';
 
 import { resolveMcpEndpoint } from '../shared/auth';
+import { buildInspectorDocument } from './inspector-document';
 
 const inspectorScriptModules = import.meta.glob<string>(
   '../../../../node_modules/@modelcontextprotocol/inspector-client/dist/assets/index-*.js',
@@ -131,34 +132,6 @@ function resolveDefaultEndpointUrl(): string {
   }
   const absolute = new URL(resolved, window.location.origin).toString();
   return absolute.replace(/\/+$/, '');
-}
-
-function buildInspectorDocument(scriptUrl: string, styleUrl: string): string {
-  return [
-    '<!doctype html>',
-    '<html lang="en">',
-    '  <head>',
-    '    <meta charset="UTF-8" />',
-    '    <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
-    '    <title>MCP Inspector</title>',
-    '    <style>',
-    '      html, body, #root {',
-    '        height: 100%;',
-    '        min-height: 100%;',
-    '        margin: 0;',
-    '      }',
-    '      body {',
-    '        overflow: auto;',
-    '      }',
-    '    </style>',
-    `    <link rel="stylesheet" href="${styleUrl}">`,
-    '  </head>',
-    '  <body>',
-    '    <div id="root" class="h-full w-full"></div>',
-    `    <script type="module" src="${scriptUrl}"></script>`,
-    '  </body>',
-    '</html>',
-  ].join('\n');
 }
 
 function applyInspectorDefaults(params: URLSearchParams, endpointUrl: string, authorization: string): void {

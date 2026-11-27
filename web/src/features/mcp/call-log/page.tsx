@@ -130,7 +130,7 @@ export function CallLogPage() {
                   setToolFilter(event.target.value);
                   setPage(1);
                 }}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:border-ring focus:outline-none"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs focus:border-ring focus:outline-hidden"
               >
                 {TOOL_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -166,7 +166,7 @@ export function CallLogPage() {
                   setSortBy(event.target.value);
                   setPage(1);
                 }}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:border-ring focus:outline-none"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs focus:border-ring focus:outline-hidden"
               >
                 {SORT_FIELDS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -187,7 +187,7 @@ export function CallLogPage() {
                   setSortOrder(event.target.value as 'ASC' | 'DESC');
                   setPage(1);
                 }}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:border-ring focus:outline-none"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs focus:border-ring focus:outline-hidden"
               >
                 <option value="DESC">Descending</option>
                 <option value="ASC">Ascending</option>
@@ -235,7 +235,7 @@ export function CallLogPage() {
                   setPageSize(Number(event.target.value));
                   setPage(1);
                 }}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:border-ring focus:outline-none"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs focus:border-ring focus:outline-hidden"
               >
                 {PAGE_SIZE_OPTIONS.map((size) => (
                   <option key={size} value={size}>
@@ -264,7 +264,7 @@ export function CallLogPage() {
           tabIndex={0}
           role="region"
           aria-labelledby="call-log-table-caption"
-          className="relative overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className="relative overflow-x-auto focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
           <table className="min-w-full divide-y divide-border/60 text-sm">
             <caption id="call-log-table-caption" className="sr-only">

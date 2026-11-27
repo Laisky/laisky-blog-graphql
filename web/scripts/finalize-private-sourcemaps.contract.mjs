@@ -116,7 +116,7 @@ test('configuration keeps maps opt-in, disables uploads and gates release mutati
   assert.ok(config.includes("sourcemap: privateSourceMaps ? 'hidden' : false"));
   assert.ok(config.includes('plugins: [react(),'));
   const pkg = JSON.parse(await readFile(join(webDirectory, 'package.json'), 'utf8'));
-  assert.equal(pkg.devDependencies['@sentry/vite-plugin'], '5.4.1');
+  assert.equal(pkg.devDependencies['@sentry/vite-plugin'], '11.17.0');
   assert.equal(pkg.scripts.build, 'tsc -b && vite build');
   assert.ok(config.includes('privateSourceMapQuarantine],'));
   assert.ok(config.includes("apply: 'build'"));

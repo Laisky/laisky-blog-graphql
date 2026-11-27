@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { ArrowRight, Github, Info, KeyRound, Lock } from 'lucide-react';
+import { ArrowRight, GitFork, Info, KeyRound, Lock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -636,7 +636,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
           </Button>
         </div>
 
-        <Card className="border-border/60 bg-card/80 text-card-foreground shadow-2xl backdrop-blur-sm transition-colors">
+        <Card className="border-border/60 bg-card/80 text-card-foreground shadow-2xl backdrop-blur-xs transition-colors">
           <CardHeader className="space-y-2 border-b border-border/40 pb-6">
             <StatusBanner status={redirectBanner.status} subtext={redirectBanner.subtext} />
           </CardHeader>
@@ -647,7 +647,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
               <button
                 type="button"
                 aria-pressed={mode === 'login'}
-                className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'login' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'login' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => {
                   setMode('login');
                   setLoginMethod('password');
@@ -660,7 +660,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
               <button
                 type="button"
                 aria-pressed={mode === 'register'}
-                className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'register' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'register' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => {
                   setMode('register');
                   setLoginMethod('password');
@@ -676,11 +676,11 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,transform] active:scale-95"
+                className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,scale] active:scale-95"
                 disabled={!canStartGithub}
                 onClick={handleGithubOAuth}
               >
-                <Github className="mr-2 h-4 w-4" />
+                <GitFork className="mr-2 h-4 w-4" />
                 {isGithubSubmitting ? 'Opening GitHub...' : 'Continue with GitHub'}
               </Button>
             )}
@@ -688,7 +688,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
             <Button
               type="button"
               variant="outline"
-              className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,transform] active:scale-95"
+              className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,scale] active:scale-95"
               disabled={!canStartPasskey}
               onClick={handlePasskeyLogin}
             >
@@ -728,7 +728,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                   <button
                     type="button"
                     aria-pressed={loginMethod === 'password'}
-                    className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${loginMethod === 'password' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                    className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${loginMethod === 'password' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
                     onClick={() => {
                       setLoginMethod('password');
                       setEmailCode('');
@@ -739,7 +739,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                   <button
                     type="button"
                     aria-pressed={loginMethod === 'email_code'}
-                    className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${loginMethod === 'email_code' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                    className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${loginMethod === 'email_code' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
                     onClick={() => {
                       setLoginMethod('email_code');
                       setTotpRequired(false);
@@ -868,7 +868,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
 
               <Button
                 type="submit"
-                className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,transform] active:scale-95"
+                className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,scale] active:scale-95"
                 disabled={!canSubmit}
               >
                 {isSubmitting

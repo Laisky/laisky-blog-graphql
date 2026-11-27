@@ -1079,14 +1079,14 @@ function UserRequestsSession() {
             Draft a new instruction for your AI agent. Requests are delivered in FIFO order (oldest first) when they call{' '}
             <code>get_user_request</code>.
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span id="user-requests-return-mode-label" className="text-sm text-muted-foreground">
               Return mode:
             </span>
             <div
               role="group"
               aria-labelledby="user-requests-return-mode-label"
-              className="inline-flex rounded-md border border-border bg-background shadow-sm"
+              className="inline-flex rounded-md border border-border bg-background shadow-xs"
             >
               <button
                 type="button"
@@ -1269,7 +1269,7 @@ function UserRequestsSession() {
         )}
 
         {isTemplateExpanded && (
-          <Card id="command-template-editor" className="border border-border/60 bg-card shadow-sm">
+          <Card id="command-template-editor" className="border border-border/60 bg-card shadow-xs">
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-lg">
                 <FileText className="h-5 w-5 text-primary" />
@@ -1567,7 +1567,7 @@ function UserRequestsSession() {
                 </div>
               ) : !searchQuery.trim() ? (
                 <div className="flex flex-col items-center justify-center h-[40vh] text-muted-foreground text-center space-y-4">
-                  <div className="p-4 bg-background rounded-full shadow-sm border">
+                  <div className="p-4 bg-background rounded-full shadow-xs border">
                     <Search className="h-10 w-10 opacity-20" />
                   </div>
                   <div className="space-y-1">
@@ -1581,7 +1581,7 @@ function UserRequestsSession() {
                   <p className="text-lg">
                     No matches found for <span className="font-semibold text-foreground">"{searchQuery}"</span>
                   </p>
-                  <Button variant="outline" size="sm" onClick={() => handleSearch('')} className="mt-4" disabled={isInteractionDisabled}>
+                  <Button variant="outline" size="sm" onClick={() => handleSearch('')} disabled={isInteractionDisabled}>
                     Clear search
                   </Button>
                 </div>
@@ -1604,7 +1604,7 @@ function UserRequestsSession() {
             </div>
           </div>
 
-          <div className="px-6 py-4 border-t bg-background/50 backdrop-blur-sm flex items-center justify-between shrink-0">
+          <div className="px-6 py-4 border-t bg-background/50 backdrop-blur-xs flex items-center justify-between shrink-0">
             <div role="status" aria-label="Search result count" className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
               <Badge variant="outline" className="px-1.5 py-0 rounded-sm font-bold bg-muted/10">
                 {searchResults.length}

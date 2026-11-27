@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { Github, Info, KeyRound, Lock, LogOut, RefreshCcw, Save, ShieldCheck, ShieldPlus, Trash2, UserRound } from 'lucide-react';
+import { GitFork, Info, KeyRound, Lock, LogOut, RefreshCcw, Save, ShieldCheck, ShieldPlus, Trash2, UserRound } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -492,7 +492,7 @@ function SsoProfileAccount({ token, authReady, githubOAuthEnabled }: SsoProfileA
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border bg-card/80 backdrop-blur">
+      <header className="border-b border-border bg-card/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
           <Link to="/" className="flex items-center gap-2 font-semibold text-foreground hover:text-primary">
             <Lock className="h-5 w-5 text-primary" />
@@ -568,7 +568,7 @@ function SsoProfileAccount({ token, authReady, githubOAuthEnabled }: SsoProfileA
                         disabled={isGithubBinding}
                         onClick={() => void handleBindGithub()}
                       >
-                        <Github className="h-4 w-4" />
+                        <GitFork className="h-4 w-4" />
                         {isGithubBinding ? 'Opening GitHub...' : 'Bind GitHub'}
                       </Button>
                     )}

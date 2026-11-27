@@ -238,11 +238,11 @@ inherit that minimum. [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)
 affects `crypto/x509.Certificate.Verify` in earlier toolchains, and the
 [Go 1.27.3 release](https://go.dev/doc/devel/release#go1.27.3) fixes it.
 After selecting the patched compiler, verify the caller's existing MCP HTTPS
-fetch package with the repository-pinned govulncheck v1.8.0:
+fetch package with the repository-pinned govulncheck v1.10.0:
 
 ```sh
 go version
-GOTOOLCHAIN=local GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./internal/mcp/imageproc
+GOTOOLCHAIN=local GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./internal/mcp/imageproc
 ```
 
 This build correction preserves shared library source and dependency versions.
