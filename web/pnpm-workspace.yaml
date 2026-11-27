@@ -23,7 +23,8 @@ minimumReleaseAgeExclude:
 overrides:
   "@modelcontextprotocol/sdk@>=1 <1.32.2": "^1.32.2"
   "@babel/core@<7.29.6": "^7.29.6"
-  "@hono/node-server@<1.19.18": "^1.19.18"
+  # The MCP SDK supports v2; 1.x remains affected by GHSA-rmxm-3fg6-px4f.
+  "@modelcontextprotocol/sdk>@hono/node-server": "2.1.11"
   "@humanfs/node@<0.16.8": "^0.16.8"
   "ajv@>=6 <6.14.0": "^6.14.0"
   "baseline-browser-mapping@<2.11.0": "^2.11.0"
