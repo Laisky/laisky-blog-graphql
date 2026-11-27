@@ -176,7 +176,9 @@ func (s *Service) planRenameMoveTx(ctx context.Context, tx *sql.Tx, apiKeyHash s
 func (s *Service) applyRenameMoveTx(ctx context.Context, tx *sql.Tx, auth AuthContext, move renameMove) (int, error) {
 	owner := systemOwnerFromContext(ctx)
 	now := s.clock()
-	if err := s.softDeleteRenameDestinationsTx(ctx, tx, auth, move.req.TargetProject, owner, move.overwritten, now); err != nil {
+	// An overwrite replaces the destination like a write: the replaced bytes
+	// stay restorable in the destination path's history.
+	if err := s.softDeletePathsTx(ctx, tx, auth, move.req.TargetProject, move.overwritten, now, false); err != nil {
 		return 0, err
 	}
 	if move.req.crossProject() {
@@ -381,25 +383,6 @@ func (s *Service) liveFileExistsTx(ctx context.Context, tx *sql.Tx, apiKeyHash, 
 		return false, errors.Wrap(err, "query rename destination")
 	}
 	return true, nil
-}
-
-// softDeleteRenameDestinationsTx frees overwritten names before applying the remap.
-func (s *Service) softDeleteRenameDestinationsTx(ctx context.Context, tx *sql.Tx, auth AuthContext,
-	project, owner string, overwritePaths []string, now time.Time,
-) error {
-	if len(overwritePaths) > 0 {
-		inClause, inArgs := buildInClause(overwritePaths, s.isPostgres, 6)
-		query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ?
-    WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
-		args := make([]any, 0, 5+len(inArgs))
-		args = append(args, now, now, auth.APIKeyHash, project, owner)
-		args = append(args, inArgs...)
-		if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
-			return errors.Wrap(err, "soft delete overwritten destination files")
-		}
-	}
-
-	return nil
 }
 
 // applyRenameMappingsTx moves file/version rows into the destination project
