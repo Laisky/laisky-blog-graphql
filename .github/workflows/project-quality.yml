@@ -133,6 +133,9 @@ jobs:
       - name: Frontend behavior tests
         if: ${{ !cancelled() }}
         run: pnpm test
+      - name: Frontend real-browser tests (preinstalled Google Chrome)
+        if: ${{ !cancelled() }}
+        run: pnpm run test:browser
       - name: Production build
         if: ${{ !cancelled() }}
         run: pnpm build

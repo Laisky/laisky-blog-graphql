@@ -44,6 +44,9 @@ docs/example/config/settings-laisky.yml
 /web/node_modules
 /web/dist
 /web/dist-ssr
+# Vitest Browser Mode failure screenshots and attachments
+/web/.vitest-attachments
+/web/src/**/__screenshots__
 /web/*.local
 
 # Editor directories and files
