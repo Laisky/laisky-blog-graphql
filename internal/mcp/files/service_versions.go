@@ -130,18 +130,16 @@ func (s *Service) RestoreVersion(ctx context.Context, auth AuthContext, project,
 	owner := systemOwnerFromContext(ctx)
 	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationRestore)
 	var result WriteResult
-	err := s.runUserMutation(ctx, auth.APIKeyHash, project, []string{path}, func(tx *sql.Tx, overlay bool) error {
+	err := s.runUserMutation(ctx, auth.APIKeyHash, project, []string{project}, []string{path}, func(tx *sql.Tx, overlay bool) error {
+		if err := s.checkVersionTx(ctx, tx, auth, project, path, conditions.ExpectedVersion, conditions.CreateOnly, overlay); err != nil {
+			return err
+		}
 		layer := project
 		if overlay {
-			if err := s.checkEffectiveVersionTx(ctx, tx, auth.APIKeyHash, project, path, conditions.ExpectedVersion, conditions.CreateOnly); err != nil {
-				return err
-			}
 			var resolveErr error
 			if layer, resolveErr = s.resolveWriteLayerTx(ctx, tx, auth.APIKeyHash, project, path); resolveErr != nil {
 				return resolveErr
 			}
-		} else if err := s.checkPathVersionTx(ctx, tx, auth, project, path, conditions.ExpectedVersion, conditions.CreateOnly); err != nil {
-			return err
 		}
 		// History is read through the same layers as file_list_versions, so a
 		// default's snapshot can be restored through any project.

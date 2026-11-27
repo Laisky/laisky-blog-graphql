@@ -32,8 +32,15 @@ func (s *Service) List(ctx context.Context, auth AuthContext, project, path stri
 		limit = s.settings.ListLimitMax
 	}
 
+	overlay := overlayApplies(ctx, project)
 	if depth == 0 {
-		entry, exists, err := s.listSelfEntry(ctx, auth.APIKeyHash, project, path)
+		var entry FileEntry
+		var exists bool
+		err := s.withReadSnapshot(ctx, overlay, func(q sqlQueryer) error {
+			var err error
+			entry, exists, err = s.listSelfEntry(ctx, q, auth.APIKeyHash, project, path, overlay)
+			return err
+		})
 		if err != nil {
 			return ListResult{}, errors.WithStack(err)
 		}
@@ -43,7 +50,7 @@ func (s *Service) List(ctx context.Context, auth AuthContext, project, path stri
 		return ListResult{Entries: []FileEntry{entry}, HasMore: false}, nil
 	}
 
-	entries, err := s.listDescendants(ctx, auth.APIKeyHash, project, path, depth)
+	entries, err := s.listDescendants(ctx, auth.APIKeyHash, project, path, depth, overlay)
 	if err != nil {
 		return ListResult{}, errors.WithStack(err)
 	}
@@ -69,9 +76,9 @@ func (s *Service) List(ctx context.Context, auth AuthContext, project, path stri
 }
 
 // listSelfEntry returns the entry for the target path itself.
-func (s *Service) listSelfEntry(ctx context.Context, apiKeyHash, project, path string) (FileEntry, bool, error) {
+func (s *Service) listSelfEntry(ctx context.Context, q sqlQueryer, apiKeyHash, project, path string, overlay bool) (FileEntry, bool, error) {
 	if path == "" {
-		updatedAt, exists, err := s.findDirectoryUpdatedAt(ctx, apiKeyHash, project, path)
+		updatedAt, exists, err := s.findDirectoryUpdatedAt(ctx, q, apiKeyHash, project, path, overlay)
 		if err != nil {
 			return FileEntry{}, false, errors.WithStack(err)
 		}
@@ -89,7 +96,7 @@ func (s *Service) listSelfEntry(ctx context.Context, apiKeyHash, project, path s
 		}, true, nil
 	}
 
-	file, err := s.resolveActiveFile(ctx, s.db, apiKeyHash, project, path)
+	file, err := s.resolveActiveFile(ctx, q, apiKeyHash, project, path, overlay)
 	if err == nil {
 		return fileToEntry(*file), true, nil
 	}
@@ -97,7 +104,7 @@ func (s *Service) listSelfEntry(ctx context.Context, apiKeyHash, project, path s
 		return FileEntry{}, false, errors.Wrap(err, "query file")
 	}
 
-	updatedAt, exists, err := s.findDirectoryUpdatedAt(ctx, apiKeyHash, project, path)
+	updatedAt, exists, err := s.findDirectoryUpdatedAt(ctx, q, apiKeyHash, project, path, overlay)
 	if err != nil {
 		return FileEntry{}, false, errors.WithStack(err)
 	}
@@ -122,9 +129,10 @@ func (s *Service) listSelfEntry(ctx context.Context, apiKeyHash, project, path s
 }
 
 // listDescendants builds file and directory entries from the visible files under
-// path, which for an overlaid project include DefaultProject files it does not hide.
-func (s *Service) listDescendants(ctx context.Context, apiKeyHash, project, path string, depth int) ([]FileEntry, error) {
-	visible, err := s.visibleDescendants(ctx, s.db, apiKeyHash, project, path)
+// path, which with overlay include the DefaultProject files the project does not
+// hide. visibleDescendants reads them with one statement.
+func (s *Service) listDescendants(ctx context.Context, apiKeyHash, project, path string, depth int, overlay bool) ([]FileEntry, error) {
+	visible, err := s.visibleDescendants(ctx, s.db, apiKeyHash, project, path, overlay)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

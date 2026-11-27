@@ -33,7 +33,7 @@ func TestRollingRefusedPlannerIsCountedAsBudgetExhausted(t *testing.T) {
 	require.NoError(t, err)
 	searcher := NewSearcher(&countingLLM{}, store, idx, cfg)
 
-	_, err = searcher.Run(context.Background(), SearchInput{Project: "p", Query: "billing", Limit: 5, Tenant: "t"})
+	_, err = searcher.Run(context.Background(), SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "billing", Limit: 5, Tenant: "t"})
 	require.NoError(t, err)
 	stats := searcher.Stats()
 	require.Equal(t, uint64(1), stats.Planned)
@@ -65,7 +65,7 @@ func TestFallbackNeverOutranksAPlannedResult(t *testing.T) {
 	cfg.TreeQuery.MaxTokens = 100_000
 	searcher := NewSearcher(plannedPagesLLM{plannerByTitleLLM{failTitle: "unplannable"}}, store, &Indexer{}, cfg)
 
-	res, err := searcher.Run(context.Background(), SearchInput{Project: "p", Query: "installation", Limit: 10})
+	res, err := searcher.Run(context.Background(), SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "installation", Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, res.Chunks, 5)
 	for i, c := range res.Chunks[:3] {
@@ -92,7 +92,7 @@ func TestFallbackRanksTheBestMatchFirst(t *testing.T) {
 	})
 	searcher := NewSearcher(errLLM{err: errAnswerFailed}, store, &Indexer{}, defaultTestSettings())
 
-	res, err := searcher.Run(context.Background(), SearchInput{Project: "p", Query: "invoices refunds", Limit: 1})
+	res, err := searcher.Run(context.Background(), SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "invoices refunds", Limit: 1})
 	require.NoError(t, err)
 	require.Len(t, res.Chunks, 1)
 	require.Equal(t, "p4", res.Chunks[0].ChunkContent, "the section matching both terms in its title ranks first")
@@ -137,7 +137,7 @@ func TestIncompleteAnswerIsAProviderError(t *testing.T) {
 	store := NewSysStore(newMemoryFS())
 	putSearchDoc(t, store, "p", "/manual.pdf", manualTree("manual"))
 	searcher := NewSearcher(&incompleteLLM{}, store, &Indexer{}, defaultTestSettings())
-	_, err = searcher.Run(context.Background(), SearchInput{Project: "p", Query: "billing", Limit: 5})
+	_, err = searcher.Run(context.Background(), SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "billing", Limit: 5})
 	require.NoError(t, err)
 	require.Equal(t, map[string]uint64{searchFallbackPlannerFailed: 1}, searcher.Stats().Fallbacks)
 }

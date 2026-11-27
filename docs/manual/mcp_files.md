@@ -30,6 +30,7 @@ This manual is for end users and integrators who want to call `file_stat`, `file
     - [5.7 `file_rename`](#57-file_rename)
       - [Example A: rename one file](#example-a-rename-one-file)
       - [Example B: move a directory subtree](#example-b-move-a-directory-subtree)
+      - [Example C: move a file into another project](#example-c-move-a-file-into-another-project)
   - [6. Common error codes](#6-common-error-codes)
   - [7. Minimal end-to-end flow](#7-minimal-end-to-end-flow)
   - [8. Integration best practices](#8-integration-best-practices)
@@ -475,11 +476,19 @@ Success response example:
 
 ### 5.7 `file_rename`
 
-Rename or move a file/directory path.
+Rename or move a file/directory path, optionally into another project.
 
-- Required: `project`, `from_path`, `to_path`
+- Required: `project`, `from_path`, `to_path`, `expected_version` (the source file's version; see [FileIO versioning](fileio_versioning.md))
 - Optional:
   - `overwrite`: default `false`; only applies to file rename target replacement
+  - `target_project`: destination project for a cross-project move. Omit it or pass `""` to rename within `project`.
+    `to_path`, the collision and overwrite rules, `expected_destination_version` and `destination_must_not_exist`
+    all apply in `target_project`, and the moved bytes count against its storage quota. The file keeps its identity
+    and version history; its revision advances, so re-read before editing it again. `"*"` is rejected.
+
+When using PageIndex, a Markdown or PDF destination must keep its source format and have a current tree.
+If indexing is still in progress, the move returns retryable `RESOURCE_BUSY` without changing either path.
+Moving to an unsupported extension preserves the file but removes its PageIndex search entry.
 
 #### Example A: rename one file
 
@@ -514,6 +523,26 @@ mcp_call '{
 			"from_path":"/docs",
 			"to_path":"/archive/docs",
 			"overwrite":false
+		}
+	}
+}'
+```
+
+#### Example C: move a file into another project
+
+```bash
+mcp_call '{
+	"jsonrpc":"2.0",
+	"id":111,
+	"method":"tools/call",
+	"params":{
+		"name":"file_rename",
+		"arguments":{
+			"project":"demo",
+			"from_path":"/docs/guide.txt",
+			"target_project":"archive",
+			"to_path":"/2026/guide.txt",
+			"expected_version":"<version from file_read or file_stat>"
 		}
 	}
 }'

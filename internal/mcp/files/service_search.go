@@ -13,7 +13,63 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
-const sqlAndFilePathLike = " AND c.file_path LIKE ?" + sqlLikeEscape
+// searchScope names the physical projects one file_search reads.
+type searchScope struct {
+	// project is the addressed project, or ProjectWildcard.
+	project string
+	// projects are the physical projects searched; empty means every project.
+	projects []string
+}
+
+// newSearchScope selects the physical projects a search reads. Retrieval does not
+// apply the filesystem view: an overlaid project searches itself and
+// DefaultProject as two physical projects, including documents the view hides
+// and documents at identical paths. DefaultProject, system namespaces and the
+// wildcard stay physical.
+func newSearchScope(ctx context.Context, project string) searchScope {
+	return searchScope{project: project, projects: SearchProjects(ctx, project)}
+}
+
+// SearchProjects returns the physical projects a file_search of project reads,
+// for every retrieval backend: an ordinary user project and DefaultProject, or
+// only project itself for DefaultProject and system namespaces. The wildcard
+// returns nil, meaning every project of the caller.
+func SearchProjects(ctx context.Context, project string) []string {
+	switch {
+	case project == ProjectWildcard:
+		return nil
+	case overlayApplies(ctx, project):
+		return []string{project, DefaultProject}
+	}
+	return []string{project}
+}
+
+// labelsProjects reports whether every hit must name its physical project,
+// which is the case whenever the scope spans more than one project.
+func (sc searchScope) labelsProjects() bool {
+	return len(sc.projects) != 1
+}
+
+// predicate restricts col to the scope's physical projects.
+func (sc searchScope) predicate(col string) (string, []any) {
+	if len(sc.projects) == 0 {
+		return "", nil
+	}
+	args := make([]any, 0, len(sc.projects))
+	for _, project := range sc.projects {
+		args = append(args, project)
+	}
+	return " AND " + col + " IN (" + placeholders(len(sc.projects)) + ")", args
+}
+
+// pathPrefixPredicate restricts col to the optional search path prefix.
+func pathPrefixPredicate(col, pathPrefix string) (string, []any) {
+	if strings.TrimSpace(pathPrefix) == "" {
+		return "", nil
+	}
+	predicate, args := prefixSQL(col, pathPrefix)
+	return " AND " + predicate, args
+}
 
 type searchCandidate struct {
 	Chunk         FileChunk
@@ -44,10 +100,7 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 		return SearchResult{}, errors.WithStack(NewError(ErrCodeSearchBackend, "search disabled", false))
 	}
 
-	scope, err := s.resolveSearchScope(ctx, auth.APIKeyHash, project)
-	if err != nil {
-		return SearchResult{}, errors.WithStack(err)
-	}
+	scope := newSearchScope(ctx, project)
 
 	lexicalEngine := s.lexicalSearchEngineName()
 	lexicalStartedAt := time.Now()
@@ -134,7 +187,7 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 		finalCandidates = finalCandidates[:limit]
 	}
 
-	crossProject := project == ProjectWildcard
+	labelProjects := scope.labelsProjects()
 	chunkIDs := make([]int64, 0, len(finalCandidates))
 	chunks := make([]ChunkEntry, 0, len(finalCandidates))
 	for _, c := range finalCandidates {
@@ -151,7 +204,7 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 		if entry.FileSummary == "" {
 			s.summaryMissingHit(ctx, "rag", c.Chunk.Project, c.Chunk.FilePath)
 		}
-		if crossProject {
+		if labelProjects {
 			entry.Project = c.Chunk.Project
 		}
 		chunks = append(chunks, entry)
@@ -171,17 +224,14 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash str
 	}
 
 	owner := systemOwnerFromContext(ctx)
-	crossProject := scope.project == ProjectWildcard
+	labelProjects := scope.labelsProjects()
 	args := []any{apiKeyHash, owner}
 	statement := `SELECT f.path, f.content, f.size, f.project, f.content_hash, f.file_summary, f.summary_content_hash, f.summary_status
 		FROM mcp_files f WHERE f.apikey_hash = ? AND f.system_owner = ? AND f.deleted = FALSE`
-	predicate, predicateArgs := scope.predicate("f.project", "f.path", "f.apikey_hash", "f.system_owner")
-	statement += predicate
-	args = append(args, predicateArgs...)
-	if strings.TrimSpace(pathPrefix) != "" {
-		statement += " AND f.path LIKE ?" + sqlLikeEscape
-		args = append(args, buildLikePrefix(pathPrefix))
-	}
+	predicate, predicateArgs := scope.predicate("f.project")
+	prefix, prefixArgs := pathPrefixPredicate("f.path", pathPrefix)
+	statement += predicate + prefix
+	args = append(append(args, predicateArgs...), prefixArgs...)
 
 	rows, err := s.db.QueryContext(ctx, rebindSQL(statement, s.isPostgres), args...)
 	if err != nil {
@@ -231,7 +281,10 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash str
 
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].Score == candidates[j].Score {
-			return candidates[i].Path < candidates[j].Path
+			if candidates[i].Path != candidates[j].Path {
+				return candidates[i].Path < candidates[j].Path
+			}
+			return candidates[i].Project < candidates[j].Project
 		}
 		return candidates[i].Score > candidates[j].Score
 	})
@@ -258,7 +311,7 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash str
 			FileSummary:        summary,
 			Score:              candidate.Score,
 		}
-		if crossProject {
+		if labelProjects {
 			entry.Project = candidate.Project
 		}
 		result = append(result, entry)
@@ -347,7 +400,7 @@ func (s *Service) logEmptySearchDiagnostics(ctx context.Context, apiKeyHash stri
 	logger := s.LoggerFromContext(ctx)
 	logger.Debug("file search returned no candidates",
 		zap.String("project", scope.project),
-		zap.Bool("default_layer", scope.overlay),
+		zap.Strings("physical_projects", scope.projects),
 		zap.String("path_prefix", pathPrefix),
 		zap.Int("lexical_candidates", 0),
 		zap.Int("semantic_candidates", 0),
@@ -364,13 +417,10 @@ func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash str
 	owner := systemOwnerFromContext(ctx)
 	where := "c.apikey_hash = ? AND c.system_owner = ?"
 	args := []any{apiKeyHash, owner}
-	predicate, predicateArgs := scope.chunkPredicate()
-	where += predicate
-	args = append(args, predicateArgs...)
-	if strings.TrimSpace(pathPrefix) != "" {
-		where += sqlAndFilePathLike
-		args = append(args, buildLikePrefix(pathPrefix))
-	}
+	predicate, predicateArgs := scope.predicate("c.project")
+	prefix, prefixArgs := pathPrefixPredicate("c.file_path", pathPrefix)
+	where += predicate + prefix
+	args = append(append(args, predicateArgs...), prefixArgs...)
 
 	query := "SELECT COUNT(1) FROM " + source + " WHERE " + where
 	var count int64
@@ -383,7 +433,7 @@ func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash str
 // countPendingIndexJobs returns pending or processing index jobs for diagnostics.
 func (s *Service) countPendingIndexJobs(ctx context.Context, apiKeyHash string, scope searchScope) int64 {
 	owner := systemOwnerFromContext(ctx)
-	predicate, predicateArgs := scope.jobPredicate()
+	predicate, predicateArgs := scope.predicate("project")
 	args := make([]any, 0, 4+len(predicateArgs))
 	args = append(args, apiKeyHash, owner)
 	statement := "SELECT COUNT(1) FROM mcp_file_index_jobs WHERE apikey_hash = ? AND system_owner = ?"
@@ -419,13 +469,10 @@ func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHas
 		JOIN mcp_file_chunks c ON c.id = e.chunk_id
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
-	predicate, predicateArgs := scope.chunkPredicate()
-	query += predicate
-	args = append(args, predicateArgs...)
-	if strings.TrimSpace(pathPrefix) != "" {
-		query += sqlAndFilePathLike
-		args = append(args, buildLikePrefix(pathPrefix))
-	}
+	predicate, predicateArgs := scope.predicate("c.project")
+	prefix, prefixArgs := pathPrefixPredicate("c.file_path", pathPrefix)
+	query += predicate + prefix
+	args = append(append(args, predicateArgs...), prefixArgs...)
 	query += " ORDER BY e.embedding <-> ? LIMIT ?"
 	args = append(args, queryVec, limit)
 
@@ -537,13 +584,10 @@ func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash
 		FROM mcp_file_chunks c
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
-	predicate, predicateArgs := scope.chunkPredicate()
-	statement += predicate
-	args = append(args, predicateArgs...)
-	if strings.TrimSpace(pathPrefix) != "" {
-		statement += sqlAndFilePathLike
-		args = append(args, buildLikePrefix(pathPrefix))
-	}
+	predicate, predicateArgs := scope.predicate("c.project")
+	prefix, prefixArgs := pathPrefixPredicate("c.file_path", pathPrefix)
+	statement += predicate + prefix
+	args = append(append(args, predicateArgs...), prefixArgs...)
 	statement += " ORDER BY score DESC LIMIT ?"
 	args = append(args, limit)
 
@@ -738,13 +782,10 @@ func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash string, s
 		JOIN mcp_file_chunks c ON c.id = e.chunk_id
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
-	predicate, predicateArgs := scope.chunkPredicate()
-	query += predicate
-	args = append(args, predicateArgs...)
-	if strings.TrimSpace(pathPrefix) != "" {
-		query += sqlAndFilePathLike
-		args = append(args, buildLikePrefix(pathPrefix))
-	}
+	predicate, predicateArgs := scope.predicate("c.project")
+	prefix, prefixArgs := pathPrefixPredicate("c.file_path", pathPrefix)
+	query += predicate + prefix
+	args = append(append(args, predicateArgs...), prefixArgs...)
 
 	rows, err := s.db.QueryContext(ctx, rebindSQL(query, s.isPostgres), args...)
 	if err != nil {
@@ -820,13 +861,10 @@ func (s *Service) fetchChunkRows(ctx context.Context, apiKeyHash string, scope s
 		FROM mcp_file_chunks c
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
-	predicate, predicateArgs := scope.chunkPredicate()
-	query += predicate
-	args = append(args, predicateArgs...)
-	if strings.TrimSpace(pathPrefix) != "" {
-		query += sqlAndFilePathLike
-		args = append(args, buildLikePrefix(pathPrefix))
-	}
+	predicate, predicateArgs := scope.predicate("c.project")
+	prefix, prefixArgs := pathPrefixPredicate("c.file_path", pathPrefix)
+	query += predicate + prefix
+	args = append(append(args, predicateArgs...), prefixArgs...)
 
 	rows, err := s.db.QueryContext(ctx, rebindSQL(query, s.isPostgres), args...)
 	if err != nil {

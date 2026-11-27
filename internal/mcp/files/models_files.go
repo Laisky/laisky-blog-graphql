@@ -14,6 +14,8 @@ type File struct {
 	UpdatedAt  time.Time
 	Deleted    bool
 	DeletedAt  *time.Time
+	// SkipRAGIndex reports whether the owner opted out of RAG publication.
+	SkipRAGIndex bool
 	// Version combines a non-reused incarnation with a database-maintained revision.
 	Version string `gorm:"-"`
 	// ContentHash is the SHA-256 of the current stored bytes. It identifies the

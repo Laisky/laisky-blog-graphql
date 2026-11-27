@@ -272,6 +272,10 @@ extend type Mutation {
     project: String!
     from_path: String!
     to_path: String!
+    # target_project moves the file into another project of the same caller;
+    # omitted or empty renames within project. to_path and the destination
+    # conditions are evaluated in target_project.
+    target_project: String
     overwrite: Boolean! = false
     expected_version: String!
     expected_destination_version: String

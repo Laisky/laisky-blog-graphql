@@ -272,7 +272,7 @@ file_search(
 
 Parameter semantics:
 
-- `project`: target project namespace. The literal value `"*"` expands the search to every project owned by the authenticated caller and is accepted only by `file_search`. All other file tools (`file_stat`, `file_read`, `file_write`, `file_delete`, `file_rename`, `file_list`) must reject `"*"` and require an explicit project to prevent accidental cross-project mutations.
+- `project`: target project namespace. The literal value `"*"` expands the search to every project owned by the authenticated caller and is accepted only by `file_search`. All other file tools (`file_stat`, `file_read`, `file_write`, `file_delete`, `file_rename`, `file_list`) must reject `"*"` and require an explicit project to prevent accidental cross-project mutations. `file_rename` additionally accepts an optional `target_project`: omitted or empty keeps the move inside `project`; otherwise it must be an explicit, valid project of the same caller (never `"*"`), and the file moves into it.
 - `query`: search query string, must be non-empty after trim.
 - `path_prefix`: optional raw string prefix filter on file path; the MCP tool
   layer applies the same leading-slash normalization as `path`.
@@ -340,6 +340,7 @@ Default candidate counts are `30 + 30`, configurable in the service configuratio
 - Cross-instance consistency is required.
 - All mutating file operations (`file_write`, `file_delete`, `file_rename`) must obtain:
   - `pg_advisory_xact_lock(hash(apikey_hash, project))`
+- A `file_rename` with a `target_project` must hold the locks of both projects in one transaction, acquired in ascending lock-key order (then project name) so opposite moves cannot each hold one project while waiting for the other.
 - Lock is transaction-scoped.
 - Lock acquisition timeout is configurable.
 - Timeout/failure to acquire lock returns `RESOURCE_BUSY`.

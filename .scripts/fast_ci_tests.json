@@ -145,7 +145,8 @@
       "TestProductionWiringRefusesDisabledValidationOutsideDebug",
       "TestRequestBodyPolicyCountsUnarmedDeadlines",
       "TestRequestBodySettingsLoadMCPInflightBudget",
-      "TestBalanceProxyBoundsTheKeyBeforeNormalizing"
+      "TestBalanceProxyBoundsTheKeyBeforeNormalizing",
+      "TestGraphQLFileRenameTargetProject"
     ]
   },
   {
@@ -410,7 +411,8 @@
   {
     "package": "./internal/library/fileio",
     "tests": [
-      "TestGraphQLSharedToolRejectsUnissuedBearer"
+      "TestGraphQLSharedToolRejectsUnissuedBearer",
+      "TestGraphQLRenameTargetValidatedBeforeDispatch"
     ]
   },
   {
@@ -493,7 +495,9 @@
       "TestFileMutationSchemasExposeCompleteUnionArguments",
       "TestFileMutationSchemasKeepPreconditions",
       "TestFileMutationAlternativesDeclareOnlyAcceptedArguments",
-      "TestFileAuthFromContextRefusesUnverifiedIdentity"
+      "TestFileAuthFromContextRefusesUnverifiedIdentity",
+      "TestFileRenameDefinitionAdvertisesOptionalTargetProject",
+      "TestFileRenameTargetProjectRouting"
     ]
   },
   {
@@ -536,7 +540,19 @@
       "TestIndexMarkdownStopsWhenCanceledMidParse",
       "TestIndexMarkdownEmptyHeadingKeepsTreeValid",
       "TestGoldmarkWorkBoundsRouteBeforeParsing",
-      "TestExtractHeadersMatchesFullGoldmarkParse"
+      "TestExtractHeadersMatchesFullGoldmarkParse",
+      "TestPageIndexMoveStateDocIDAllocation",
+      "TestPageIndexRenameIdentityFollowsCatalog",
+      "TestPageIndexRenameDuringPublication",
+      "TestPageIndexRenameRejectsStaleTreeAndDropsNonIndexableState",
+      "TestPageIndexLegacyAtomicSystemFSStillRenamesAtomically"
+    ]
+  },
+  {
+    "package": "./internal/mcp/files",
+    "tests": [
+      "TestRenameOverwritePreservesReplacementSearch",
+      "TestRenameOptOutNeverPublishesRAG"
     ]
   }
 ]

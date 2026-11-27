@@ -10,12 +10,11 @@ import (
 
 // ensureNoDescendantFile validates that the target path has no child files.
 func (s *Service) ensureNoDescendantFile(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) error {
-	owner := systemOwnerFromContext(ctx)
-	prefix := buildPathPrefix(path)
+	below, belowArgs := belowPathSQL("path", path)
 	var count int64
 	if err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? ESCAPE '\' AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash, project, prefix, owner,
+		rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND `+below, s.isPostgres),
+		append([]any{apiKeyHash, project, systemOwnerFromContext(ctx)}, belowArgs...)...,
 	).Scan(&count); err != nil {
 		return errors.Wrap(err, "check descendant files")
 	}
@@ -81,94 +80,6 @@ func (s *Service) ensureProjectQuota(ctx context.Context, tx *sql.Tx, apiKeyHash
 		return NewError(ErrCodeQuotaExceeded, "project storage quota exceeded", false)
 	}
 	return nil
-}
-
-// resolveDeleteTargets determines which file paths should be deleted.
-func (s *Service) resolveDeleteTargets(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string, recursive bool) ([]string, error) {
-	// Shared by ordinary Delete and PageIndex DeleteWithSystemState. Check before
-	// either path snapshots content, deletes rows, or changes the plugin catalog.
-	auth := AuthContext{APIKeyHash: apiKeyHash}
-	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationDelete)
-	if err := s.checkPathVersionTx(ctx, tx, auth, project, path, conditions.ExpectedVersion, false); err != nil {
-		return nil, err
-	}
-	owner := systemOwnerFromContext(ctx)
-	if path == "" {
-		return s.listAllFilePaths(ctx, tx, apiKeyHash, project)
-	}
-	var foundPath string
-	err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ? LIMIT 1`, s.isPostgres),
-		apiKeyHash, project, path, owner,
-	).Scan(&foundPath)
-	if err == nil {
-		return []string{foundPath}, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, errors.Wrap(err, "query delete target")
-	}
-	paths, err := s.listDescendantPaths(ctx, tx, apiKeyHash, project, path)
-	if err != nil {
-		return nil, err
-	}
-	if len(paths) == 0 {
-		return nil, nil
-	}
-	if !recursive {
-		return nil, NewError(ErrCodeNotEmpty, "directory not empty", false)
-	}
-	return paths, nil
-}
-
-// listDescendantPaths returns all active descendant file paths for a directory.
-func (s *Service) listDescendantPaths(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) ([]string, error) {
-	owner := systemOwnerFromContext(ctx)
-	prefix := buildPathPrefix(path)
-	rows, err := tx.QueryContext(ctx,
-		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? ESCAPE '\' AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash, project, prefix, owner,
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "query descendant paths")
-	}
-	defer func() { _ = rows.Close() }()
-	var paths []string
-	for rows.Next() {
-		var p string
-		if scanErr := rows.Scan(&p); scanErr != nil {
-			return nil, errors.Wrap(scanErr, "scan descendant path")
-		}
-		paths = append(paths, p)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "iterate descendant paths")
-	}
-	return paths, nil
-}
-
-// listAllFilePaths returns all active file paths in a project.
-func (s *Service) listAllFilePaths(ctx context.Context, tx *sql.Tx, apiKeyHash, project string) ([]string, error) {
-	owner := systemOwnerFromContext(ctx)
-	rows, err := tx.QueryContext(ctx,
-		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash, project, owner,
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "query project paths")
-	}
-	defer func() { _ = rows.Close() }()
-	var paths []string
-	for rows.Next() {
-		var p string
-		if scanErr := rows.Scan(&p); scanErr != nil {
-			return nil, errors.Wrap(scanErr, "scan project path")
-		}
-		paths = append(paths, p)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "iterate project paths")
-	}
-	return paths, nil
 }
 
 // insertIndexJobTx inserts one index queue job in the current transaction.

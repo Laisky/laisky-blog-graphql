@@ -40,9 +40,12 @@ const (
 // limited to initial reads and internal imperative storage calls. A file token
 // never represents an entire directory; retry deduplication is separate.
 type FilePreconditions struct {
-	ExpectedVersion            string
-	CreateOnly                 bool
-	DestinationPath            string
+	ExpectedVersion string
+	CreateOnly      bool
+	DestinationPath string
+	// DestinationProject scopes rename destination conditions to the target
+	// project of a cross-project move. Empty means the source project.
+	DestinationProject         string
 	ExpectedDestinationVersion string
 	DestinationMustNotExist    bool
 }
@@ -113,6 +116,9 @@ func WithFilePreconditions(ctx context.Context, auth AuthContext, project, path 
 		if operation != FileOperationRename || p.ExpectedVersion == "" || p.DestinationPath == "" {
 			return nil, errors.WithStack(NewError(ErrCodeInvalidArgument, "destination conditions require a conditional file rename", false))
 		}
+	}
+	if p.DestinationProject != "" && operation != FileOperationRename {
+		return nil, errors.WithStack(NewError(ErrCodeInvalidArgument, "a destination project is only valid for rename", false))
 	}
 	return context.WithValue(ctx, filePreconditionKey{}, scopedFilePreconditions{
 		operation: operation, apiKeyHash: auth.APIKeyHash, project: project,

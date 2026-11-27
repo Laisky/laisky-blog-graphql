@@ -329,7 +329,7 @@ type ComplexityRoot struct {
 		CreateGeneralToken            func(childComplexity int, username string, durationSec int) int
 		ExtractKeyInfo                func(childComplexity int, query string, materials string, topK *int) int
 		FileDelete                    func(childComplexity int, project string, path string, recursive bool, expectedVersion string, plugin *models.MemoryPlugin) int
-		FileRename                    func(childComplexity int, project string, fromPath string, toPath string, overwrite bool, expectedVersion string, expectedDestinationVersion *string, destinationMustNotExist *bool, plugin *models.MemoryPlugin) int
+		FileRename                    func(childComplexity int, project string, fromPath string, toPath string, targetProject *string, overwrite bool, expectedVersion string, expectedDestinationVersion *string, destinationMustNotExist *bool, plugin *models.MemoryPlugin) int
 		FileRestoreVersion            func(childComplexity int, project string, path string, historyID string, expectedVersion *string, createOnly *bool, plugin *models.MemoryPlugin) int
 		FileWrite                     func(childComplexity int, project string, path string, content string, contentEncoding string, offset *library.BigInt, mode models.FileIOWriteMode, expectedVersion *string, createOnly *bool, plugin *models.MemoryPlugin) int
 		GeneralAddHTMLCrawlerTask     func(childComplexity int, url string) int
@@ -595,7 +595,7 @@ type MutationResolver interface {
 	GeneralAddHTMLCrawlerTask(ctx context.Context, url string) (string, error)
 	FileWrite(ctx context.Context, project string, path string, content string, contentEncoding string, offset *library.BigInt, mode models.FileIOWriteMode, expectedVersion *string, createOnly *bool, plugin *models.MemoryPlugin) (*models.FileIOWriteResult, error)
 	FileDelete(ctx context.Context, project string, path string, recursive bool, expectedVersion string, plugin *models.MemoryPlugin) (*models.FileIODeleteResult, error)
-	FileRename(ctx context.Context, project string, fromPath string, toPath string, overwrite bool, expectedVersion string, expectedDestinationVersion *string, destinationMustNotExist *bool, plugin *models.MemoryPlugin) (*models.FileIORenameResult, error)
+	FileRename(ctx context.Context, project string, fromPath string, toPath string, targetProject *string, overwrite bool, expectedVersion string, expectedDestinationVersion *string, destinationMustNotExist *bool, plugin *models.MemoryPlugin) (*models.FileIORenameResult, error)
 	FileRestoreVersion(ctx context.Context, project string, path string, historyID string, expectedVersion *string, createOnly *bool, plugin *models.MemoryPlugin) (*models.FileIOWriteResult, error)
 	MemoryBeforeTurn(ctx context.Context, input models.MemoryBeforeTurnInput) (*models.MemoryBeforeTurnResult, error)
 	MemoryAfterTurn(ctx context.Context, input models.MemoryAfterTurnInput) (*models.MemoryAck, error)
@@ -1762,7 +1762,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Mutation.FileRename(childComplexity, args["project"].(string), args["from_path"].(string), args["to_path"].(string), args["overwrite"].(bool), args["expected_version"].(string), args["expected_destination_version"].(*string), args["destination_must_not_exist"].(*bool), args["plugin"].(*models.MemoryPlugin)), true
+		return e.ComplexityRoot.Mutation.FileRename(childComplexity, args["project"].(string), args["from_path"].(string), args["to_path"].(string), args["target_project"].(*string), args["overwrite"].(bool), args["expected_version"].(string), args["expected_destination_version"].(*string), args["destination_must_not_exist"].(*bool), args["plugin"].(*models.MemoryPlugin)), true
 	case "Mutation.FileRestoreVersion":
 		if e.ComplexityRoot.Mutation.FileRestoreVersion == nil {
 			break
@@ -4102,46 +4102,54 @@ func (ec *executionContext) field_Mutation_FileRename_args(ctx context.Context, 
 		return nil, err
 	}
 	args["to_path"] = arg2
-	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "overwrite",
-		func(ctx context.Context, v any) (bool, error) {
-			return ec.unmarshalNBoolean2bool(ctx, v)
-		})
-	if err != nil {
-		return nil, err
-	}
-	args["overwrite"] = arg3
-	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "expected_version",
-		func(ctx context.Context, v any) (string, error) {
-			return ec.unmarshalNString2string(ctx, v)
-		})
-	if err != nil {
-		return nil, err
-	}
-	args["expected_version"] = arg4
-	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "expected_destination_version",
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "target_project",
 		func(ctx context.Context, v any) (*string, error) {
 			return ec.unmarshalOString2ᚖstring(ctx, v)
 		})
 	if err != nil {
 		return nil, err
 	}
-	args["expected_destination_version"] = arg5
-	arg6, err := graphql.ProcessArgField(ctx, rawArgs, "destination_must_not_exist",
+	args["target_project"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "overwrite",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["overwrite"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "expected_version",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["expected_version"] = arg5
+	arg6, err := graphql.ProcessArgField(ctx, rawArgs, "expected_destination_version",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["expected_destination_version"] = arg6
+	arg7, err := graphql.ProcessArgField(ctx, rawArgs, "destination_must_not_exist",
 		func(ctx context.Context, v any) (*bool, error) {
 			return ec.unmarshalOBoolean2ᚖbool(ctx, v)
 		})
 	if err != nil {
 		return nil, err
 	}
-	args["destination_must_not_exist"] = arg6
-	arg7, err := graphql.ProcessArgField(ctx, rawArgs, "plugin",
+	args["destination_must_not_exist"] = arg7
+	arg8, err := graphql.ProcessArgField(ctx, rawArgs, "plugin",
 		func(ctx context.Context, v any) (*models.MemoryPlugin, error) {
 			return ec.unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx, v)
 		})
 	if err != nil {
 		return nil, err
 	}
-	args["plugin"] = arg7
+	args["plugin"] = arg8
 	return args, nil
 }
 
@@ -10833,7 +10841,7 @@ func (ec *executionContext) _Mutation_FileRename(ctx context.Context, field grap
 		},
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Mutation().FileRename(ctx, fc.Args["project"].(string), fc.Args["from_path"].(string), fc.Args["to_path"].(string), fc.Args["overwrite"].(bool), fc.Args["expected_version"].(string), fc.Args["expected_destination_version"].(*string), fc.Args["destination_must_not_exist"].(*bool), fc.Args["plugin"].(*models.MemoryPlugin))
+			return ec.Resolvers.Mutation().FileRename(ctx, fc.Args["project"].(string), fc.Args["from_path"].(string), fc.Args["to_path"].(string), fc.Args["target_project"].(*string), fc.Args["overwrite"].(bool), fc.Args["expected_version"].(string), fc.Args["expected_destination_version"].(*string), fc.Args["destination_must_not_exist"].(*bool), fc.Args["plugin"].(*models.MemoryPlugin))
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *models.FileIORenameResult) graphql.Marshaler {

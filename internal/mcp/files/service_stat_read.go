@@ -20,28 +20,35 @@ func (s *Service) Stat(ctx context.Context, auth AuthContext, project, path stri
 	if err := ValidatePath(path); err != nil {
 		return StatResult{}, errors.WithStack(err)
 	}
-	if path == "" {
-		updatedAt, exists, err := s.findDirectoryUpdatedAt(ctx, auth.APIKeyHash, project, path)
-		if err != nil {
-			return StatResult{}, errors.WithStack(err)
-		}
-		if !exists {
-			updatedAt = time.Time{}
-		}
-		return StatResult{Exists: true, Type: FileTypeDirectory, Size: 0, CreatedAt: time.Time{}, UpdatedAt: updatedAt}, nil
-	}
-	file, err := s.resolveActiveFile(ctx, s.db, auth.APIKeyHash, project, path)
-	if err == nil {
-		return StatResult{Exists: true, Type: FileTypeFile, Size: file.Size, CreatedAt: file.CreatedAt, UpdatedAt: file.UpdatedAt, Version: file.Version}, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return StatResult{}, errors.Wrap(err, "query file")
-	}
-	updatedAt, exists, err := s.findDirectoryUpdatedAt(ctx, auth.APIKeyHash, project, path)
+	overlay := overlayApplies(ctx, project)
+	var result StatResult
+	err := s.withReadSnapshot(ctx, overlay, func(q sqlQueryer) error {
+		var err error
+		result, err = s.statQ(ctx, q, auth.APIKeyHash, project, path, overlay)
+		return err
+	})
 	if err != nil {
 		return StatResult{}, errors.WithStack(err)
 	}
-	if !exists {
+	return result, nil
+}
+
+// statQ resolves path as a file, then as an implicit directory, on q.
+func (s *Service) statQ(ctx context.Context, q sqlQueryer, apiKeyHash, project, path string, overlay bool) (StatResult, error) {
+	if path != "" {
+		file, err := s.resolveActiveFile(ctx, q, apiKeyHash, project, path, overlay)
+		if err == nil {
+			return StatResult{Exists: true, Type: FileTypeFile, Size: file.Size, CreatedAt: file.CreatedAt, UpdatedAt: file.UpdatedAt, Version: file.Version}, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return StatResult{}, errors.Wrap(err, "query file")
+		}
+	}
+	updatedAt, exists, err := s.findDirectoryUpdatedAt(ctx, q, apiKeyHash, project, path, overlay)
+	if err != nil {
+		return StatResult{}, err
+	}
+	if !exists && path != "" {
 		return StatResult{Exists: false}, nil
 	}
 	return StatResult{Exists: true, Type: FileTypeDirectory, Size: 0, CreatedAt: time.Time{}, UpdatedAt: updatedAt}, nil
@@ -69,13 +76,15 @@ func (s *Service) Read(ctx context.Context, auth AuthContext, project, path stri
 		return ReadResult{}, errors.WithStack(NewError(ErrCodeInvalidOffset, "length must be -1 or >= 0", false))
 	}
 	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationRead)
-	file, err := s.resolveActiveFile(ctx, s.db, auth.APIKeyHash, project, path)
+	overlay := overlayApplies(ctx, project)
+	// Content and version come from one statement, so they share one snapshot.
+	file, err := s.resolveFile(ctx, s.db, auth.APIKeyHash, project, path, overlay, true)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			if conditions.ExpectedVersion != "" {
 				return ReadResult{}, errors.WithStack(checkFileVersion("", conditions.ExpectedVersion, false))
 			}
-			if exists, dirErr := s.directoryExists(ctx, auth.APIKeyHash, project, path); dirErr == nil && exists {
+			if _, exists, dirErr := s.findDirectoryUpdatedAt(ctx, s.db, auth.APIKeyHash, project, path, overlay); dirErr == nil && exists {
 				return ReadResult{}, errors.WithStack(NewError(ErrCodeIsDirectory, "path is a directory", false))
 			}
 			return ReadResult{}, errors.WithStack(NewError(ErrCodeNotFound, "file not found", false))
@@ -111,36 +120,36 @@ func (s *Service) findActiveFile(ctx context.Context, apiKeyHash, project, path 
 	return s.findActiveFileQ(ctx, s.db, apiKeyHash, project, path)
 }
 
-// directoryExists reports whether the path has any visible descendants.
-func (s *Service) directoryExists(ctx context.Context, apiKeyHash, project, path string) (bool, error) {
-	_, exists, err := s.findDirectoryUpdatedAt(ctx, apiKeyHash, project, path)
-	return exists, err
-}
-
-// findDirectoryUpdatedAt returns the latest update time of the visible
-// descendants, if any. A project overlays DefaultProject only when a bounded
-// probe finds default descendants here; otherwise the single-project aggregate
-// runs unchanged.
-func (s *Service) findDirectoryUpdatedAt(ctx context.Context, apiKeyHash, project, path string) (time.Time, bool, error) {
-	owner := systemOwnerFromContext(ctx)
-	query := `SELECT MAX(f.updated_at) FROM mcp_files f
-		WHERE f.apikey_hash = ? AND f.project = ? AND f.path LIKE ? ESCAPE '\' AND f.deleted = FALSE AND f.system_owner = ?`
-	args := []any{apiKeyHash, project, buildPathPrefix(path), owner}
-	if overlayApplies(ctx, project) {
-		hasDefaults, err := s.layerHasDescendants(ctx, s.db, apiKeyHash, DefaultProject, path)
+// findDirectoryUpdatedAt returns the latest update time of the files the
+// project shows below path, if any. With overlay, the merged view is computed
+// only when a bounded probe finds default descendants; otherwise the
+// single-project aggregate runs unchanged. Callers needing more than one
+// statement pass a read snapshot as q.
+func (s *Service) findDirectoryUpdatedAt(ctx context.Context, q sqlQueryer, apiKeyHash, project, path string, overlay bool) (time.Time, bool, error) {
+	if overlay {
+		hasDefaults, err := s.layerHasDescendants(ctx, q, apiKeyHash, DefaultProject, path)
 		if err != nil {
 			return time.Time{}, false, err
 		}
 		if hasDefaults {
-			// The overlay predicate admits exactly the visible default rows.
-			predicate, predicateArgs := searchScope{project: project, overlay: true}.predicate("f.project", "f.path", "f.apikey_hash", "f.system_owner")
-			query = `SELECT MAX(f.updated_at) FROM mcp_files f
-				WHERE f.apikey_hash = ? AND f.path LIKE ? ESCAPE '\' AND f.deleted = FALSE AND f.system_owner = ?` + predicate
-			args = append([]any{apiKeyHash, buildPathPrefix(path), owner}, predicateArgs...)
+			visible, err := s.visibleDescendants(ctx, q, apiKeyHash, project, path, true)
+			if err != nil {
+				return time.Time{}, false, err
+			}
+			var latest time.Time
+			for _, file := range visible {
+				if file.UpdatedAt.After(latest) {
+					latest = file.UpdatedAt.UTC()
+				}
+			}
+			return latest, len(visible) > 0, nil
 		}
 	}
+	below, belowArgs := belowPathSQL("path", path)
+	query := `SELECT MAX(updated_at) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND ` + below
+	args := append([]any{apiKeyHash, project, systemOwnerFromContext(ctx)}, belowArgs...)
 	var rawValue any
-	if err := s.db.QueryRowContext(ctx, rebindSQL(query, s.isPostgres), args...).Scan(&rawValue); err != nil {
+	if err := q.QueryRowContext(ctx, rebindSQL(query, s.isPostgres), args...).Scan(&rawValue); err != nil {
 		return time.Time{}, false, errors.Wrap(err, "query directory updated_at")
 	}
 	if rawValue == nil {
@@ -180,4 +189,29 @@ func parseTimeString(raw string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, errors.Errorf("unsupported timestamp format: %s", raw)
+}
+
+// ActiveContentHash returns the content hash of the live file stored at path in
+// one physical project; it never resolves through DefaultProject. A storage
+// plugin uses it to check that an index entry still describes the exact row it
+// was built from. sql.ErrNoRows means that project stores no live file there.
+func (s *Service) ActiveContentHash(ctx context.Context, auth AuthContext, project, path string) (string, error) {
+	if err := s.validateAuth(auth); err != nil {
+		return "", errors.WithStack(err)
+	}
+	if err := ValidateProject(project); err != nil {
+		return "", errors.WithStack(err)
+	}
+	file, err := s.findFileRow(ctx, s.db, auth.APIKeyHash, project, path, false)
+	if err != nil {
+		return "", err
+	}
+	if file.ContentHash == "" {
+		// A row written before content hashes existed is hashed on demand.
+		if file, err = s.findFileRow(ctx, s.db, auth.APIKeyHash, project, path, true); err != nil {
+			return "", err
+		}
+		return HashFileContent(file.Content), nil
+	}
+	return file.ContentHash, nil
 }

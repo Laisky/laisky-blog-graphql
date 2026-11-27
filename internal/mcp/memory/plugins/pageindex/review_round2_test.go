@@ -360,7 +360,7 @@ func TestSearchPlannerReservesItsAnswer(t *testing.T) {
 	llm := &verboseLLM{tok: tok, output: 150_000}
 	idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg, Spend: frozenSpend(cfg.Limits)})
 	require.NoError(t, err)
-	_, err = NewSearcher(llm, store, idx, cfg).Run(ctx, SearchInput{Project: "p", Query: "where?", Limit: 3})
+	_, err = NewSearcher(llm, store, idx, cfg).Run(ctx, SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "where?", Limit: 3})
 	require.NoError(t, err)
 	require.Equal(t, 1, llm.Calls(), "the planner runs on an outline that leaves room for its answer")
 	maxOut := int64(llm.MaxOut()[0])

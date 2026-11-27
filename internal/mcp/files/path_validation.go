@@ -99,3 +99,15 @@ func ValidatePath(path string) error {
 func isASCIILetterOrDigit(char byte) bool {
 	return (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9')
 }
+
+// NormalizeRenameTargetProject defaults an omitted destination to the source
+// and validates an explicit destination before a backend is selected.
+func NormalizeRenameTargetProject(project, target string) (string, error) {
+	if target == "" {
+		return project, nil
+	}
+	if err := ValidateTargetProject(target); err != nil {
+		return "", err
+	}
+	return target, nil
+}

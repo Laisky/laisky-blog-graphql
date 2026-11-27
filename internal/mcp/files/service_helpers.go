@@ -15,17 +15,25 @@ func escapeLikePattern(value string) string {
 	return likePatternEscaper.Replace(value)
 }
 
-// buildPathPrefix returns the literal SQL LIKE pattern matching every descendant
-// of path. Callers must append sqlLikeEscape after the LIKE operand.
-func buildPathPrefix(path string) string {
-	if path == "" {
-		return "%"
+// prefixSQL returns a predicate matching col to every value that starts with
+// the literal prefix, and its arguments. The escaped LIKE keeps a prefix scan;
+// the substr comparison keeps the match case-sensitive on SQLite, whose LIKE
+// folds ASCII case. Paths are ASCII, so the byte length is the character length.
+// An empty prefix matches every row.
+func prefixSQL(col, prefix string) (string, []any) {
+	if prefix == "" {
+		return "1 = 1", nil
 	}
-	return escapeLikePattern(path) + "/%"
+	return "(" + col + " LIKE ?" + sqlLikeEscape + " AND substr(" + col + ", 1, ?) = ?)",
+		[]any{escapeLikePattern(prefix) + "%", len(prefix), prefix}
 }
 
-// buildLikePrefix returns the literal SQL LIKE pattern matching every string
-// that starts with prefix. Callers must append sqlLikeEscape after the operand.
-func buildLikePrefix(prefix string) string {
-	return escapeLikePattern(prefix) + "%"
+// belowPathSQL returns a predicate matching col to every strict descendant of
+// path, segment-aware and case-sensitive on both databases, and its arguments.
+// The root path "" matches every file.
+func belowPathSQL(col, path string) (string, []any) {
+	if path == "" {
+		return prefixSQL(col, "")
+	}
+	return prefixSQL(col, path+"/")
 }

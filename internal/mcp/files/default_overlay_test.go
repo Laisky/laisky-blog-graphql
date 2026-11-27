@@ -354,20 +354,25 @@ func TestDefaultOverlayRenameSemantics(t *testing.T) {
 	require.Equal(t, "default v2", f.read("beta", "/new.md"))
 	require.True(t, f.physical("alpha", "/new.md"))
 
-	// A default renamed over a project override replaces both the override and
-	// the hidden default of the same name, so every project sees the source.
+	// A default renamed over a project override replaces the visible override,
+	// so every project sees the source. A default the override hides at the same
+	// name was never visible, so its replacement is refused instead.
 	f.put(DefaultProject, "/src.md", "default src")
-	moved, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/src.md", "/new.md", true)
+	_, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/src.md", "/new.md", true)
+	f.requireCode(err, ErrCodeAlreadyExists)
+	require.Equal(t, "default v2", f.read("beta", "/new.md"), "the hidden default is untouched")
+	f.svc.mustWritePhysical(t, f.auth, "alpha", "/fresh.md", "alpha draft")
+	moved, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/src.md", "/fresh.md", true)
 	require.NoError(t, err)
 	require.Equal(t, 1, moved.MovedCount)
-	require.Equal(t, "default src", f.read("alpha", "/new.md"))
-	require.Equal(t, "default src", f.read("beta", "/new.md"))
-	require.False(t, f.physical("alpha", "/new.md"))
-	versions, err := f.svc.ListVersions(f.ctx, f.auth, "alpha", "/new.md")
+	require.Equal(t, "default src", f.read("alpha", "/fresh.md"))
+	require.Equal(t, "default src", f.read("beta", "/fresh.md"))
+	require.False(t, f.physical("alpha", "/fresh.md"))
+	versions, err := f.svc.ListVersions(f.ctx, f.auth, "alpha", "/fresh.md")
 	require.NoError(t, err)
 	var sawOverride bool
 	for _, version := range versions {
-		snap, readErr := f.svc.ReadVersion(f.ctx, f.auth, "alpha", "/new.md", version.ID)
+		snap, readErr := f.svc.ReadVersion(f.ctx, f.auth, "alpha", "/fresh.md", version.ID)
 		require.NoError(t, readErr)
 		sawOverride = sawOverride || string(snap.Content) == "alpha draft"
 	}
@@ -436,10 +441,13 @@ func TestDefaultOverlaySearch(t *testing.T) {
 		return out
 	}
 
-	// Before indexing, the raw-file fallback applies the same visibility rule.
-	require.Equal(t, map[string]string{
-		":/u.md": "needle alpha override", ":/only.md": "needle default only",
-	}, paths("alpha"))
+	// Retrieval is physical: alpha searches its own files and every default,
+	// also those its filesystem view hides, and each hit names its project.
+	alphaHits := map[string]string{
+		"alpha:/u.md": "needle alpha override", "@DEFAULT:/u.md": "needle default override-target",
+		"@DEFAULT:/only.md": "needle default only", "@DEFAULT:/sub/deep.md": "needle default deep",
+	}
+	require.Equal(t, alphaHits, paths("alpha"), "the raw-file fallback searches both physical projects")
 
 	require.NoError(t, f.svc.NewIndexWorker().RunOnce(f.ctx))
 	var defaultChunks int
@@ -447,11 +455,9 @@ func TestDefaultOverlaySearch(t *testing.T) {
 		`SELECT COUNT(1) FROM mcp_file_chunks WHERE apikey_hash = ? AND project = ? AND system_owner = ''`,
 		f.auth.APIKeyHash, DefaultProject).Scan(&defaultChunks))
 	require.Positive(t, defaultChunks, "defaults are indexed under their own physical project")
+	require.Equal(t, alphaHits, paths("alpha"), "indexed search keeps both same-path documents")
 	require.Equal(t, map[string]string{
-		":/u.md": "needle alpha override", ":/only.md": "needle default only",
-	}, paths("alpha"), "indexed search hides shadowed defaults and never labels the layer")
-	require.Equal(t, map[string]string{
-		":/u.md": "needle default override-target", ":/only.md": "needle default only", ":/sub/deep.md": "needle default deep",
+		"@DEFAULT:/u.md": "needle default override-target", "@DEFAULT:/only.md": "needle default only", "@DEFAULT:/sub/deep.md": "needle default deep",
 	}, paths("beta"))
 	require.Equal(t, map[string]string{
 		"@DEFAULT:/u.md": "needle default override-target", "@DEFAULT:/only.md": "needle default only",

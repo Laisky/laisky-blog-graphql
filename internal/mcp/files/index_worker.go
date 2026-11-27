@@ -225,6 +225,9 @@ func (w *IndexWorker) runSummaryRefresh(ctx context.Context, job FileIndexJob) e
 		}
 		return w.handleJobError(ctx, job, errors.Wrap(err, "load file for summary refresh"))
 	}
+	if file.SkipRAGIndex {
+		return w.markSummaryRefreshStatus(ctx, job, "done", "")
+	}
 	fileHash := file.ContentHash
 	if fileHash == "" {
 		fileHash = HashFileContent(file.Content)
@@ -256,7 +259,7 @@ func (w *IndexWorker) runSummaryRefresh(ctx context.Context, job FileIndexJob) e
 		return w.handleSummaryRefreshRetry(ctx, job, pub.errorCode)
 	}
 
-	if err := svc.publishSummaryStandalone(ctx, job, pub); err != nil {
+	if err := svc.publishSummaryStandalone(ctx, job, file.Version, pub); err != nil {
 		return w.handleJobError(ctx, job, err)
 	}
 	_ = svc.deleteCredential(ctx, ref)
@@ -364,7 +367,7 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 	file, err := s.findActiveFile(ctx, job.APIKeyHash, job.Project, job.FilePath)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return s.deleteIndexRows(ctx, job.APIKeyHash, job.Project, job.FilePath)
+			return s.processDeleteJob(ctx, job)
 		}
 		return errors.Wrap(err, "load file for indexing")
 	}
@@ -375,6 +378,10 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 			zap.Time("file_updated_at", file.UpdatedAt),
 			zap.Time("job_file_updated_at", *job.FileUpdatedAt),
 		)
+		return nil
+	}
+
+	if file.SkipRAGIndex {
 		return nil
 	}
 
@@ -416,7 +423,7 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 
 	indexContents := s.buildContextualizedChunkInputs(ctx, apiKey, string(file.Content), job.FilePath, chunks)
 	plan := s.buildEmbeddingPlan(ctx, job, apiKey, indexContents)
-	if err := s.replaceIndexRows(ctx, job, chunks, indexContents, plan.vectors, pub); err != nil {
+	if err := s.replaceIndexRows(ctx, job, file.Version, chunks, indexContents, plan.vectors, pub); err != nil {
 		return err
 	}
 	if plan.err != nil {
@@ -474,16 +481,18 @@ func (s *Service) buildEmbeddingPlan(ctx context.Context, job FileIndexJob, apiK
 
 // processDeleteJob removes index rows for a file path.
 func (s *Service) processDeleteJob(ctx context.Context, job FileIndexJob) error {
-	file, err := s.findActiveFile(ctx, job.APIKeyHash, job.Project, job.FilePath)
-	if err == nil {
-		if job.FileUpdatedAt != nil && file.UpdatedAt.After(*job.FileUpdatedAt) {
+	return s.withProjectLocks(ctx, job.APIKeyHash, []string{job.Project}, func(tx *sql.Tx) error {
+		active, err := s.checkActiveRAGFileTx(ctx, tx, job)
+		if err == nil && !active.skipRAGIndex {
+			// An active RAG generation owns the path regardless of clock
+			// equality. Its upsert is responsible for replacing old rows.
 			return nil
 		}
-	}
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return errors.Wrap(err, "check file for delete")
-	}
-	return s.deleteIndexRows(ctx, job.APIKeyHash, job.Project, job.FilePath)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return errors.Wrap(err, "check file for delete")
+		}
+		return s.deleteIndexRowsTx(ctx, tx, job.APIKeyHash, job.Project, job.FilePath)
+	})
 }
 
 // replaceIndexRows rebuilds all chunk rows and lexical metadata for a file, writes
@@ -491,28 +500,27 @@ func (s *Service) processDeleteJob(ctx context.Context, job FileIndexJob) error 
 // the same content generation. It first rechecks the active content hash: if a newer
 // write arrived while the summary/embeddings were being produced, the stale generation
 // is discarded rather than overwriting the newer state (§4.1, §4.2).
-func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks []Chunk, indexContents []string, vectors []pgvector.Vector, pub summaryPublication) error {
+func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, version string, chunks []Chunk, indexContents []string, vectors []pgvector.Vector, pub summaryPublication) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return errors.Wrap(err, "begin replace index rows transaction")
 	}
 
-	curHash, hashErr := s.checkActiveContentHashTx(ctx, tx, job)
-	switch {
-	case errors.Is(hashErr, sql.ErrNoRows):
-		// File was deleted concurrently: drop any leftover index rows and stop.
-		if delErr := s.deleteIndexRowsTx(ctx, tx, job.APIKeyHash, job.Project, job.FilePath); delErr != nil {
-			_ = tx.Rollback()
-			return delErr
-		}
-		if commitErr := tx.Commit(); commitErr != nil {
-			return errors.Wrap(commitErr, "commit deleted-file index cleanup")
-		}
-		return nil
-	case hashErr != nil:
+	active, hashErr := s.checkActiveRAGFileTx(ctx, tx, job)
+	if hashErr != nil {
 		_ = tx.Rollback()
-		return errors.Wrap(hashErr, "recheck active content hash")
+		if errors.Is(hashErr, sql.ErrNoRows) {
+			// Recheck the path under the same project lock as creates and
+			// renames; an old worker cannot erase a replacement generation.
+			return s.processDeleteJob(ctx, job)
+		}
+		return errors.Wrap(hashErr, "recheck active index generation")
 	}
+	if active.skipRAGIndex || active.version != version {
+		_ = tx.Rollback()
+		return nil
+	}
+	curHash := active.contentHash
 	if curHash != "" && pub.contentHash != "" && curHash != pub.contentHash {
 		// A newer generation is already active; discard this stale worker output.
 		_ = tx.Rollback()
@@ -661,22 +669,6 @@ func (s *Service) insertBM25(ctx context.Context, tx *sql.Tx, chunkID int64, con
 		"",
 	)
 	return execErr
-}
-
-// deleteIndexRows deletes all index rows for a file path.
-func (s *Service) deleteIndexRows(ctx context.Context, apiKeyHash, project, path string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return errors.Wrap(err, "begin delete index rows transaction")
-	}
-	if err = s.deleteIndexRowsTx(ctx, tx, apiKeyHash, project, path); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	if err = tx.Commit(); err != nil {
-		return errors.Wrap(err, "commit delete index rows transaction")
-	}
-	return nil
 }
 
 // deleteIndexRowsTx deletes index rows for a file within a transaction. The index

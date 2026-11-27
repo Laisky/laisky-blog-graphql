@@ -204,7 +204,7 @@ func (*failNthWriteSystemFS) Delete(context.Context, string, string) error { ret
 
 func (*failNthWriteSystemFS) List(context.Context, string, string) ([]string, error) { return nil, nil }
 
-func newPersistenceTestService(t *testing.T) (*sql.DB, *files.Service) {
+func newPersistenceTestService(t testing.TB) (*sql.DB, *files.Service) {
 	t.Helper()
 	dsn := fmt.Sprintf("file:pageindex-persistence-%s-%d?mode=memory&cache=shared&_foreign_keys=on", t.Name(), time.Now().UnixNano())
 	db, err := sql.Open("sqlite3", dsn)

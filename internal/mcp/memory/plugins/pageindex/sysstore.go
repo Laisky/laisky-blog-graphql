@@ -213,6 +213,42 @@ func (s *SysStore) UpdateIndexEntry(ctx context.Context, project, userPath strin
 	return s.putMetaLocked(ctx, project, Meta{UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Count: len(ix)})
 }
 
+// publishTree reserves a collision-free identity while serializing the legacy
+// catalog store. Production uses the database-atomic state publication path.
+func (s *SysStore) publishTree(ctx context.Context, project, userPath string, tree *Tree, entry IndexEntry, derive func(string) string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index, err := s.getIndexLocked(ctx, project)
+	if err != nil {
+		return err
+	}
+	old := index[userPath].DocID
+	delete(index, userPath)
+	used := pageIndexReferencedDocIDs(index)
+	docID, err := pageIndexAllocateDocID(userPath, old, derive(userPath), used, derive)
+	if err != nil {
+		return err
+	}
+	current := *tree
+	current.DocID = docID
+	if err := s.PutTree(ctx, project, docID, &current); err != nil {
+		return err
+	}
+	entry.DocID = docID
+	index[userPath] = entry
+	if err := s.putIndexLocked(ctx, project, index); err != nil {
+		return err
+	}
+	if old != "" && old != docID {
+		if _, referenced := used[old]; !referenced {
+			if err := s.DeleteTree(ctx, project, old); err != nil {
+				return err
+			}
+		}
+	}
+	return s.putMetaLocked(ctx, project, Meta{UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Count: len(index)})
+}
+
 // RemoveIndexEntry deletes a user-path mapping; missing entries are silently ignored.
 func (s *SysStore) RemoveIndexEntry(ctx context.Context, project, userPath string) (IndexEntry, bool, error) {
 	s.mu.Lock()

@@ -212,6 +212,17 @@ func (m *Manager) Rename(ctx context.Context, auth files.AuthContext, project, f
 	return item.Rename(ctx, auth, project, fromPath, toPath, overwrite)
 }
 
+// RenameAcrossProjects routes a cross-project file_rename to the selected
+// plugin, which must implement CrossProjectRenamer.
+func (m *Manager) RenameAcrossProjects(ctx context.Context, auth files.AuthContext, project, fromPath, targetProject, toPath string, overwrite bool) (files.RenameResult, error) {
+	item, err := m.Resolve(ctx, auth, project, "")
+	if err != nil {
+		return files.RenameResult{}, err
+	}
+
+	return RenameAcrossProjects(ctx, item, auth, project, fromPath, targetProject, toPath, overwrite)
+}
+
 // List routes file_list to the selected plugin.
 func (m *Manager) List(ctx context.Context, auth files.AuthContext, project, path string, depth, limit int) (files.ListResult, error) {
 	item, err := m.Resolve(ctx, auth, project, "")

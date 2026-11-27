@@ -69,11 +69,11 @@ func (s *Service) WriteWith(ctx context.Context, auth AuthContext, project, path
 	opts.ExpectedVersion, opts.CreateOnly = conditions.ExpectedVersion, conditions.CreateOnly
 
 	var result WriteResult
-	err := s.runUserMutation(ctx, auth.APIKeyHash, project, []string{path}, func(tx *sql.Tx, overlay bool) error {
+	err := s.runUserMutation(ctx, auth.APIKeyHash, project, []string{project}, []string{path}, func(tx *sql.Tx, overlay bool) error {
 		layer := project
 		if overlay {
 			// Conditions are judged before namespace conflicts, as in physical mode.
-			if err := s.checkEffectiveVersionTx(ctx, tx, auth.APIKeyHash, project, path, opts.ExpectedVersion, opts.CreateOnly); err != nil {
+			if err := s.checkVersionTx(ctx, tx, auth, project, path, opts.ExpectedVersion, opts.CreateOnly, true); err != nil {
 				return err
 			}
 			var resolveErr error
@@ -231,31 +231,7 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 	if path == "" {
 		return DeleteResult{}, errors.WithStack(NewError(ErrCodePermissionDenied, "root directory cannot be deleted", false))
 	}
-	owner := systemOwnerFromContext(ctx)
-	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationDelete)
-	var deletedCount int
-	err := s.runUserMutation(ctx, auth.APIKeyHash, project, []string{path}, func(tx *sql.Tx, overlay bool) error {
-		if overlay {
-			var err error
-			deletedCount, err = s.deleteOverlayTx(ctx, tx, auth, project, path, recursive, conditions, nil)
-			return err
-		}
-		if err := s.checkPathVersionTx(ctx, tx, auth, project, path, conditions.ExpectedVersion, false); err != nil {
-			return err
-		}
-		paths, err := s.resolveDeleteTargets(ctx, tx, auth.APIKeyHash, project, path, recursive)
-		if err != nil {
-			return err
-		}
-		if len(paths) == 0 {
-			return errors.WithStack(NewError(ErrCodeNotFound, "path not found", false))
-		}
-		if err := s.softDeletePathsTx(ctx, tx, auth, project, paths, s.clock(), owner == ""); err != nil {
-			return err
-		}
-		deletedCount = len(paths)
-		return nil
-	})
+	deletedCount, err := s.deleteFiles(ctx, auth, project, path, recursive, nil)
 	if err != nil {
 		return DeleteResult{}, errors.WithStack(err)
 	}

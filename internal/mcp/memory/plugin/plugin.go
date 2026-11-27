@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	errors "github.com/Laisky/errors/v2"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 )
 
@@ -58,6 +60,33 @@ type Plugin interface {
 	Search(context.Context, files.AuthContext, string, string, string, int) (files.SearchResult, error)
 	Start(context.Context) error
 	Stop(context.Context) error
+}
+
+// CrossProjectRenamer is an optional Plugin capability: it moves a file or
+// directory subtree from project into targetProject of the same caller as one
+// atomic operation, carrying any backend-owned index state along. A backend
+// without it must not be asked to move files across projects; callers report
+// the missing capability instead of falling back to a same-project rename.
+type CrossProjectRenamer interface {
+	RenameAcrossProjects(ctx context.Context, auth files.AuthContext, project, fromPath, targetProject, toPath string, overwrite bool) (files.RenameResult, error)
+}
+
+// unsupportedCrossProjectRename reports a backend without CrossProjectRenamer.
+func unsupportedCrossProjectRename(name string) error {
+	return files.NewError(files.ErrCodeInvalidArgument, fmt.Sprintf("memory plugin %q does not support target_project moves", name), false)
+}
+
+// RenameAcrossProjects moves files across projects through item, or reports
+// that item cannot. An empty or identical targetProject is an ordinary rename.
+func RenameAcrossProjects(ctx context.Context, item Plugin, auth files.AuthContext, project, fromPath, targetProject, toPath string, overwrite bool) (files.RenameResult, error) {
+	if targetProject == "" || targetProject == project {
+		return item.Rename(ctx, auth, project, fromPath, toPath, overwrite)
+	}
+	mover, ok := item.(CrossProjectRenamer)
+	if !ok {
+		return files.RenameResult{}, errors.WithStack(unsupportedCrossProjectRename(item.Name()))
+	}
+	return mover.RenameAcrossProjects(ctx, auth, project, fromPath, targetProject, toPath, overwrite)
 }
 
 type overrideContextKey struct{}

@@ -34,7 +34,7 @@ func TestSearchLoopMergeAndLimit(t *testing.T) {
 	idx := &Indexer{} // GetPageContent only needs the receiver to be non-nil.
 	cfg := defaultTestSettings()
 	searcher := NewSearcher(stub, store, idx, cfg)
-	res, err := searcher.Run(ctx, SearchInput{Project: "p", Query: "what?", Limit: 3})
+	res, err := searcher.Run(ctx, SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "what?", Limit: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestSearchLoopBudgetExhaustion(t *testing.T) {
 	cfg.TreeQuery.MaxSteps = 1
 	cfg.TreeQuery.CandidateDocs = 3
 	searcher := NewSearcher(stub, store, idx, cfg)
-	res, err := searcher.Run(ctx, SearchInput{Project: "p", Query: "what?", Limit: 100})
+	res, err := searcher.Run(ctx, SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "what?", Limit: 100})
 	if err != nil {
 		t.Fatalf("search returned error after step exhaustion, want partial result: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestSearchLoopMalformedJSONFallback(t *testing.T) {
 	idx := &Indexer{}
 	cfg := defaultTestSettings()
 	searcher := NewSearcher(llm, store, idx, cfg)
-	res, err := searcher.Run(ctx, SearchInput{Project: "p", Query: "anything", Limit: 5})
+	res, err := searcher.Run(ctx, SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "anything", Limit: 5})
 	if err != nil {
 		t.Fatalf("malformed LLM response should fall back, not error: %v", err)
 	}

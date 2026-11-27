@@ -530,7 +530,7 @@ Execution outline:
 6. enqueue `DELETE` outbox jobs for affected paths.
 7. commit and return deleted count.
 
-### 9.5 `file_rename(project, from_path, to_path, overwrite=false)`
+### 9.5 `file_rename(project, from_path, to_path, overwrite=false, target_project="")`
 
 Rename/move semantics:
 
@@ -548,6 +548,26 @@ Rename/move semantics:
   - `overwrite=true`: only single-file source may replace an existing file at exact destination path
   - directory move with destination collisions is rejected (`ALREADY_EXISTS`)
 
+Cross-project move (`target_project` set and different from `project`):
+
+- `target_project` is validated like `project` and is scoped to the caller's `apikey_hash`; `"*"` is rejected.
+- the source is resolved in `project`; `to_path`, parent-file checks, collisions, overwrite and the
+  destination conditions (`expected_destination_version`, `destination_must_not_exist`) apply in `target_project`.
+- `from_path == to_path` is a real move, not a no-op, and the own-subtree rule does not apply.
+- moved bytes must fit `target_project`'s quota after overwritten destinations are released (`QUOTA_EXCEEDED`).
+- rows keep their id and incarnation, `mcp_file_versions` history moves with them, and the revision trigger advances
+  each moved file's revision.
+- the transaction holds both project advisory locks, taken in ascending `(lock key, project)` order by
+  `MultiProjectLockProvider.WithProjectsLock`; a lock provider without it refuses the move.
+- memory plugins expose the move through the optional `CrossProjectRenamer` capability. `rag` delegates to the
+  service above. `pageindex` moves catalog entries and trees from the source tenant namespace to the target one in
+  the same transaction, using the exact FileIO move and replacement paths. It reads both catalogs but only the
+  affected tree bodies. Writes, refreshes and moves reserve an identity not used by another catalog entry.
+  An indexable destination requires a current tree; otherwise the move rolls back with retryable `RESOURCE_BUSY`.
+  An extension change into a different indexable format is rejected; a non-indexable destination can move without
+  a tree and drops obsolete catalog state. A backend without the capability, or `pageindex` without
+  transactional catalog storage, returns `INVALID_ARGUMENT` instead of renaming within `project`.
+
 Path remap rule:
 
 - for each source file path `src`, destination is:
@@ -557,17 +577,17 @@ Execution outline:
 
 1. validate `project`, `from_path`, `to_path`, and `overwrite`.
 2. reject root source or root destination.
-3. if `from_path == to_path`, return `moved_count=0`.
-4. start transaction and acquire project advisory lock.
+3. if `from_path == to_path` within one project, return `moved_count=0`.
+4. start transaction and acquire the project advisory lock (both projects' locks for a cross-project move).
 5. resolve source file set:
    - exact file match at `from_path`, or
    - descendant files under `from_path + "/%"`, else `NOT_FOUND`.
 6. validate destination constraints and collision policy.
-7. apply transactional path remap update on `mcp_files` with `updated_at=now`.
-8. if overwrite-replace applies, soft-delete the replaced destination file first.
-9. enqueue outbox jobs per moved file:
-   - `DELETE` for `old_path`
-   - `UPSERT` for `new_path`
+7. if overwrite-replace applies, soft-delete the replaced destination file first.
+8. apply transactional path remap update on `mcp_files` with `updated_at=now`.
+9. enqueue a `DELETE` for `old_path`. For a RAG-indexed destination, queue one `UPSERT` that replaces
+   old chunks. For an opted-out destination, clear obsolete RAG chunks in the move transaction without
+   queueing model work. A delayed cleanup never removes chunks from an active RAG generation.
 10. commit and return `moved_count`.
 
 ### 9.6 `file_list(project, path="", depth=1, limit=256)`

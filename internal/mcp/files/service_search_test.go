@@ -436,9 +436,11 @@ func TestSearchWildcardSpansProjects(t *testing.T) {
 	require.Equal(t, "/b.txt", projects["proj_b"])
 }
 
-// TestSearchSingleProjectOmitsProjectField guarantees the response shape stays
-// backward compatible: non-wildcard searches must not emit the project field.
-func TestSearchSingleProjectOmitsProjectField(t *testing.T) {
+// TestSearchProjectFieldNamesPhysicalSource pins the project field contract.
+// An ordinary project searches itself and DefaultProject, so every hit names
+// the physical project that stores it. A search of DefaultProject itself reads
+// one physical project and keeps omitting the field.
+func TestSearchProjectFieldNamesPhysicalSource(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
@@ -453,18 +455,24 @@ func TestSearchSingleProjectOmitsProjectField(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.Write(context.Background(), auth, "proj_b", "/b.txt", "alpha sentinel marker", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
+	_, err = svc.Write(context.Background(), auth, DefaultProject, "/d.txt", "default sentinel marker", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
 
 	worker := svc.NewIndexWorker()
 	require.NoError(t, worker.RunOnce(context.Background()))
 
 	res, err := svc.Search(context.Background(), auth, "proj_a", "sentinel", "", 5)
 	require.NoError(t, err)
-	require.NotEmpty(t, res.Chunks)
+	hits := map[string]string{}
 	for _, chunk := range res.Chunks {
-		require.Equal(t, "/a.txt", chunk.FilePath)
-		require.Empty(t, chunk.Project, "non-wildcard search must not populate project field")
+		hits[chunk.FilePath] = chunk.Project
 	}
+	require.Equal(t, map[string]string{"/a.txt": "proj_a", "/d.txt": DefaultProject}, hits)
 
+	res, err = svc.Search(context.Background(), auth, DefaultProject, "sentinel", "", 5)
+	require.NoError(t, err)
+	require.Len(t, res.Chunks, 1)
+	require.Empty(t, res.Chunks[0].Project, "a single physical project keeps the unlabeled shape")
 	encoded, err := json.Marshal(res.Chunks[0])
 	require.NoError(t, err)
 	require.NotContains(t, string(encoded), "\"project\"")

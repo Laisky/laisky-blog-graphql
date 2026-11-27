@@ -239,6 +239,12 @@ type Plugin interface {
 }
 ```
 
+Optional capabilities stay outside this interface so existing backends keep compiling. A
+`file_rename` with `target_project` reaches only a backend that also implements
+`plugin.CrossProjectRenamer` (`RenameAcrossProjects(ctx, auth, project, src, targetProject, dst,
+overwrite)`); any other backend makes the call fail with `INVALID_ARGUMENT` rather than renaming
+inside `project`.
+
 `StatResult` … `SearchResult` are the existing `files.*Result` value types, **moved** into
 `internal/mcp/memory/plugin/types.go` (re-exported back into `files` for backward source
 compatibility — internal-only callers will be retargeted).
@@ -543,7 +549,7 @@ Notation: `userFS` is the user-facing fileio (the same instance `rag_plugin` wra
 | `file_stat`   | `userFS.Stat(...)` — unchanged.                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `file_list`   | `userFS.List(...)` — unchanged. **System namespace is invisible** (enforced at the SQL layer, not by path filter — see §2.6.3).                                                                                                                                                                                                                                                                                                          |
 | `file_delete` | `userFS.Delete(...)` then if a mapping exists: `sysFS.Delete("pageindex/<doc_id>.json")` and update `sysFS:"pageindex/index.json"`/`pageindex/_meta.json`.                                                                                                                                                                                                                                                                               |
-| `file_rename` | `userFS.Rename(...)` then update the path↔doc_id mapping in `sysFS:"pageindex/index.json"`. Tree JSON content unchanged.                                                                                                                                                                                                                                                                                                                 |
+| `file_rename` | `userFS.Rename(...)` then update the path↔doc_id mapping in `sysFS:"pageindex/index.json"`. Tree JSON content unchanged. With `target_project`, the user rows, catalog entries and trees move to the target tenant namespace in one transaction; trees are re-keyed to the target path's `doc_id`.                                                                                                                                                                                                                                                                                                                 |
 | `file_search` | The interesting case — see §2.6.2.                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 Two non-obvious consequences of letting `userFS` handle steps 1 of write/delete/rename:

@@ -8,6 +8,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/library"
 )
 
@@ -93,7 +94,9 @@ func (r *MutationResolver) FileDelete(ctx context.Context, project, path string,
 
 // FileRename moves a file or a directory subtree. Destination conditions are
 // validated by the shared gate and are mutually exclusive.
-func (r *MutationResolver) FileRename(ctx context.Context, project, fromPath, toPath string, overwrite bool,
+// An omitted or empty targetProject renames within project; otherwise the file
+// moves into targetProject, where toPath and the destination conditions apply.
+func (r *MutationResolver) FileRename(ctx context.Context, project, fromPath, toPath string, targetProject *string, overwrite bool,
 	expectedVersion string, expectedDestinationVersion *string, destinationMustNotExist *bool,
 	plugin *models.MemoryPlugin,
 ) (*models.FileIORenameResult, error) {
@@ -111,6 +114,14 @@ func (r *MutationResolver) FileRename(ctx context.Context, project, fromPath, to
 	if err := files.ValidatePath(toPath); err != nil {
 		return nil, graphQLError(err, "validate destination path")
 	}
+	target := ""
+	if targetProject != nil {
+		target = *targetProject
+	}
+	destinationProject, err := files.NormalizeRenameTargetProject(project, target)
+	if err != nil {
+		return nil, graphQLError(err, "validate target project")
+	}
 	conditions, err := preconditions(&expectedVersion, nil)
 	if err != nil {
 		return nil, err
@@ -127,6 +138,7 @@ func (r *MutationResolver) FileRename(ctx context.Context, project, fromPath, to
 	if destinationMustNotExist != nil {
 		conditions.DestinationMustNotExist = *destinationMustNotExist
 	}
+	conditions.DestinationProject = destinationProject
 	svc, renameCtx, err := r.conditional(withPlugin(ctx, plugin), auth, project, fromPath, toPath,
 		files.FileOperationRename, conditions)
 	if err != nil {
@@ -134,9 +146,12 @@ func (r *MutationResolver) FileRename(ctx context.Context, project, fromPath, to
 	}
 	startAt := time.Now().UTC()
 	log := logger(ctx, "file_rename").With(zap.String(fieldProject, project))
-	result, renameErr := svc.Rename(renameCtx, auth, project, fromPath, toPath, overwrite)
-	r.record(ctx, log, auth, "file_rename", map[string]any{fieldProject: project, "from_path": fromPath,
-		"to_path": toPath, "overwrite": overwrite}, startAt, renameErr)
+	result, renameErr := mcpplugin.RenameAcrossProjects(renameCtx, svc, auth, project, fromPath, destinationProject, toPath, overwrite)
+	audit := map[string]any{fieldProject: project, "from_path": fromPath, "to_path": toPath, "overwrite": overwrite}
+	if destinationProject != project {
+		audit["target_project"] = destinationProject
+	}
+	r.record(ctx, log, auth, "file_rename", audit, startAt, renameErr)
 	if renameErr != nil {
 		return nil, graphQLError(renameErr, "rename file")
 	}

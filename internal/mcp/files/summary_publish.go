@@ -121,20 +121,22 @@ func classifySummaryError(err error) string {
 	}
 }
 
-// checkActiveContentHashTx returns the current stored content_hash for the active
-// user row, acquiring a row lock on Postgres. It reports sql.ErrNoRows when the row
-// is gone (deleted concurrently).
-func (s *Service) checkActiveContentHashTx(ctx context.Context, tx *sql.Tx, job FileIndexJob) (string, error) {
-	sel := `SELECT content_hash FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND deleted = FALSE LIMIT 1`
+// activeRAGFile carries the policy and identity needed before publication.
+type activeRAGFile struct {
+	contentHash  string
+	version      string
+	skipRAGIndex bool
+}
+
+// checkActiveRAGFileTx reads the current generation, locking the row on Postgres.
+func (s *Service) checkActiveRAGFileTx(ctx context.Context, tx *sql.Tx, job FileIndexJob) (activeRAGFile, error) {
+	sel := `SELECT content_hash, incarnation_id || ':' || CAST(revision AS TEXT), skip_rag_index FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND deleted = FALSE LIMIT 1`
 	if s.isPostgres {
 		sel += " FOR UPDATE"
 	}
-	var curHash string
-	err := tx.QueryRowContext(ctx, rebindSQL(sel, s.isPostgres), job.APIKeyHash, job.Project, job.FilePath, "").Scan(&curHash)
-	if err != nil {
-		return "", err
-	}
-	return curHash, nil
+	var current activeRAGFile
+	err := tx.QueryRowContext(ctx, rebindSQL(sel, s.isPostgres), job.APIKeyHash, job.Project, job.FilePath, "").Scan(&current.contentHash, &current.version, &current.skipRAGIndex)
+	return current, err
 }
 
 // publishSummaryTx writes the validated summary metadata onto the active user row.
@@ -247,12 +249,12 @@ func (s *Service) PublishPluginSummary(ctx context.Context, auth AuthContext, pr
 // publishSummaryStandalone updates only the summary metadata on the active user row,
 // guarded by the content hash so a refresh cannot overwrite a newer generation. It
 // never touches chunk rows (§4.6).
-func (s *Service) publishSummaryStandalone(ctx context.Context, job FileIndexJob, pub summaryPublication) error {
+func (s *Service) publishSummaryStandalone(ctx context.Context, job FileIndexJob, version string, pub summaryPublication) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return errors.Wrap(err, "begin summary refresh transaction")
 	}
-	curHash, hashErr := s.checkActiveContentHashTx(ctx, tx, job)
+	active, hashErr := s.checkActiveRAGFileTx(ctx, tx, job)
 	if hashErr != nil {
 		_ = tx.Rollback()
 		if errors.Is(hashErr, sql.ErrNoRows) {
@@ -260,7 +262,7 @@ func (s *Service) publishSummaryStandalone(ctx context.Context, job FileIndexJob
 		}
 		return errors.Wrap(hashErr, "recheck active content hash for refresh")
 	}
-	if curHash != "" && pub.contentHash != "" && curHash != pub.contentHash {
+	if active.skipRAGIndex || active.version != version || (active.contentHash != "" && pub.contentHash != "" && active.contentHash != pub.contentHash) {
 		_ = tx.Rollback()
 		return nil
 	}
