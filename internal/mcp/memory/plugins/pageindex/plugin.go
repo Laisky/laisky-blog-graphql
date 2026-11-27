@@ -268,7 +268,7 @@ func (p *Plugin) indexAndPublish(ctx context.Context, auth files.AuthContext, pr
 		}
 		return nil
 	}
-	return p.store.publishTree(ctx, storageProject, path, tree, entry, derive)
+	return errors.Wrap(p.store.publishTree(ctx, storageProject, path, tree, entry, derive), "persist pageindex tree and catalog")
 }
 
 // indexDocument builds the tree within indexer.timeout_index, the documented wall
