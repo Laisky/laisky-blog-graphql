@@ -64,8 +64,9 @@ against the file whose history it reads. A version names one physical file, so
 the write cannot store the snapshot in another layer, for example in `@DEFAULT`
 after the project's override was deleted between the two steps.
 
-A PageIndex processing error can occur after the file content commit; the existing
-plugin contract does not promise rollback of every post-write error. This change
+The plugin contract does not promise rollback of every post-write error. (PageIndex,
+which could fail after the file content commit, is disabled; see
+[memory plugins §6](mcp_memory_plugins.md#6-pageindex-phase-2).) This change
 does not add operation-ID deduplication or automatic retries. On an ambiguous
 error, inspect the live file before another explicit edit.
 

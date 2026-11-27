@@ -135,10 +135,11 @@ chunk. Key architecture points (full contract:
   `SUMMARY_REFRESH` job (states `pending|processing|waiting_auth|done|failed`) that
   upgrades the summary once an authenticated operation supplies a credential. A
   platform key is never substituted.
-- PageIndex maps `Tree.DocDescription` (bounded to the shared limits, derived for
-  Markdown, deterministic fallback otherwise) into every returned chunk and publishes
-  the same catalog metadata onto the user row through a content-hash-guarded publisher.
-  `Tree.SourceContentHash` and `IndexEntry.SourceContentHash` reject stale writers.
+- PageIndex is disabled (2026-11-27; see
+  [../manual/mcp_memory_plugins.md §6](../manual/mcp_memory_plugins.md#6-pageindex-phase-2)),
+  so the server runs no PageIndex summary producer and the transactional
+  `PublishPluginSummaryAndState` publisher was removed. The `pageindex` value of
+  `summary_source` remains for rows written by earlier releases.
 - Summary text is response metadata only: it is excluded from embeddings, lexical
   tokens, rerank input, and scoring, and is redacted from logs and call audits.
 
@@ -551,10 +552,18 @@ Rename/move semantics:
 - destination parent segments must not resolve to active files (`NOT_DIRECTORY`).
 - directory move must not target its own subtree (`INVALID_PATH`), for example:
   - `from_path=/docs`, `to_path=/docs/sub/new`
-- destination conflicts:
-  - `overwrite=false`: any active destination collision => `ALREADY_EXISTS`
-  - `overwrite=true`: only single-file source may replace an existing file at exact destination path
-  - directory move with destination collisions is rejected (`ALREADY_EXISTS`)
+- single-file destination (`checkFileDestinationTx`):
+  - an active descendant of `to_path` (the destination is a directory) => `ALREADY_EXISTS`, even with `overwrite=true`
+  - an active file at `to_path`: `overwrite=false` => `ALREADY_EXISTS`; `overwrite=true` replaces it
+- directory destination (`checkVacantDestinationTx`): relocation only, never merge or replacement:
+  - `overwrite=true` => `INVALID_ARGUMENT`
+  - an active file at `to_path`, or any active file below it (directories are implicit, so every existing directory
+    has one, whatever its children are called) => `ALREADY_EXISTS`. A move into its own parent or another ancestor is
+    therefore rejected too.
+  - descendants are matched by a literal, case-sensitive path prefix (escaped `LIKE` plus `substr`), so `_`, `%` and
+    ASCII case never widen the match; the source subtree is selected the same way
+- every generated destination path must pass `ValidatePath`, including the 512-byte limit (`INVALID_PATH`)
+- every check runs under the project locks before the first row, history or outbox change.
 
 Same-project rename of an overlaid project: the source is the file the view shows and is renamed within its own
 physical project (a default for every project). The destination is judged on the view; overwrite replaces only a
@@ -576,14 +585,17 @@ Cross-project move (`target_project` set and different from `project`):
 - the transaction holds both project advisory locks, plus `@DEFAULT` when the default layer touches the source
   path, taken in `ProjectLockOrder` (ascending `(lock key, project)`) by `MultiProjectLockProvider.WithProjectsLock`;
   a lock provider without it refuses the move. The source is re-resolved and validated under those locks.
-- memory plugins expose the move through the optional `CrossProjectRenamer` capability. `rag` delegates to the
-  service above. `pageindex` moves catalog entries and trees from the source tenant namespace to the target one in
-  the same transaction, using the exact FileIO move and replacement paths. It reads both catalogs but only the
-  affected tree bodies. Writes, refreshes and moves reserve an identity not used by another catalog entry.
-  An indexable destination requires a current tree; otherwise the move rolls back with retryable `RESOURCE_BUSY`.
-  An extension change into a different indexable format is rejected; a non-indexable destination can move without
-  a tree and drops obsolete catalog state. A backend without the capability, or `pageindex` without
-  transactional catalog storage, returns `INVALID_ARGUMENT` instead of renaming within `project`.
+
+One rename implementation (`files.Service.Rename(ctx, auth, files.RenameRequest)`) serves same-project and
+cross-project moves; every memory plugin's `Rename` receives the same `RenameRequest`.
+
+- `rag` delegates to the service above.
+- A rename never depends on a search index. No derived-state hook runs in the rename transaction, and no
+  PageIndex catalog, tree, model or state work happens; the `AtomicSystemFS`/`RenameWithState`/`RenameStateHook`
+  APIs were removed when PageIndex was disabled (2026-11-27). Any extension change the path rules allow
+  (for example `.txt -> .md`, `.md -> .pdf`, `.md -> .txt`) is accepted, and the bytes are never converted.
+  RAG index jobs follow step 9 below. Stored `system_owner='pageindex'` rows are left in place.
+- The dormant `pageindex` package, kept for offline tooling only, forwards `Rename` to the same service call.
 
 Path remap rule:
 
@@ -599,8 +611,10 @@ Execution outline:
    `@DEFAULT` when the default layer touches a moved path; §10.4).
 5. resolve source file set (through the view for an overlaid project):
    - exact file match at `from_path`, or
-   - descendant files under `from_path + "/%"`, else `NOT_FOUND`.
-6. validate destination constraints and collision policy.
+   - descendant files strictly below `from_path` (literal prefix `from_path + "/"`), else `NOT_FOUND`.
+6. validate the destination (`planRenameMoveTx`): the single-file rules, or for a directory a vacant `to_path`,
+   then compute and validate every new path. Because a directory destination is vacant, no new path can equal
+   another moved file's old path, so the remap order does not matter.
 7. if overwrite-replace applies, snapshot the replaced destination file into history and soft-delete it first.
 8. apply transactional path remap update on `mcp_files` with `updated_at=now`.
 9. enqueue a `DELETE` for `old_path`. For a RAG-indexed destination, queue one `UPSERT` that replaces
@@ -691,7 +705,7 @@ Contract: [`docs/proposals/fileio_default_project.md`](../proposals/fileio_defau
   the resolution of an existing file operand use its filesystem view, where a directory is the recursive union of
   both layers and only a conflicting name (file/file, file/directory, directory/file) is replaced by the project's
   entry. `@DEFAULT`, the search wildcard, system namespaces and contexts marked with `files.WithPhysicalProjects`
-  (memory engine, shadow replay, PageIndex source reads) stay physical (`overlayApplies`).
+  (the memory engine) stay physical (`overlayApplies`).
 - The name-conflict rule lives only in the FileIO namespace resolver, `internal/mcp/files/overlay.go`:
   `resolveFile` resolves one path in a single statement; `visibleDescendants` reads both layers below a path in a
   single statement and merges them with `upperShadow`; `withReadSnapshot` runs a multi-statement stat or list in
@@ -711,17 +725,13 @@ Contract: [`docs/proposals/fileio_default_project.md`](../proposals/fileio_defau
   single-project path. Otherwise it rolls back before any change and reruns holding `@DEFAULT` too, every scope in
   `ProjectLockOrder`. That run writes through to the resolved physical row, deletes each target in its own
   project, and moves each rename source with the ordinary move of its own physical project; a same-project
-  destination is first judged on the view (`checkOverlayDestinationTx`).
+  destination is first judged on the view (`checkOverlayDestinationTx`). A directory relocates only to a vacant
+  destination, in the view and in every physical project (`planRenameMoveTx`), and `applyRenameTx` plans every
+  physical group before applying any, so no group's check sees files another group of the request moved.
 - Retrieval (`SearchProjects`): RAG filters `project IN (P, '@DEFAULT')` and labels each hit with its physical
-  project. PageIndex search reads one catalog per physical project (`SearchInput.Catalogs`) and validates each
-  candidate against its own physical row with `files.Service.ActiveContentHash`; degraded-tree refresh reads the
-  physical row. Indexing and summaries are physical, and `WriteResult.ResolvedProject` names the project a write
-  stored.
-- Plugin state: a mutation reports `files.RenameStateChange{Project, TargetProject, Mappings, OverwrittenPaths}`
-  once per physical project pair it changed, and `files.SystemStateMovePlan.SystemProject` maps each physical user
-  project to its system namespace. The optional `files.AtomicMappedSystemFS` capability (`DeleteMappedWithState`,
-  `RenameMappedWithState`) carries such plans. `AtomicSystemFS` keeps its single-namespace signatures and refuses a
-  change that resolves to `@DEFAULT`.
+  project. Indexing and summaries are physical, and `WriteResult.ResolvedProject` names the project a write
+  stored. PageIndex is disabled, so no plugin catalog, state hook or replay takes part in the layer; every
+  mutation runs once, through the FileIO service.
 
 ## 11. Indexing Pipeline (Outbox + Worker)
 
@@ -743,7 +753,7 @@ Workers run continuously:
 1. claim pending jobs in batches via `FOR UPDATE SKIP LOCKED`
 2. deduplicate by latest file state for `(apikey_hash, project, file_path)`
 3. process each job:
-   - `UPSERT`: load encrypted credential envelope from Redis, decrypt in memory, re-read active file, chunk content, regenerate embeddings/tokens, upsert index rows, and delete envelope immediately after external calls complete
+   - `UPSERT`: load the encrypted credential envelope from the `kv` table, decrypt in memory, re-read active file, chunk content, regenerate embeddings/tokens, upsert index rows, and delete envelope immediately after external calls complete
    - `DELETE`: delete chunk rows by `(apikey_hash, project, file_path)` cascade removes embeddings/BM25
 4. mark job done or reschedule with backoff on failure
 
@@ -755,8 +765,12 @@ Retry behavior uses:
 Credential behavior:
 
 - worker must never persist or log plaintext API keys.
-- if credential envelope is missing/expired, worker must retry later.
+- if the credential envelope is missing, expired or does not decrypt, the worker indexes lexically and summary
+  refresh moves to `waiting_auth`; the next authenticated mutation of the path stores a new envelope and
+  reactivates the refresh.
 - worker must not fall back to platform credentials.
+- each worker pass first sweeps expired envelopes when due: at most one sweep per credential TTL per service,
+  at most 500 rows per statement, and another sweep on the next pass while full batches remain.
 
 Job status lifecycle:
 
@@ -898,9 +912,9 @@ Search/index:
 
 Async credential handoff:
 
-- `settings.mcp.files.security.encryption_keks` (required; map of `kek_id -> secret`, longest ID used for new encryption)
-- `settings.mcp.files.security.credential_cache_prefix` (default `mcp:files:cred`)
+- `settings.mcp.files.security.encryption_keks` (required for semantic indexing; map of `kek_id -> secret`, longest ID used for new encryption; without it no envelope is stored and indexing stays lexical)
 - `settings.mcp.files.security.credential_cache_ttl_seconds` (default `300`)
+- the former Redis namespace key `credential_cache_prefix` is no longer read
 
 Credential-source rule (v1 confirmed):
 
@@ -926,7 +940,7 @@ Credential-source rule (v1 confirmed):
 ### Phase 3: Search and Worker
 
 1. Implement outbox producer in write/delete/rename code paths.
-2. Implement credential-envelope service (Redis TTL cache + KMS encrypt/decrypt).
+2. Implement credential-envelope service (expiring `kv` table rows + KMS encrypt/decrypt).
 3. Implement index workers, retry/backoff, dedupe, and retention purge.
 4. Implement chunker with stable byte offsets.
 5. Implement semantic + lexical retrieval and rerank + fallback.
@@ -972,7 +986,8 @@ Use `github.com/stretchr/testify/require` throughout.
 - outbox enqueue on write/delete/rename
 - worker dedupe and retry/backoff
 - credential envelope encrypt/decrypt round-trip and immediate delete after use
-- missing/expired envelope triggers retry and never platform-key fallback
+- missing/expired envelope degrades to lexical indexing and never platform-key fallback
+- envelope rows roll back with a failed mutation, stay tenant-bound through the AAD and survive a service restart
 - index freshness checks (commit-to-search delay)
 - rerank success/failure fallback correctness
 - guarantee that deleted files never appear in search
@@ -1025,21 +1040,29 @@ Expose at least:
 For async index workers:
 
 - never persist user raw API keys in plaintext storage.
-- store a credential envelope in Redis with short TTL (for example 300s), keyed by job-scoped reference.
-- envelope must contain encrypted data only (`kek_id`, `dek_id`, `ciphertext`, `aad`, `expires_at`).
+- store a credential envelope in the FileIO database's `kv` table (`library/db/sql/kv`) with short TTL (for
+  example 300s), keyed by `mcp_files_credential_` plus the SHA-256 of the job reference AAD
+  (`apikey_hash|project|path|file_updated_at_unix_nano`). FileIO and RAG need no Redis.
+- write the envelope on the mutation's transaction, after its index job, so it commits or rolls back with the file
+  rows and the outbox. A write or rename that opted out of RAG indexing stores none.
+- envelope must contain encrypted data only (`kek_id`, `dek_id`, `ciphertext`); `expire_at` is a column. The
+  encryption keys stay in configuration.
+- schema step 2 of the FileIO migration ledger creates the `kv` table and its `expire_at` index; services open it
+  without DDL.
 - initialize KMS with `github.com/Laisky/go-utils/v6/crypto/kms/mem` using all entries in `settings.mcp.files.security.encryption_keks`.
 - construct KMS by hashing each configured KEK secret and passing `map[uint16][]byte` into `mem.New(...)`.
 - producer encryption call sequence:
   - `encryptedData, err := kmsClient.Encrypt(ctx, []byte(apiKey), aad)`
   - `payload, err := encryptedData.MarshalToString()`
-  - write payload to Redis with TTL
+  - upsert payload into `kv` with `expire_at = now + TTL`
 - each envelope uses a unique `dek_id` generated by KMS; DEK is derived from `(kek_id, dek_id)` internally.
 - worker decryption call sequence:
   - `var encryptedData kms.EncryptedData`
   - `encryptedData.UnmarshalFromString(payload)`
   - `plaintext, err := kmsClient.Decrypt(ctx, &encryptedData, aad)`
-- worker decrypts in memory, uses caller API key for external requests, and deletes Redis envelope immediately after use.
-- if transient credentials are unavailable, the worker must retry later without falling back to platform credentials.
+- worker decrypts in memory, uses caller API key for external requests, and deletes the envelope immediately after use.
+- if transient credentials are unavailable, the worker degrades to lexical indexing (summary refresh waits for
+  authentication) without falling back to platform credentials.
 - all decrypt/encrypt failures must be logged without sensitive payload fields.
 
 ## 21. Definition of Done Checklist

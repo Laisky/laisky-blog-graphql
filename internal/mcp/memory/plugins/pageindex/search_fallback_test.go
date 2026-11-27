@@ -66,7 +66,7 @@ func TestDegradedSearchFallsBackToTheMatchingSection(t *testing.T) {
 			cfg.TreeQuery.MaxTokens = tc.tokens
 			searcher := NewSearcher(tc.llm, store, &Indexer{}, cfg)
 
-			res, err := searcher.Run(context.Background(), SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "How are invoices billed?", Limit: 5})
+			res, err := searcher.Run(context.Background(), SearchInput{Project: "p", Query: "How are invoices billed?", Limit: 5})
 			require.NoError(t, err)
 			contents := make([]string, 0, len(res.Chunks))
 			for _, c := range res.Chunks {
@@ -89,7 +89,7 @@ func TestDegradedSearchWithoutMatchKeepsTheFirstSection(t *testing.T) {
 	putSearchDoc(t, store, "p", "/manual.pdf", manualTree("manual"))
 	searcher := NewSearcher(errLLM{err: errors.New("down")}, store, &Indexer{}, defaultTestSettings())
 
-	res, err := searcher.Run(context.Background(), SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "zebra quokka", Limit: 5})
+	res, err := searcher.Run(context.Background(), SearchInput{Project: "p", Query: "zebra quokka", Limit: 5})
 	require.NoError(t, err)
 	require.Len(t, res.Chunks, 1)
 	require.Equal(t, "intro page", res.Chunks[0].ChunkContent)
@@ -112,12 +112,12 @@ func TestDegradedMarkdownSearchUsesSectionLines(t *testing.T) {
 	putSearchDoc(t, store, "p", "/doc.md", tree)
 	searcher := NewSearcher(errLLM{err: errors.New("down")}, store, idx, defaultTestSettings())
 
-	res, err := searcher.Run(context.Background(), SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "billing", Limit: 5})
+	res, err := searcher.Run(context.Background(), SearchInput{Project: "p", Query: "billing", Limit: 5})
 	require.NoError(t, err)
 	require.Len(t, res.Chunks, 1)
 	require.Contains(t, res.Chunks[0].ChunkContent, "Invoices go out monthly.")
 
-	res, err = searcher.Run(context.Background(), SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "zebra", Limit: 5})
+	res, err = searcher.Run(context.Background(), SearchInput{Project: "p", Query: "zebra", Limit: 5})
 	require.NoError(t, err)
 	require.Len(t, res.Chunks, 1, "the first section is found by its heading line")
 	require.Contains(t, res.Chunks[0].ChunkContent, "Alpha body text.")
@@ -161,7 +161,7 @@ func TestPlannedResultsOutrankFallbackResults(t *testing.T) {
 	cfg.TreeQuery.MaxTokens = 100_000
 	searcher := NewSearcher(plannerByTitleLLM{failTitle: "unplannable"}, store, &Indexer{}, cfg)
 
-	res, err := searcher.Run(context.Background(), SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "installation", Limit: 1})
+	res, err := searcher.Run(context.Background(), SearchInput{Project: "p", Query: "installation", Limit: 1})
 	require.NoError(t, err)
 	require.Len(t, res.Chunks, 1)
 	require.Equal(t, "/b-planned.pdf", res.Chunks[0].FilePath, "the planned section ranks first")

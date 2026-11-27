@@ -30,7 +30,7 @@ func TestPageIndexPersistsAndSearchesThroughRealSystemFS(t *testing.T) {
 	settings := localFileSettings()
 	protector, err := files.NewCredentialProtector(settings.Security)
 	require.NoError(t, err)
-	service, err := files.NewService(db, settings, nil, nil, protector, newLocalCredentialStore(), nil, nil, nil)
+	service, err := files.NewService(db, settings, nil, nil, protector, nil, nil, nil)
 	require.NoError(t, err)
 	plugin, err := newLocalPageIndex(t.Context(), service)
 	require.NoError(t, err)

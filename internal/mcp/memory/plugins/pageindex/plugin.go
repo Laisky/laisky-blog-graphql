@@ -3,7 +3,6 @@ package pageindex
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"sort"
 	"strings"
@@ -175,20 +174,14 @@ func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, pat
 	if err != nil {
 		return res, err
 	}
-	// A path that resolved to a DefaultProject file was written there, so its tree,
-	// catalog entry, and summary belong to that physical project.
-	layer := res.ResolvedProject
-	if layer == "" {
-		layer = project
-	}
 
 	// Re-read the complete post-write content so APPEND/OVERWRITE/TRUNCATE index and
 	// summarize the whole file, not just the request delta.
-	full, readErr := p.userFS.Read(files.WithPhysicalProjects(ctx), auth, layer, path, 0, -1)
+	full, readErr := p.userFS.Read(ctx, auth, project, path, 0, -1)
 	if readErr != nil {
 		return res, errors.Wrap(readErr, "read post-write content for pageindex")
 	}
-	return res, p.indexAndPublish(ctx, auth, layer, path, full.Content, 0)
+	return res, p.indexAndPublish(ctx, auth, project, path, full.Content, 0)
 }
 
 // indexAndPublish builds the tree of content (the complete current file) and
@@ -212,8 +205,7 @@ func (p *Plugin) indexAndPublish(ctx context.Context, auth files.AuthContext, pr
 	}
 
 	kind := pageIndexDocKind(path)
-	derive := func(userPath string) string { return docIDFromAuth(auth, project, userPath) }
-	docID := derive(path)
+	docID := docIDFromAuth(auth, project, path)
 	tree, stats, indexErr := p.indexDocument(ctx, kind, fullBytes, IndexOptions{DocID: docID, Tenant: pageIndexTenant(auth)})
 	if indexErr != nil {
 		// Indexing errors should not silently fail the write; surface as warning and
@@ -251,17 +243,6 @@ func (p *Plugin) indexAndPublish(ctx context.Context, auth files.AuthContext, pr
 	p.markRefresh(&entry, tree.Degraded, refreshes)
 	summary := pageIndexSummaryInput(desc, source, sourceHash, tree.Degraded)
 
-	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
-		published, err := atomicFS.PublishPluginSummaryAndState(ctx, auth, project, storageProject, path, summary, pageIndexWriteState(path, tree, entry, derive))
-		if err != nil {
-			return err
-		}
-		if !published && p.log != nil {
-			p.log.Debug("pageindex.write skipped stale tree publish", glog.String("path", path))
-		}
-		return nil
-	}
-
 	// Publish the user-row summary first, guarded by the content hash. A false result
 	// means a newer generation is already active, so this stale writer must not
 	// overwrite the tree or index mapping (P06).
@@ -275,7 +256,16 @@ func (p *Plugin) indexAndPublish(ctx context.Context, auth files.AuthContext, pr
 		}
 		return nil
 	}
-	return errors.Wrap(p.store.publishTree(ctx, storageProject, path, tree, entry, derive), "persist pageindex tree and catalog")
+	if err := p.store.PutTree(ctx, storageProject, docID, tree); err != nil {
+		return errors.Wrap(err, "persist pageindex tree")
+	}
+	if err := p.store.UpdateIndexEntry(ctx, storageProject, path, entry); err != nil {
+		// Keep the deterministic tree. Deleting it here can corrupt an existing
+		// catalog entry because updates reuse the same docID. A retry safely
+		// overwrites the tree and converges the catalog and metadata.
+		return errors.Wrap(err, "persist pageindex catalog")
+	}
+	return nil
 }
 
 // indexDocument builds the tree within indexer.timeout_index, the documented wall
@@ -309,12 +299,6 @@ func (p *Plugin) publishUserRowSummary(ctx context.Context, auth files.AuthConte
 // Delete removes matching PageIndex trees and catalog entries before deleting
 // user files, so failures remain fail-closed and the same request can be retried.
 func (p *Plugin) Delete(ctx context.Context, auth files.AuthContext, project, path string, recursive bool) (files.DeleteResult, error) {
-	if mapped, ok := p.sysFS.(files.AtomicMappedSystemFS); ok {
-		return mapped.DeleteMappedWithState(ctx, auth, project, path, recursive, pageIndexMovePlan(auth))
-	}
-	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
-		return atomicFS.DeleteWithState(ctx, auth, project, PageIndexStorageProject(auth, project), path, recursive, pageIndexDeleteState(path, recursive))
-	}
 	storageProject := PageIndexStorageProject(auth, project)
 	entries, err := p.indexEntriesForPath(ctx, storageProject, path, recursive)
 	if err != nil {
@@ -339,54 +323,10 @@ func (p *Plugin) Delete(ctx context.Context, auth files.AuthContext, project, pa
 	return res, nil
 }
 
-// Rename persists the PageIndex path mapping before moving the user file. If
-// the user-file rename fails, the catalog move is rolled back when possible.
-func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, project, src, dst string, overwrite bool) (files.RenameResult, error) {
-	if mapped, ok := p.sysFS.(files.AtomicMappedSystemFS); ok {
-		return mapped.RenameMappedWithState(ctx, auth, project, src, project, dst, overwrite, pageIndexMovePlan(auth))
-	}
-	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
-		return atomicFS.RenameWithState(ctx, auth, project, PageIndexStorageProject(auth, project), src, dst, overwrite, pageIndexRenameState(src, dst, overwrite))
-	}
-	storageProject := PageIndexStorageProject(auth, project)
-	index, err := p.store.GetIndex(ctx, storageProject)
-	if err != nil {
-		return files.RenameResult{}, errors.Wrap(err, "read pageindex catalog for rename")
-	}
-	_, indexed := index[src]
-	if indexed {
-		if err := p.store.RenameIndexEntry(ctx, storageProject, src, dst); err != nil {
-			return files.RenameResult{}, errors.Wrap(err, "rename pageindex catalog entry")
-		}
-	}
-
-	res, err := p.userFS.Rename(ctx, auth, project, src, dst, overwrite)
-	if err != nil {
-		if indexed {
-			if rollbackErr := p.store.RenameIndexEntry(ctx, storageProject, dst, src); rollbackErr != nil {
-				return res, errors.Wrapf(err, "rename user file; rollback pageindex catalog failed: %v", rollbackErr)
-			}
-		}
-		return res, err
-	}
-	return res, nil
-}
-
-// RenameAcrossProjects moves user files into targetProject and moves their
-// PageIndex trees and catalog entries into the target tenant namespace in the
-// same transaction, so the moved documents stay searchable without re-indexing.
-// It requires the transactional system handle: a non-atomic catalog could be
-// left describing files that already moved, so the move is refused instead.
-func (p *Plugin) RenameAcrossProjects(ctx context.Context, auth files.AuthContext, project, src, targetProject, dst string, overwrite bool) (files.RenameResult, error) {
-	if targetProject == "" || targetProject == project {
-		return p.Rename(ctx, auth, project, src, dst, overwrite)
-	}
-	mapped, ok := p.sysFS.(files.AtomicMappedSystemFS)
-	if !ok {
-		return files.RenameResult{}, errors.WithStack(files.NewError(files.ErrCodeInvalidArgument,
-			"pageindex target_project moves require transactional catalog storage", false))
-	}
-	return mapped.RenameMappedWithState(ctx, auth, project, src, targetProject, dst, overwrite, pageIndexMovePlan(auth))
+// Rename forwards to the FileIO rename unchanged. The dormant plugin does not
+// move its catalog or trees; their entries keep the old paths.
+func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, req files.RenameRequest) (files.RenameResult, error) {
+	return p.userFS.Rename(ctx, auth, req)
 }
 
 // List forwards to userFS unchanged.
@@ -402,38 +342,25 @@ func (p *Plugin) Search(ctx context.Context, auth files.AuthContext, project, qu
 	if strings.TrimSpace(auth.APIKeyHash) == "" {
 		return files.SearchResult{}, errors.New("pageindex search requires authenticated caller")
 	}
-	// Retrieval is physical: an ordinary project's catalog and the DefaultProject
-	// catalog are searched as independent documents, including defaults the
-	// filesystem view hides. Each hit is validated against its own physical row.
-	projects := files.SearchProjects(ctx, project)
-	if len(projects) == 0 {
-		projects = []string{project}
-	}
-	catalogs := make([]SearchCatalog, 0, len(projects))
-	for _, physical := range projects {
-		catalogs = append(catalogs, SearchCatalog{Project: physical, Storage: PageIndexStorageProject(auth, physical)})
-	}
+	storageProject := PageIndexStorageProject(auth, project)
 	return p.searcher.Run(ctx, SearchInput{
-		Catalogs:   catalogs,
+		Project:    storageProject,
 		Query:      query,
 		PathPrefix: pathPrefix,
 		Limit:      limit,
 		Tenant:     pageIndexTenant(auth),
-		OnCandidate: func(physical, userPath string, entry IndexEntry) {
-			p.maybeRefresh(auth, physical, userPath, entry)
+		OnCandidate: func(userPath string, entry IndexEntry) {
+			p.maybeRefresh(auth, project, userPath, entry)
 		},
-		ValidateSource: func(validateCtx context.Context, physical, userPath, expectedHash string) (bool, error) {
+		ValidateSource: func(validateCtx context.Context, userPath, expectedHash string) (bool, error) {
 			if expectedHash == "" {
 				return false, nil
 			}
-			hash, err := p.userFS.ActiveContentHash(validateCtx, auth, physical, userPath)
-			if errors.Is(err, sql.ErrNoRows) {
-				return false, nil
+			read, readErr := p.userFS.Read(validateCtx, auth, project, userPath, 0, -1)
+			if readErr != nil {
+				return false, errors.Wrap(readErr, "read pageindex source")
 			}
-			if err != nil {
-				return false, errors.Wrap(err, "read pageindex source hash")
-			}
-			return hash == expectedHash, nil
+			return files.HashFileContent([]byte(read.Content)) == expectedHash, nil
 		},
 	})
 }
@@ -494,7 +421,4 @@ func docIDFromAuth(auth files.AuthContext, project, path string) string {
 }
 
 // Compile-time assertion that Plugin satisfies the manager interface.
-var (
-	_ mcpplugin.Plugin              = (*Plugin)(nil)
-	_ mcpplugin.CrossProjectRenamer = (*Plugin)(nil)
-)
+var _ mcpplugin.Plugin = (*Plugin)(nil)

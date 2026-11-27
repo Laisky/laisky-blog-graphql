@@ -98,7 +98,10 @@
       "TestValidateStartupConfigImageLifecycleMode",
       "TestSizeImageMemoryAtStartup",
       "TestValidateStartupConfigRefusesUnsafeValidationBounds",
-      "TestValidateStartupConfigChecksAuthorityURLsAndGateways"
+      "TestValidateStartupConfigChecksAuthorityURLsAndGateways",
+      "TestStaleShadowSettingsNeitherWrapNorReplay",
+      "TestNewMCPFileManagerIsSilentForOrdinaryConfig",
+      "TestNewMCPFileManagerIgnoresStalePageIndexConfig"
     ]
   },
   {
@@ -149,7 +152,8 @@
       "TestGraphQLFileRenameTargetProject",
       "TestGraphQLFileIODefaultOverlayParity",
       "TestGraphQLFileIODefaultOverlayWildcardSearchParity",
-      "TestGraphQLFileIODefaultHistoryIsPerFile"
+      "TestGraphQLFileIODefaultHistoryIsPerFile",
+      "TestGraphQLPageIndexSelectionIsDisabled"
     ]
   },
   {
@@ -505,7 +509,9 @@
       "TestFileToolsDefaultProjectSearchLabelsEveryHit",
       "TestFileToolsDefaultProjectCrossProjectMove",
       "TestFileToolsDefaultProjectHistoryIsPerFile",
-      "TestFileToolsRestoreNeverMovesASnapshotAcrossLayers"
+      "TestFileToolsRestoreNeverMovesASnapshotAcrossLayers",
+      "TestFileToolsRefuseDisabledPageIndex",
+      "TestMemoryToolRefusesDisabledPageIndex"
     ]
   },
   {
@@ -548,15 +554,7 @@
       "TestIndexMarkdownStopsWhenCanceledMidParse",
       "TestIndexMarkdownEmptyHeadingKeepsTreeValid",
       "TestGoldmarkWorkBoundsRouteBeforeParsing",
-      "TestExtractHeadersMatchesFullGoldmarkParse",
-      "TestPageIndexMoveStateDocIDAllocation",
-      "TestPageIndexRenameIdentityFollowsCatalog",
-      "TestPageIndexRenameDuringPublication",
-      "TestPageIndexRenameRejectsStaleTreeAndDropsNonIndexableState",
-      "TestPageIndexLegacyAtomicSystemFSStillRenamesAtomically",
-      "TestPageIndexDefaultOverlaySamePathDocumentsAreBothHits",
-      "TestPageIndexDefaultOverlayStaleProjectEntryIsSkipped",
-      "TestPageIndexDefaultOverlayCrossProjectMoveOfInheritedDefault"
+      "TestExtractHeadersMatchesFullGoldmarkParse"
     ]
   },
   {
@@ -572,13 +570,33 @@
       "TestDefaultOverlaySearch",
       "TestDefaultHistoryIsTheResolvedFileHistory",
       "TestDefaultHistoryRecoveryAndPagination",
-      "TestDefaultHistoryRestoreReadChecksConditions"
+      "TestDefaultHistoryRestoreReadChecksConditions",
+      "TestRenameWithPendingAndFailedRAGIndexing",
+      "TestIndexWorkerDeletesCredentialAfterSuccess",
+      "TestPurgeExpiredCredentialsIsBoundedAndThrottled",
+      "TestFileToolMutationsExecuteOnce",
+      "TestRenameExtensionChangesFollowFilesystemRules"
     ]
   },
   {
     "package": "./internal/mcp/memory",
     "tests": [
       "TestMemoryEngineKeepsSharedDefaultsOutOfProjectState"
+    ]
+  },
+  {
+    "package": "./library/db/sql/kv",
+    "tests": [
+      "TestKeyExpiration",
+      "TestWithTxCommitsAndRollsBackWithTheTransaction",
+      "TestDeleteExpiredIsBounded",
+      "TestOpenRunsNoDDL"
+    ]
+  },
+  {
+    "package": "./internal/mcp/memory/plugin",
+    "tests": [
+      "TestManagerRefusesDisabledPageIndex"
     ]
   }
 ]

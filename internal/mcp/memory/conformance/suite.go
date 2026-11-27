@@ -49,7 +49,7 @@ type MultiPluginFixture interface {
 	// manager returned by Manager().
 	SecondaryPlugin() mcpplugin.Plugin
 	// DefaultPluginName returns the manager-configured default plugin
-	// name; affects whether C23 or C24 expects pageindex / rag as default.
+	// name.
 	DefaultPluginName() string
 	// Manager returns the plugin manager that the conformance scenarios
 	// use to resolve per-call plugin overrides.
@@ -343,7 +343,9 @@ func runC22(t *testing.T, fx Fixture, _ Options) {
 	}
 }
 
-// runC23 — Project default pageindex; explicit rag write/read crosses to NOT_FOUND on plugin=pageindex.
+// runC23 — A write under the primary plugin reads back there and is NOT_FOUND
+// under the secondary plugin. PageIndex is disabled, so the pair is the
+// fixture's own plugins rather than rag and pageindex.
 func runC23(t *testing.T, fx Fixture, opts Options) {
 	t.Helper()
 
@@ -354,10 +356,13 @@ func runC23(t *testing.T, fx Fixture, opts Options) {
 	if !ok {
 		t.Skip("requires MultiPluginFixture")
 	}
-	runCrossPluginIsolation(t, multi, mcpplugin.DefaultPluginRAG, mcpplugin.DefaultPluginPageIndex, "C23")
+	if multi.Plugin() == nil || multi.SecondaryPlugin() == nil {
+		t.Skip("C23: fixture missing primary or secondary plugin")
+	}
+	runCrossPluginIsolation(t, multi, multi.Plugin().Name(), multi.SecondaryPlugin().Name(), "C23")
 }
 
-// runC24 — Mirror of C23 with default rag and explicit pageindex.
+// runC24 — Mirror of C23: write under the secondary plugin, read under the primary.
 func runC24(t *testing.T, fx Fixture, opts Options) {
 	t.Helper()
 
@@ -368,7 +373,10 @@ func runC24(t *testing.T, fx Fixture, opts Options) {
 	if !ok {
 		t.Skip("requires MultiPluginFixture")
 	}
-	runCrossPluginIsolation(t, multi, mcpplugin.DefaultPluginPageIndex, mcpplugin.DefaultPluginRAG, "C24")
+	if multi.Plugin() == nil || multi.SecondaryPlugin() == nil {
+		t.Skip("C24: fixture missing primary or secondary plugin")
+	}
+	runCrossPluginIsolation(t, multi, multi.SecondaryPlugin().Name(), multi.Plugin().Name(), "C24")
 }
 
 // runC25 — Tool call with plugin="bogus"; INVALID_ARGUMENT names valid plugins.
@@ -586,7 +594,7 @@ func runR09(t *testing.T, fx Fixture, opts Options) {
 	pA := multi.Plugin()
 	pB := multi.SecondaryPlugin()
 	payloadA := "rag-bytes"
-	payloadB := "pageindex-bytes"
+	payloadB := "secondary-bytes"
 
 	ctxA := mcpplugin.WithOverride(context.Background(), pA.Name())
 	ctxB := mcpplugin.WithOverride(context.Background(), pB.Name())

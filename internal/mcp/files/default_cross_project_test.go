@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	errors "github.com/Laisky/errors/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -60,7 +59,7 @@ func (f *overlayFixture) move(project, from, target, to string, overwrite bool, 
 	conditions.DestinationPath, conditions.DestinationProject = to, target
 	ctx, err := WithFilePreconditions(f.ctx, f.auth, project, from, FileOperationRename, conditions)
 	require.NoError(f.t, err)
-	return f.svc.RenameAcrossProjects(ctx, f.auth, project, from, target, to, overwrite)
+	return f.svc.Rename(ctx, f.auth, RenameRequest{Project: project, FromPath: from, TargetProject: target, ToPath: to, Overwrite: overwrite})
 }
 
 // version returns the version project shows at path.
@@ -184,28 +183,6 @@ func TestDefaultCrossProjectMoves(t *testing.T) {
 		}
 		require.True(t, replaced, "the replaced destination keeps a history snapshot")
 	})
-
-	t.Run("a failed state change rolls back the whole move", func(t *testing.T) {
-		t.Parallel()
-		f, _ := newCrossProjectOverlayFixture(t)
-		f.put(DefaultProject, "/rollback.md", "default")
-		plan := SystemStateMovePlan{
-			SystemProject: func(userProject string) string { return "state-" + strings.TrimPrefix(userProject, "@") },
-			AffectedPaths: func(RenameStateChange, map[string][]byte, map[string][]byte) ([]string, []string, error) {
-				return nil, nil, nil
-			},
-			Mutate: func(change RenameStateChange, _, _ map[string][]byte) error {
-				require.Equal(t, DefaultProject, change.Project, "state follows the physical source")
-				require.Equal(t, "dst", change.TargetProject)
-				return errors.New("plugin state refused")
-			},
-		}
-		_, err := f.svc.RenameMappedWithSystemState(contextWithSystemOwner(f.ctx, "test-plugin"), f.auth, "src", "/rollback.md", "dst", "/rollback.md", false, plan)
-		require.Error(t, err)
-		require.True(t, f.physical(DefaultProject, "/rollback.md"))
-		require.False(t, f.physical("dst", "/rollback.md"))
-		require.Equal(t, []string{"UPSERT " + DefaultProject}, f.indexJobs("/rollback.md"), "no outbox job of the failed move survives")
-	})
 }
 
 // TestDefaultSameProjectRenameReplacesOnlyVisibleFiles pins what an overwriting
@@ -219,7 +196,7 @@ func TestDefaultSameProjectRenameReplacesOnlyVisibleFiles(t *testing.T) {
 
 	// The visible destination is p's override, but a default p hides also sits
 	// at the name. Its version was never visible, so it is not replaced.
-	_, err := f.svc.Rename(f.ctx, f.auth, "p", "/d.md", "/hidden.md", true)
+	_, err := f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "p", FromPath: "/d.md", ToPath: "/hidden.md", Overwrite: true})
 	f.requireCode(err, ErrCodeAlreadyExists)
 	require.Equal(t, "default hidden by p", f.read("q", "/hidden.md"))
 	require.Equal(t, "p override", f.read("p", "/hidden.md"))
@@ -230,6 +207,6 @@ func TestDefaultSameProjectRenameReplacesOnlyVisibleFiles(t *testing.T) {
 		ExpectedVersion: f.version("p", "/d.md"), DestinationPath: "/hidden.md", ExpectedDestinationVersion: f.version("p", "/hidden.md"),
 	})
 	require.NoError(t, err)
-	_, err = f.svc.Rename(ctx, f.auth, "p", "/d.md", "/hidden.md", true)
+	_, err = f.svc.Rename(ctx, f.auth, RenameRequest{Project: "p", FromPath: "/d.md", ToPath: "/hidden.md", Overwrite: true})
 	f.requireCode(err, ErrCodeAlreadyExists)
 }

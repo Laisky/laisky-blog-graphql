@@ -88,6 +88,7 @@ type behaviorFileService struct {
 	lastProject    string
 	lastPath       string
 	lastToPath     string
+	lastRename     files.RenameRequest
 	lastPathPrefix string
 	lastMode       files.WriteMode
 }
@@ -117,10 +118,11 @@ func (m *behaviorFileService) Delete(_ context.Context, _ files.AuthContext, pro
 	return m.deleteResult, m.deleteErr
 }
 
-func (m *behaviorFileService) Rename(_ context.Context, _ files.AuthContext, project, from, to string, _ bool) (files.RenameResult, error) {
-	m.lastProject = project
-	m.lastPath = from
-	m.lastToPath = to
+func (m *behaviorFileService) Rename(_ context.Context, _ files.AuthContext, req files.RenameRequest) (files.RenameResult, error) {
+	m.lastProject = req.Project
+	m.lastPath = req.FromPath
+	m.lastToPath = req.ToPath
+	m.lastRename = req
 	return m.renameResult, m.renameErr
 }
 

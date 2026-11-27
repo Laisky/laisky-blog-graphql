@@ -46,7 +46,7 @@ func newPostgresViewService(t *testing.T) *Service {
 	settings := LoadSettingsFromConfig()
 	settings.LockTimeout = 10 * time.Second
 	settings.Search.Enabled = false
-	svc, err := NewService(db, settings, nil, nil, nil, nil, nil, nil, nil)
+	svc, err := NewService(db, settings, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	return svc
 }

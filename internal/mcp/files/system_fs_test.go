@@ -45,7 +45,7 @@ func TestSystemFSWriteUsesCanonicalUTF8Encoding(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, nil, &memoryCredentialStore{})
+	svc := newTestService(t, settings, nil)
 	systemFS, err := svc.SystemNamespace("pageindex")
 	require.NoError(t, err)
 

@@ -85,7 +85,6 @@ func newConcurrentTestService(t *testing.T, settings Settings, lockProvider Lock
 		testEmbedder{vector: pgvector.NewVector([]float32{1, 0})},
 		nil,
 		credential,
-		&memoryCredentialStore{},
 		nil,
 		lockProvider,
 		func() time.Time { return time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC) },

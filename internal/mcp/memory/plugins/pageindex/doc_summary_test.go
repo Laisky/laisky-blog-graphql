@@ -88,7 +88,7 @@ func TestSearchLoopAttachesDocSummary(t *testing.T) {
 	stub := NewStubLLM()
 	stub.SetDefault(TextResponse(`{"ranges":[{"start":1,"end":2,"reason":"top"}]}`))
 	searcher := NewSearcher(stub, store, &Indexer{}, defaultTestSettings())
-	res, err := searcher.Run(ctx, SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "alpha", Limit: 5})
+	res, err := searcher.Run(ctx, SearchInput{Project: "p", Query: "alpha", Limit: 5})
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Chunks)
 	for _, c := range res.Chunks {

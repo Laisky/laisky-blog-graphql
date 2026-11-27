@@ -103,8 +103,7 @@ func newOverlayStack(t *testing.T) *overlayStack {
 	require.NoError(t, db.Ping())
 	credential, err := files.NewCredentialProtector(settings.Security)
 	require.NoError(t, err)
-	svc, err := files.NewService(db, settings, overlayEmbedder{}, nil, credential, &overlayCredentialStore{}, nil, nil,
-		func() time.Time { return time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC) })
+	svc, err := files.NewService(db, settings, overlayEmbedder{}, nil, credential, nil, nil, func() time.Time { return time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC) })
 	require.NoError(t, err)
 	plugin, err := ragplugin.New(svc)
 	require.NoError(t, err)

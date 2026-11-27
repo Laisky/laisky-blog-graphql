@@ -112,15 +112,9 @@ func fileToolErrorFromErr(err error) *mcp.CallToolResult {
 		return nil
 	}
 	if resolveErr, ok := mcpplugin.AsResolveError(err); ok {
-		message := resolveErr.Error()
-		if resolveErr.Requested == mcpplugin.DefaultPluginPageIndex && !containsString(resolveErr.Available, mcpplugin.DefaultPluginPageIndex) {
-			// A10: surface the missing config key so an operator can self-diagnose
-			// when pageindex was requested but never registered at startup.
-			message = message + "; settings.mcp.tools.memory.plugins.pageindex.llm.api_key is required"
-		}
 		return fileToolErrorResultWithExtras(
 			files.ErrCodeInvalidArgument,
-			message,
+			resolveErr.Error(),
 			false,
 			map[string]any{"available_plugins": resolveErr.Available},
 		)
@@ -131,21 +125,11 @@ func fileToolErrorFromErr(err error) *mcp.CallToolResult {
 	return fileToolErrorResult(files.ErrCodeSearchBackend, "internal error", true)
 }
 
-// containsString reports whether target appears in values.
-func containsString(values []string, target string) bool {
-	for _, v := range values {
-		if v == target {
-			return true
-		}
-	}
-	return false
-}
-
 // fileToolPluginOption adds the additive per-call plugin routing argument.
 func fileToolPluginOption() mcp.ToolOption {
 	return mcp.WithString(
 		"plugin",
-		mcp.Description("Memory backend to use for this call. Use auto or omit the field to follow the server default."),
+		mcp.Description("Memory backend to use for this call. Use auto or omit the field to follow the server default (rag). pageindex is disabled and returns INVALID_ARGUMENT."),
 		mcp.Enum(mcpplugin.DefaultPluginRAG, mcpplugin.DefaultPluginPageIndex, mcpplugin.DefaultPluginAuto),
 		mcp.DefaultString(mcpplugin.DefaultPluginAuto),
 	)

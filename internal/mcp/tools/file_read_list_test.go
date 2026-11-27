@@ -42,7 +42,7 @@ func (s *readListStubService) Delete(context.Context, files.AuthContext, string,
 }
 
 // Rename returns a stubbed rename response.
-func (s *readListStubService) Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error) {
+func (s *readListStubService) Rename(context.Context, files.AuthContext, files.RenameRequest) (files.RenameResult, error) {
 	return files.RenameResult{}, nil
 }
 

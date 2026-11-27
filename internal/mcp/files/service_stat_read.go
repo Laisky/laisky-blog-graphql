@@ -190,28 +190,3 @@ func parseTimeString(raw string) (time.Time, error) {
 	}
 	return time.Time{}, errors.Errorf("unsupported timestamp format: %s", raw)
 }
-
-// ActiveContentHash returns the content hash of the live file stored at path in
-// one physical project; it never resolves through DefaultProject. A storage
-// plugin uses it to check that an index entry still describes the exact row it
-// was built from. sql.ErrNoRows means that project stores no live file there.
-func (s *Service) ActiveContentHash(ctx context.Context, auth AuthContext, project, path string) (string, error) {
-	if err := s.validateAuth(auth); err != nil {
-		return "", errors.WithStack(err)
-	}
-	if err := ValidateProject(project); err != nil {
-		return "", errors.WithStack(err)
-	}
-	file, err := s.findFileRow(ctx, s.db, auth.APIKeyHash, project, path, false)
-	if err != nil {
-		return "", err
-	}
-	if file.ContentHash == "" {
-		// A row written before content hashes existed is hashed on demand.
-		if file, err = s.findFileRow(ctx, s.db, auth.APIKeyHash, project, path, true); err != nil {
-			return "", err
-		}
-		return HashFileContent(file.Content), nil
-	}
-	return file.ContentHash, nil
-}

@@ -198,7 +198,8 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 		}
 	}
 
-	// Only user-namespace writes that did not opt out enqueue RAG work.
+	// Only user-namespace writes that did not opt out enqueue RAG work and
+	// hand the caller's key to the index worker.
 	if owner == "" && !opts.SkipRAGIndex {
 		if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
 			APIKeyHash: auth.APIKeyHash, Project: project, FilePath: path,
@@ -207,8 +208,6 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 		}); err != nil {
 			return 0, errors.Wrap(err, "enqueue index job")
 		}
-	}
-	if owner == "" {
 		if err := s.storeCredentialEnvelopeTx(ctx, tx, auth, project, path, now); err != nil {
 			return 0, err
 		}
@@ -231,7 +230,7 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 	if path == "" {
 		return DeleteResult{}, errors.WithStack(NewError(ErrCodePermissionDenied, "root directory cannot be deleted", false))
 	}
-	deletedCount, err := s.deleteFiles(ctx, auth, project, path, recursive, nil)
+	deletedCount, err := s.deleteFiles(ctx, auth, project, path, recursive)
 	if err != nil {
 		return DeleteResult{}, errors.WithStack(err)
 	}

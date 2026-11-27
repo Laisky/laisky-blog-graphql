@@ -38,11 +38,11 @@ describe('use-memory-input-storage', () => {
   });
 
   it('hydrates saved defaults from localStorage', () => {
-    const saved = buildInputs({ memoryPlugin: 'pageindex', project: 'saved-project', listLimit: 9 });
+    const saved = buildInputs({ memoryPlugin: 'auto', project: 'saved-project', listLimit: 9 });
     window.localStorage.setItem(storageKey, JSON.stringify(saved));
     const { result } = renderHook(() => useMemoryInputDefaults());
 
-    expect(result.current.memoryPlugin).toBe('pageindex');
+    expect(result.current.memoryPlugin).toBe('auto');
     expect(result.current.project).toBe('saved-project');
     expect(result.current.listLimit).toBe(9);
   });
@@ -50,7 +50,7 @@ describe('use-memory-input-storage', () => {
   it('persists latest input values into localStorage', () => {
     window.localStorage.clear();
     const initialInputs = buildInputs({ memoryPlugin: 'rag', project: 'p1' });
-    const nextInputs = buildInputs({ memoryPlugin: 'pageindex', project: 'p2', listDepth: 4 });
+    const nextInputs = buildInputs({ memoryPlugin: 'auto', project: 'p2', listDepth: 4 });
 
     const { rerender } = renderHook(({ inputs }) => usePersistMemoryInputs(inputs), {
       initialProps: { inputs: initialInputs },
@@ -60,7 +60,7 @@ describe('use-memory-input-storage', () => {
     const raw = window.localStorage.getItem(storageKey);
     expect(raw).not.toBeNull();
     const parsed = JSON.parse(raw ?? '{}') as MemoryPersistedInputs;
-    expect(parsed.memoryPlugin).toBe('pageindex');
+    expect(parsed.memoryPlugin).toBe('auto');
     expect(parsed.project).toBe('p2');
     expect(parsed.listDepth).toBe(4);
   });

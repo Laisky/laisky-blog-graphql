@@ -103,7 +103,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [rag, pageindex]
+        # The deployed server has PageIndex disabled (2026-11-27); only the
+        # local in-process run above still measures the dormant package.
+        plugin: [rag]
     steps:
       - name: Checkout
         uses: actions/checkout@v4

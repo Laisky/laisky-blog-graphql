@@ -89,13 +89,13 @@ func TestFileToolUnknownPluginReturnsStructuredError(t *testing.T) {
 	result, err := tool.Handle(behaviorAuthCtx(), behaviorReq(map[string]any{
 		"project": "demo",
 		"path":    "/doc.txt",
-		"plugin":  mcpplugin.DefaultPluginPageIndex,
+		"plugin":  "bogus",
 	}))
 	require.NoError(t, err)
 	require.True(t, result.IsError)
 
 	payload := behaviorJSONContent(t, result)
 	require.Equal(t, string(files.ErrCodeInvalidArgument), payload["code"])
-	require.Contains(t, payload["message"], mcpplugin.DefaultPluginPageIndex)
+	require.Contains(t, payload["message"], "bogus")
 	require.Equal(t, []any{mcpplugin.DefaultPluginRAG}, payload["available_plugins"])
 }

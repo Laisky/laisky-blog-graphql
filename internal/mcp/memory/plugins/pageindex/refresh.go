@@ -155,8 +155,7 @@ func (p *Plugin) runRefresh(ctx context.Context, job refreshJob) {
 	if !ok || entry.SourceContentHash != job.contentHash || entry.RefreshAttempts != job.attempts || !refreshDue(entry, p.now()) {
 		return
 	}
-	// The job names the physical project of the catalog entry; read exactly that row.
-	read, err := p.userFS.Read(files.WithPhysicalProjects(ctx), job.auth, job.project, job.path, 0, -1)
+	read, err := p.userFS.Read(ctx, job.auth, job.project, job.path, 0, -1)
 	if err != nil || files.HashFileContent([]byte(read.Content)) != job.contentHash {
 		return
 	}

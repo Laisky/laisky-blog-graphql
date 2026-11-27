@@ -129,7 +129,7 @@ func TestDefaultOverlayPostgresOppositeMutationsDoNotDeadlock(t *testing.T) {
 			}
 			return err
 		case 2:
-			_, err := f.svc[i%2].Rename(f.ctx, f.auth, project, source, fmt.Sprintf("/moved/%d.md", i), false)
+			_, err := f.svc[i%2].Rename(f.ctx, f.auth, files.RenameRequest{Project: project, FromPath: source, ToPath: fmt.Sprintf("/moved/%d.md", i), Overwrite: false})
 			if files.IsCode(err, files.ErrCodeNotFound) || files.IsCode(err, files.ErrCodeAlreadyExists) {
 				return nil
 			}
@@ -181,7 +181,7 @@ func TestDefaultOverlayPostgresSearch(t *testing.T) {
 		s.Index.BatchSize = 50
 	})
 	newService := func(embedder files.Embedder, settings files.Settings) *files.Service {
-		svc, err := files.NewService(f.db[0], settings, embedder, nil, nil, &overlayCredentialStore{data: map[string]string{}}, nil, nil, nil)
+		svc, err := files.NewService(f.db[0], settings, embedder, nil, nil, nil, nil, nil)
 		require.NoError(t, err)
 		return svc
 	}
@@ -199,7 +199,7 @@ func TestDefaultOverlayPostgresSearch(t *testing.T) {
 	// Override a default through the public recipe: a project file renamed onto
 	// the default's name shadows it instead of deleting it.
 	write("alpha", "/tmp-u.md", "needle alpha override")
-	_, err := svc.Rename(f.ctx, f.auth, "alpha", "/tmp-u.md", "/u_1.md", true)
+	_, err := svc.Rename(f.ctx, f.auth, files.RenameRequest{Project: "alpha", FromPath: "/tmp-u.md", ToPath: "/u_1.md", Overwrite: true})
 	require.NoError(t, err)
 
 	search := func(svc *files.Service, project, prefix string) map[string]bool {
@@ -239,7 +239,7 @@ func TestDefaultOverlayPostgresSearch(t *testing.T) {
 	require.NoError(t, err)
 	_, err = vector.Write(f.ctx, f.auth, "gamma", "/tmp-vector.md", "needle gamma vector", "utf-8", 0, files.WriteModeTruncate)
 	require.NoError(t, err)
-	_, err = vector.Rename(f.ctx, f.auth, "gamma", "/tmp-vector.md", "/vector.md", true)
+	_, err = vector.Rename(f.ctx, f.auth, files.RenameRequest{Project: "gamma", FromPath: "/tmp-vector.md", ToPath: "/vector.md", Overwrite: true})
 	require.NoError(t, err)
 	_, err = vector.Write(f.ctx, f.auth, "gamma", "/plain.md", "unrelated words", "utf-8", 0, files.WriteModeTruncate)
 	require.NoError(t, err)

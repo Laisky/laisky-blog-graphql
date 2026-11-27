@@ -6,7 +6,6 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
-	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 )
 
 // targetProjectKey is the optional destination project of a cross-project move.
@@ -75,7 +74,9 @@ func (t *FileRenameTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*
 		if svcErr != nil {
 			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // service error is encoded in the MCP tool result
 		}
-		result, svcErr := mcpplugin.RenameAcrossProjects(conditionalCtx, svc, auth, project, fromPath, targetProject, toPath, overwrite)
+		result, svcErr := svc.Rename(conditionalCtx, auth, files.RenameRequest{
+			Project: project, FromPath: fromPath, TargetProject: targetProject, ToPath: toPath, Overwrite: overwrite,
+		})
 		if svcErr != nil {
 			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // service error is encoded in the MCP tool result
 		}

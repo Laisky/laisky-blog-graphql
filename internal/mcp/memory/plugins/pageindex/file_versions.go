@@ -1,10 +1,8 @@
 package pageindex
 
-import "github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
-
-// SupportsFileVersionPreconditions requires the transactional system handle so
-// rejected lifecycle operations cannot first mutate a non-transactional catalog.
+// SupportsFileVersionPreconditions reports false: the dormant plugin updates
+// its catalog outside the FileIO transaction, so a rejected lifecycle
+// operation could not be rolled back together with it.
 func (p *Plugin) SupportsFileVersionPreconditions() bool {
-	_, ok := p.sysFS.(files.AtomicSystemFS)
-	return ok
+	return false
 }

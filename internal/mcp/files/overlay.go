@@ -41,7 +41,7 @@ func IsDefaultProject(project string) bool {
 type physicalProjectsKey struct{}
 
 // WithPhysicalProjects returns ctx for automated owners of project-local state,
-// such as the memory engine and shadow replay. FileIO calls made with it address
+// such as the memory engine. FileIO calls made with it address
 // only the named physical project: they never show, change or delete a
 // DefaultProject file through another project.
 func WithPhysicalProjects(ctx context.Context) context.Context {

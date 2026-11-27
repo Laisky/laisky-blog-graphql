@@ -71,7 +71,7 @@ Every entrypoint that reads a credential, and the call that authenticates it. `T
 | Blog posts (`internal/web/blog/service/posts.go`) | SSO JWT bearer | JWT signature (not an API key) |
 | SSO code exchange and userinfo (`internal/web/sso_code.go`) | SSO bearer | SSO token signature (not an API key) |
 
-Keys used later without a request: the file index worker reuses the caller's key from the encrypted credential store within `credential_cache_ttl_seconds`; Telegram uploads reuse the bound key. Both only send the key to one-api, whose `TokenAuth` refuses it once revoked.
+Keys used later without a request: the file index worker reuses the caller's key from an encrypted envelope in the FileIO database's `kv` table within `credential_cache_ttl_seconds`; Telegram uploads reuse the bound key. Both only send the key to one-api, whose `TokenAuth` refuses it once revoked.
 
 ## 4. one-api call inventory
 
@@ -82,7 +82,7 @@ one-api limits its `/api` group per client address (`GLOBAL_API_RATE_LIMIT`, def
 | Validation, revalidation | `GET /api/token/balance` | `UpstreamGate` (source → global, or the revalidation reserve) + ledger |
 | Balance proxy, `ValidateOneapiAPIKey` | `GET /api/token/balance` | `UpstreamGate` (source → global) + ledger |
 | Tool charges and zero-cost usage reports (MCP and GraphQL), ArweaveUpload, Telegram uploads | `POST /api/token/consume` | Recorded in the ledger; never refused locally, because the work already ran |
-| Embeddings, rerank, Responses (file index), memory heuristic, PageIndex LLM | `/v1/...` relay | Per token at one-api; not in the ledger |
+| Embeddings, rerank, Responses (file index), memory heuristic | `/v1/...` relay | Per token at one-api; not in the ledger |
 
 With the defaults the gate starts at most 266 calls per window, leaving at least 214 for consumes. When consumes need more, the gate yields: it starts no call once the ledger holds `oneapi_rate_limit` calls, so validation never pushes the process over one-api's limit.
 

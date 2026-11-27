@@ -244,8 +244,7 @@ settings:
         encryption_keks:
           '1': REPLACE_WITH_BASE64_32BYTE_SECRET
           '2': REPLACE_WITH_NEXT_ROTATED_SECRET # largest KEK ID is used for new encryptions
-        credential_cache_prefix: mcp:files:cred
-        credential_cache_ttl_seconds: 300
+        credential_cache_ttl_seconds: 300 # encrypted envelopes live in the PostgreSQL kv table; no Redis
   web:
     url_prefix: /mcp # internal mount path on the Go server
     public_url_prefix: / # set to '/' to hide the prefix in generated links

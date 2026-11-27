@@ -20,7 +20,7 @@ func TestMemoryEngineKeepsSharedDefaultsOutOfProjectState(t *testing.T) {
 	auth := files.AuthContext{APIKey: "sk-test", APIKeyHash: "hash-test", UserIdentity: "user:test"}
 	settings := files.LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	fileService, err := files.NewService(db, settings, nil, nil, nil, nil, nil, nil, nil)
+	fileService, err := files.NewService(db, settings, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	seeded := map[string]string{}

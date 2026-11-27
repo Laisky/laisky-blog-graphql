@@ -14,31 +14,18 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 )
 
-// SearchCatalog is one physical project whose PageIndex catalog a search reads.
-type SearchCatalog struct {
-	// Project is the physical user project the catalog's documents belong to.
-	Project string
-	// Storage is the project's tenant-scoped catalog namespace.
-	Storage string
-}
-
 // SearchInput captures the per-call retrieval parameters.
 type SearchInput struct {
-	// Catalogs are searched together. Every catalog entry is an independent
-	// candidate document, also when two catalogs index the same path, and the
-	// candidate and LLM budgets apply to all candidates combined.
-	Catalogs   []SearchCatalog
-	Query      string
-	PathPrefix string
-	Limit      int
-	// ValidateSource reports whether the live file stored at userPath of the
-	// physical project still has expectedHash.
-	ValidateSource func(ctx context.Context, project, userPath, expectedHash string) (bool, error)
+	Project        string
+	Query          string
+	PathPrefix     string
+	Limit          int
+	ValidateSource func(context.Context, string, string) (bool, error)
 	// Tenant names the caller whose rolling LLM budget the search draws from.
 	Tenant string
 	// OnCandidate, when set, is called with every candidate whose source is
 	// current, before it is searched; the plugin uses it to refresh degraded trees.
-	OnCandidate func(project, userPath string, entry IndexEntry)
+	OnCandidate func(userPath string, entry IndexEntry)
 }
 
 // SearchEngine is the smaller interface the plugin uses against the indexer.
@@ -88,13 +75,11 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 	if s.store == nil {
 		return files.SearchResult{}, errors.New("sysstore is nil")
 	}
-	candidates, err := s.searchCandidates(ctx, in)
+	ix, err := s.store.GetIndex(ctx, in.Project)
 	if err != nil {
 		return files.SearchResult{}, err
 	}
-	// A search of several physical projects names each hit's project, so a hit
-	// is readable from its source even where another project shadows the path.
-	labelProjects := len(in.Catalogs) > 1
+	candidates := filterCandidatesLimited(ix, in.PathPrefix, s.cfg.TreeQuery.CandidateDocs)
 	stepBudget := s.cfg.TreeQuery.MaxSteps
 	if stepBudget <= 0 {
 		stepBudget = 8
@@ -110,21 +95,19 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 		if stepBudget <= 0 || budget.Remaining() <= 0 {
 			break
 		}
-		catalog := in.Catalogs[cand.catalog]
-		if !in.validSource(ctx, catalog.Project, cand) {
-			continue
+		if in.ValidateSource != nil {
+			valid, validateErr := in.ValidateSource(ctx, cand.userPath, cand.entry.SourceContentHash)
+			if validateErr != nil || !valid {
+				continue
+			}
 		}
 		stepBudget--
 		if in.OnCandidate != nil {
-			in.OnCandidate(catalog.Project, cand.userPath, cand.entry)
+			in.OnCandidate(cand.userPath, cand.entry)
 		}
-		tree, current := s.currentCandidateTree(ctx, catalog.Storage, cand.entry)
+		tree, current := s.currentCandidateTree(ctx, in.Project, cand.entry)
 		if !current {
 			continue
-		}
-		hitProject := ""
-		if labelProjects {
-			hitProject = catalog.Project
 		}
 		// Tree.DocDescription is the authoritative public summary for this document.
 		// It is bounded to the shared limits and repeated on every returned chunk so
@@ -145,7 +128,7 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 				continue
 			}
 			for i, ch := range chunks {
-				guesses = append(guesses, weightedChunk{entry: chunkEntry(hitProject, cand.userPath, docSummary, ch, 0), weight: weight * positionDecay(i, len(chunks))})
+				guesses = append(guesses, weightedChunk{entry: chunkEntry(cand.userPath, docSummary, ch, 0), weight: weight * positionDecay(i, len(chunks))})
 			}
 			continue
 		}
@@ -157,7 +140,7 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 		for i, ch := range chunks {
 			score := positionDecay(i, len(chunks))
 			minPlanned = min(minPlanned, score)
-			allChunks = append(allChunks, chunkEntry(hitProject, cand.userPath, docSummary, ch, score))
+			allChunks = append(allChunks, chunkEntry(cand.userPath, docSummary, ch, score))
 		}
 	}
 	for _, g := range guesses {
@@ -171,45 +154,6 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 		allChunks = allChunks[:in.Limit]
 	}
 	return files.SearchResult{Chunks: allChunks}, nil
-}
-
-// validSource reports whether cand still describes the live file stored in its
-// physical project; without a validator every candidate is current.
-func (in SearchInput) validSource(ctx context.Context, project string, cand rankedCandidate) bool {
-	if in.ValidateSource == nil {
-		return true
-	}
-	valid, err := in.ValidateSource(ctx, project, cand.userPath, cand.entry.SourceContentHash)
-	return err == nil && valid
-}
-
-// searchCandidates keeps the first CandidateDocs catalog entries matching the
-// path prefix, ordered by path and then catalog, across every catalog.
-func (s *Searcher) searchCandidates(ctx context.Context, in SearchInput) ([]rankedCandidate, error) {
-	limit := s.cfg.TreeQuery.CandidateDocs
-	var candidates []rankedCandidate
-	for i, catalog := range in.Catalogs {
-		ix, err := s.store.GetIndex(ctx, catalog.Storage)
-		if err != nil {
-			return nil, err
-		}
-		for _, cand := range filterCandidatesLimited(ix, in.PathPrefix, limit) {
-			cand.catalog = i
-			candidates = append(candidates, cand)
-		}
-	}
-	if len(in.Catalogs) > 1 {
-		sort.SliceStable(candidates, func(i, j int) bool {
-			if candidates[i].userPath != candidates[j].userPath {
-				return candidates[i].userPath < candidates[j].userPath
-			}
-			return candidates[i].catalog < candidates[j].catalog
-		})
-		if limit > 0 && len(candidates) > limit {
-			candidates = candidates[:limit]
-		}
-	}
-	return candidates, nil
 }
 
 // currentCandidateTree only returns a tree for the catalog's content generation.
@@ -228,11 +172,9 @@ type weightedChunk struct {
 	weight float64
 }
 
-// chunkEntry builds the search hit of chunk ch of the document at userPath; a
-// non-empty project names the physical project that stores it.
-func chunkEntry(project, userPath, docSummary string, ch Chunk, score float64) files.ChunkEntry {
+// chunkEntry builds the search hit of chunk ch of the document at userPath.
+func chunkEntry(userPath, docSummary string, ch Chunk, score float64) files.ChunkEntry {
 	return files.ChunkEntry{
-		Project:            project,
 		FilePath:           userPath,
 		FileSeekStartBytes: int64(ch.Page) * 1024,
 		FileSeekEndBytes:   int64(ch.Page)*1024 + int64(len(ch.Content)),
@@ -272,8 +214,6 @@ func positionDecay(i, n int) float64 {
 type rankedCandidate struct {
 	userPath string
 	entry    IndexEntry
-	// catalog indexes SearchInput.Catalogs.
-	catalog int
 }
 
 func filterCandidates(ix Index, prefix string) []rankedCandidate {

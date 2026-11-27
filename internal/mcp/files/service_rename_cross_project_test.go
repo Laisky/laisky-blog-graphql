@@ -17,7 +17,7 @@ func newCrossProjectTestService(t *testing.T, maxProjectBytes int64) *Service {
 	settings.Search.Enabled = false
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = maxProjectBytes
-	return newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	return newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 }
 
 // crossProjectTestAuth returns the tenant used by cross-project rename tests.
@@ -58,10 +58,10 @@ func countCrossProjectRows(t *testing.T, svc *Service, query string, args ...any
 	return count
 }
 
-// TestRenameAcrossProjectsMovesFileIdentityAndHistory verifies that a
+// TestCrossProjectRenameMovesFileIdentityAndHistory verifies that a
 // cross-project move carries the row, its incarnation and its version history
 // into the target project, advances the revision, and re-indexes it there.
-func TestRenameAcrossProjectsMovesFileIdentityAndHistory(t *testing.T) {
+func TestCrossProjectRenameMovesFileIdentityAndHistory(t *testing.T) {
 	svc := newCrossProjectTestService(t, 10_000)
 	auth := crossProjectTestAuth()
 	ctx := context.Background()
@@ -73,7 +73,7 @@ func TestRenameAcrossProjectsMovesFileIdentityAndHistory(t *testing.T) {
 		auth.APIKeyHash, "alpha", "/docs/a.txt")
 	require.Positive(t, history, "the overwrite must have produced a retained version")
 
-	result, err := svc.RenameAcrossProjects(ctx, auth, "alpha", "/docs/a.txt", "beta", "/inbox/a.txt", false)
+	result, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/docs/a.txt", TargetProject: "beta", ToPath: "/inbox/a.txt"})
 	require.NoError(t, err)
 	require.Equal(t, 1, result.MovedCount)
 
@@ -106,9 +106,9 @@ func TestRenameAcrossProjectsMovesFileIdentityAndHistory(t *testing.T) {
 	require.Empty(t, listed.Entries, "the source project must not list the moved file")
 }
 
-// TestRenameAcrossProjectsDirectorySubtree verifies directory moves and that the
+// TestCrossProjectRenameDirectorySubtree verifies directory moves and that the
 // own-subtree rule only applies within one project.
-func TestRenameAcrossProjectsDirectorySubtree(t *testing.T) {
+func TestCrossProjectRenameDirectorySubtree(t *testing.T) {
 	svc := newCrossProjectTestService(t, 10_000)
 	auth := crossProjectTestAuth()
 	ctx := context.Background()
@@ -117,7 +117,7 @@ func TestRenameAcrossProjectsDirectorySubtree(t *testing.T) {
 	mustCrossProjectWrite(t, svc, auth, "alpha", "/docs/sub/b.txt", "b")
 	mustCrossProjectWrite(t, svc, auth, "alpha", "/keep.txt", "keep")
 
-	result, err := svc.RenameAcrossProjects(ctx, auth, "alpha", "/docs", "beta", "/docs/archive", false)
+	result, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/docs", TargetProject: "beta", ToPath: "/docs/archive"})
 	require.NoError(t, err, "a destination under the same name in another project is not the source subtree")
 	require.Equal(t, 2, result.MovedCount)
 
@@ -128,34 +128,34 @@ func TestRenameAcrossProjectsDirectorySubtree(t *testing.T) {
 	requireCrossProjectContent(t, svc, auth, "beta", "/docs/archive/sub/b.txt", "b")
 }
 
-// TestRenameAcrossProjectsSamePathIsAMove verifies that keeping the path while
+// TestCrossProjectRenameSamePathIsAMove verifies that keeping the path while
 // changing the project moves the file instead of being a same-path no-op.
-func TestRenameAcrossProjectsSamePathIsAMove(t *testing.T) {
+func TestCrossProjectRenameSamePathIsAMove(t *testing.T) {
 	svc := newCrossProjectTestService(t, 10_000)
 	auth := crossProjectTestAuth()
 	ctx := context.Background()
 
 	mustCrossProjectWrite(t, svc, auth, "alpha", "/a.txt", "a")
-	result, err := svc.RenameAcrossProjects(ctx, auth, "alpha", "/a.txt", "beta", "/a.txt", false)
+	result, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/a.txt"})
 	require.NoError(t, err)
 	require.Equal(t, 1, result.MovedCount)
 	requireCrossProjectMissing(t, svc, auth, "alpha", "/a.txt")
 	requireCrossProjectContent(t, svc, auth, "beta", "/a.txt", "a")
 
 	// An empty or identical target keeps the existing same-project semantics.
-	result, err = svc.RenameAcrossProjects(ctx, auth, "beta", "/a.txt", "", "/a.txt", false)
+	result, err = svc.Rename(ctx, auth, RenameRequest{Project: "beta", FromPath: "/a.txt", TargetProject: "", ToPath: "/a.txt"})
 	require.NoError(t, err)
 	require.Zero(t, result.MovedCount)
-	result, err = svc.RenameAcrossProjects(ctx, auth, "beta", "/a.txt", "beta", "/b.txt", false)
+	result, err = svc.Rename(ctx, auth, RenameRequest{Project: "beta", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/b.txt"})
 	require.NoError(t, err)
 	require.Equal(t, 1, result.MovedCount)
 	requireCrossProjectContent(t, svc, auth, "beta", "/b.txt", "a")
 }
 
-// TestRenameAcrossProjectsDestinationRules verifies that collision, overwrite
+// TestCrossProjectRenameDestinationRules verifies that collision, overwrite
 // and parent rules are evaluated in the target project, and that a failed move
 // leaves both projects unchanged.
-func TestRenameAcrossProjectsDestinationRules(t *testing.T) {
+func TestCrossProjectRenameDestinationRules(t *testing.T) {
 	svc := newCrossProjectTestService(t, 10_000)
 	auth := crossProjectTestAuth()
 	ctx := context.Background()
@@ -165,18 +165,18 @@ func TestRenameAcrossProjectsDestinationRules(t *testing.T) {
 	mustCrossProjectWrite(t, svc, auth, "beta", "/file", "plain file")
 	mustCrossProjectWrite(t, svc, auth, "beta", "/dir/child.txt", "child")
 
-	_, err := svc.RenameAcrossProjects(ctx, auth, "alpha", "/a.txt", "beta", "/a.txt", false)
+	_, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/a.txt"})
 	require.True(t, IsCode(err, ErrCodeAlreadyExists), "%v", err)
-	_, err = svc.RenameAcrossProjects(ctx, auth, "alpha", "/a.txt", "beta", "/file/a.txt", false)
+	_, err = svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/file/a.txt"})
 	require.True(t, IsCode(err, ErrCodeNotDirectory), "%v", err)
-	_, err = svc.RenameAcrossProjects(ctx, auth, "alpha", "/a.txt", "beta", "/dir", true)
+	_, err = svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/dir", Overwrite: true})
 	require.True(t, IsCode(err, ErrCodeAlreadyExists), "a file cannot replace a target directory: %v", err)
-	_, err = svc.RenameAcrossProjects(ctx, auth, "alpha", "/missing.txt", "beta", "/new.txt", false)
+	_, err = svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/missing.txt", TargetProject: "beta", ToPath: "/new.txt"})
 	require.True(t, IsCode(err, ErrCodeNotFound), "%v", err)
 	requireCrossProjectContent(t, svc, auth, "alpha", "/a.txt", "source")
 	requireCrossProjectContent(t, svc, auth, "beta", "/a.txt", "target")
 
-	result, err := svc.RenameAcrossProjects(ctx, auth, "alpha", "/a.txt", "beta", "/a.txt", true)
+	result, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/a.txt", Overwrite: true})
 	require.NoError(t, err)
 	require.Equal(t, 1, result.MovedCount)
 	requireCrossProjectMissing(t, svc, auth, "alpha", "/a.txt")
@@ -186,9 +186,9 @@ func TestRenameAcrossProjectsDestinationRules(t *testing.T) {
 		auth.APIKeyHash, "beta", "/a.txt"), "the overwritten target row must be released")
 }
 
-// TestRenameAcrossProjectsIsTenantScoped verifies that the target project is
+// TestCrossProjectRenameIsTenantScoped verifies that the target project is
 // resolved inside the caller's own namespace only.
-func TestRenameAcrossProjectsIsTenantScoped(t *testing.T) {
+func TestCrossProjectRenameIsTenantScoped(t *testing.T) {
 	svc := newCrossProjectTestService(t, 10_000)
 	auth := crossProjectTestAuth()
 	other := AuthContext{APIKeyHash: "other-hash", APIKey: "other-key", UserIdentity: "user:other"}
@@ -197,7 +197,7 @@ func TestRenameAcrossProjectsIsTenantScoped(t *testing.T) {
 	mustCrossProjectWrite(t, svc, auth, "alpha", "/a.txt", "mine")
 	mustCrossProjectWrite(t, svc, other, "beta", "/a.txt", "theirs")
 
-	result, err := svc.RenameAcrossProjects(ctx, auth, "alpha", "/a.txt", "beta", "/a.txt", false)
+	result, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/a.txt"})
 	require.NoError(t, err, "another tenant's file at the same project and path is not a collision")
 	require.Equal(t, 1, result.MovedCount)
 	requireCrossProjectContent(t, svc, auth, "beta", "/a.txt", "mine")
@@ -205,9 +205,9 @@ func TestRenameAcrossProjectsIsTenantScoped(t *testing.T) {
 	requireCrossProjectMissing(t, svc, other, "alpha", "/a.txt")
 }
 
-// TestRenameAcrossProjectsEnforcesTargetQuota verifies that moved bytes count
+// TestCrossProjectRenameEnforcesTargetQuota verifies that moved bytes count
 // against the target project, after any overwritten destination is released.
-func TestRenameAcrossProjectsEnforcesTargetQuota(t *testing.T) {
+func TestCrossProjectRenameEnforcesTargetQuota(t *testing.T) {
 	svc := newCrossProjectTestService(t, 20)
 	auth := crossProjectTestAuth()
 	ctx := context.Background()
@@ -215,36 +215,36 @@ func TestRenameAcrossProjectsEnforcesTargetQuota(t *testing.T) {
 	mustCrossProjectWrite(t, svc, auth, "alpha", "/big.txt", "0123456789")
 	mustCrossProjectWrite(t, svc, auth, "beta", "/full.txt", "0123456789AB")
 
-	_, err := svc.RenameAcrossProjects(ctx, auth, "alpha", "/big.txt", "beta", "/big.txt", false)
+	_, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/big.txt", TargetProject: "beta", ToPath: "/big.txt"})
 	require.True(t, IsCode(err, ErrCodeQuotaExceeded), "%v", err)
 	requireCrossProjectContent(t, svc, auth, "alpha", "/big.txt", "0123456789")
 	requireCrossProjectMissing(t, svc, auth, "beta", "/big.txt")
 
-	result, err := svc.RenameAcrossProjects(ctx, auth, "alpha", "/big.txt", "beta", "/full.txt", true)
+	result, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/big.txt", TargetProject: "beta", ToPath: "/full.txt", Overwrite: true})
 	require.NoError(t, err, "replacing the large destination frees enough room")
 	require.Equal(t, 1, result.MovedCount)
 	requireCrossProjectContent(t, svc, auth, "beta", "/full.txt", "0123456789")
 }
 
-// TestRenameAcrossProjectsValidatesTargetProject verifies that an invalid target
+// TestCrossProjectRenameValidatesTargetProject verifies that an invalid target
 // is refused, named as the target, and never widened to every project.
-func TestRenameAcrossProjectsValidatesTargetProject(t *testing.T) {
+func TestCrossProjectRenameValidatesTargetProject(t *testing.T) {
 	svc := newCrossProjectTestService(t, 10_000)
 	auth := crossProjectTestAuth()
 	ctx := context.Background()
 	mustCrossProjectWrite(t, svc, auth, "alpha", "/a.txt", "a")
 
 	for _, target := range []string{ProjectWildcard, "bad/project", " ", strings.Repeat("p", 129)} {
-		_, err := svc.RenameAcrossProjects(ctx, auth, "alpha", "/a.txt", target, "/a.txt", false)
+		_, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: target, ToPath: "/a.txt"})
 		require.True(t, IsCode(err, ErrCodeInvalidPath), "%q: %v", target, err)
 		require.ErrorContains(t, err, "target project", "%q", target)
 	}
 	requireCrossProjectContent(t, svc, auth, "alpha", "/a.txt", "a")
 }
 
-// TestRenameAcrossProjectsPreconditions verifies that source conditions are
+// TestCrossProjectRenamePreconditions verifies that source conditions are
 // checked in the source project and destination conditions in the target one.
-func TestRenameAcrossProjectsPreconditions(t *testing.T) {
+func TestCrossProjectRenamePreconditions(t *testing.T) {
 	svc := newCrossProjectTestService(t, 10_000)
 	auth := crossProjectTestAuth()
 	ctx := context.Background()
@@ -262,30 +262,24 @@ func TestRenameAcrossProjectsPreconditions(t *testing.T) {
 		return conditionalCtx
 	}
 
-	_, err := svc.RenameAcrossProjects(conditioned(FilePreconditions{ExpectedVersion: source, DestinationMustNotExist: true}, "/b.txt", "beta"),
-		auth, "alpha", "/a.txt", "beta", "/b.txt", true)
+	_, err := svc.Rename(conditioned(FilePreconditions{ExpectedVersion: source, DestinationMustNotExist: true}, "/b.txt", "beta"), auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/b.txt", Overwrite: true})
 	require.True(t, IsCode(err, ErrCodeVersionConflict), "the target project's destination exists: %v", err)
 
-	_, err = svc.RenameAcrossProjects(conditioned(FilePreconditions{ExpectedVersion: source, ExpectedDestinationVersion: sameNameInSource}, "/b.txt", "beta"),
-		auth, "alpha", "/a.txt", "beta", "/b.txt", true)
+	_, err = svc.Rename(conditioned(FilePreconditions{ExpectedVersion: source, ExpectedDestinationVersion: sameNameInSource}, "/b.txt", "beta"), auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/b.txt", Overwrite: true})
 	require.True(t, IsCode(err, ErrCodeVersionConflict), "a token of the same path in the source project must not match: %v", err)
 
-	_, err = svc.RenameAcrossProjects(conditioned(FilePreconditions{ExpectedVersion: source, ExpectedDestinationVersion: target}, "/b.txt", "gamma"),
-		auth, "alpha", "/a.txt", "beta", "/b.txt", true)
+	_, err = svc.Rename(conditioned(FilePreconditions{ExpectedVersion: source, ExpectedDestinationVersion: target}, "/b.txt", "gamma"), auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/b.txt", Overwrite: true})
 	require.True(t, IsCode(err, ErrCodeInvalidArgument), "conditions scoped to another destination project: %v", err)
 
-	_, err = svc.RenameAcrossProjects(conditioned(FilePreconditions{ExpectedVersion: source, ExpectedDestinationVersion: target}, "/b.txt", ""),
-		auth, "alpha", "/a.txt", "beta", "/b.txt", true)
+	_, err = svc.Rename(conditioned(FilePreconditions{ExpectedVersion: source, ExpectedDestinationVersion: target}, "/b.txt", ""), auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/b.txt", Overwrite: true})
 	require.True(t, IsCode(err, ErrCodeInvalidArgument), "conditions without a destination project describe the source project: %v", err)
 
-	_, err = svc.RenameAcrossProjects(conditioned(FilePreconditions{ExpectedVersion: target, ExpectedDestinationVersion: target}, "/b.txt", "beta"),
-		auth, "alpha", "/a.txt", "beta", "/b.txt", true)
+	_, err = svc.Rename(conditioned(FilePreconditions{ExpectedVersion: target, ExpectedDestinationVersion: target}, "/b.txt", "beta"), auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/b.txt", Overwrite: true})
 	require.True(t, IsCode(err, ErrCodeVersionConflict), "the source token is checked in the source project: %v", err)
 	requireCrossProjectContent(t, svc, auth, "alpha", "/a.txt", "source")
 	requireCrossProjectContent(t, svc, auth, "beta", "/b.txt", "target")
 
-	result, err := svc.RenameAcrossProjects(conditioned(FilePreconditions{ExpectedVersion: source, ExpectedDestinationVersion: target}, "/b.txt", "beta"),
-		auth, "alpha", "/a.txt", "beta", "/b.txt", true)
+	result, err := svc.Rename(conditioned(FilePreconditions{ExpectedVersion: source, ExpectedDestinationVersion: target}, "/b.txt", "beta"), auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/b.txt", Overwrite: true})
 	require.NoError(t, err)
 	require.Equal(t, 1, result.MovedCount)
 	requireCrossProjectContent(t, svc, auth, "beta", "/b.txt", "source")
@@ -295,21 +289,21 @@ func TestRenameAcrossProjectsPreconditions(t *testing.T) {
 	require.True(t, IsCode(err, ErrCodeInvalidArgument), "a destination project is rename-only: %v", err)
 }
 
-// TestRenameAcrossProjectsRequiresMultiProjectLock verifies that a lock
+// TestCrossProjectRenameRequiresMultiProjectLock verifies that a lock
 // provider unable to hold both projects refuses the move instead of leaving
 // one project unserialized, while same-project renames keep working.
-func TestRenameAcrossProjectsRequiresMultiProjectLock(t *testing.T) {
+func TestCrossProjectRenameRequiresMultiProjectLock(t *testing.T) {
 	settings := versionsTestSettings()
 	svc := newConcurrentTestService(t, settings, &keyedMutexLockProvider{})
 	auth := crossProjectTestAuth()
 	ctx := context.Background()
 	mustCrossProjectWrite(t, svc, auth, "alpha", "/a.txt", "a")
 
-	_, err := svc.RenameAcrossProjects(ctx, auth, "alpha", "/a.txt", "beta", "/a.txt", false)
+	_, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/a.txt"})
 	require.True(t, IsCode(err, ErrCodeSearchBackend), "%v", err)
 	requireCrossProjectContent(t, svc, auth, "alpha", "/a.txt", "a")
 
-	result, err := svc.RenameAcrossProjects(ctx, auth, "alpha", "/a.txt", "alpha", "/b.txt", false)
+	result, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "alpha", ToPath: "/b.txt"})
 	require.NoError(t, err)
 	require.Equal(t, 1, result.MovedCount)
 }

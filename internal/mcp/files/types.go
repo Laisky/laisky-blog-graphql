@@ -87,7 +87,7 @@ type WriteResult struct {
 	Version string
 	// ResolvedProject is the physical project that stored the write. It differs
 	// from the addressed project only when the path resolved to a DefaultProject
-	// file. It is internal routing data for storage plugins, never a wire field.
+	// file. It is internal metadata, never a wire field.
 	ResolvedProject string `json:"-"`
 }
 

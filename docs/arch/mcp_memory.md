@@ -1,6 +1,6 @@
 # MCP-Native Memory Tools Technical Architecture Manual
 
-Last updated: 2026-02-21 (UTC)
+Last updated: 2026-11-27 (UTC)
 
 ## 1. Goal and Decision
 
@@ -640,7 +640,8 @@ only: an optional per-call `plugin` argument on the tool input and a global
 `settings.mcp.tools.memory.default_plugin` setting. There is no per-project, per-API-key,
 or per-tenant override map.
 
-`rag_plugin` (`internal/mcp/memory/plugins/rag/`) is the only Phase 1 backend; it
+`rag_plugin` (`internal/mcp/memory/plugins/rag/`) is the only Phase 1 backend and, since
+PageIndex was disabled on 2026-11-27, the default and only supported backend; it
 wraps the existing `*files.Service` without behavior change. Per-call `plugin`
 overrides land via an additive optional field on the tool input schema; cross-plugin
 reads return `NOT_FOUND` with a routing hint, never silent fallback. Operator
@@ -650,6 +651,21 @@ the full design (`pageindex_plugin`, `SystemFS`, eval harness, rollout phases) i
 [../proposals/mcp_memory_plugin_manager.md](../proposals/mcp_memory_plugin_manager.md).
 
 ## MCP Memory Plugins (Phase 2 / Phase 3)
+
+**PageIndex is disabled (maintainer decision, 2026-11-27).** The API server never
+constructs, registers or starts `pageindex_plugin`, even when
+`settings.mcp.tools.memory.plugins.pageindex.*` is set; a stale block is ignored with one
+startup WARN, and a stale `default_plugin: pageindex` resolves to `rag` with a startup WARN.
+An explicit `pageindex` selection (MCP `plugin` argument, GraphQL `MemoryPlugin.PAGEINDEX`)
+returns `INVALID_ARGUMENT` with `available_plugins`; the enum values stay for wire
+compatibility only. FileIO writes, deletes and renames never depend on a search index:
+the PageIndex-only transactional state APIs (`AtomicSystemFS`,
+`PublishPluginSummaryAndState`, `DeleteWithSystemState`, `RenameWithState`,
+`RenameStateHook`, `SystemStateTx`, `SystemStateMutator`) were removed. Stored
+`system_owner='pageindex'` rows are left in place. The package below remains only for
+offline tooling (`internal/mcp/memory/benchmark`, `cmd/memory-bench`, `cmd/eval-plugin`);
+its `Write`/`Delete` are plain, non-transactional calls and its `Rename` forwards to
+FileIO. Operator details: [../manual/mcp_memory_plugins.md §6](../manual/mcp_memory_plugins.md#6-pageindex-phase-2).
 
 `pageindex_plugin` lives at `internal/mcp/memory/plugins/pageindex/`. The package
 splits responsibilities across `indexer.go` (orchestrator + budget + retry +
@@ -671,16 +687,17 @@ linear (manual §6.6).
 The Phase-2 foundation threads `system_owner` through `internal/mcp/files/`. A
 non-empty `system_owner` opts a row out of the user namespace; the column is
 covered by the existing predicate audits referenced in [`docs/proposals/mcp_memory_plugin_manager.md` §2.8](../proposals/mcp_memory_plugin_manager.md#28-the-systemfs-interface).
-`SystemFS` is the read/write handle each Phase-2-aware plugin obtains at startup
-(no project, no API-key auth scope); pageindex uses it for tree JSON. The
+`SystemFS` is the plain Read/Write/Delete/List handle for one system owner
+(no project, no API-key auth scope); the dormant pageindex package uses it for tree JSON. The
 companion `WriteOpts.SkipRAGIndex` write option suppresses pgvector + BM25
 indexing for system rows so they do not pollute user search.
 
-Phase-3 shadow-replay scaffolding lives at
-[`../../internal/mcp/memory/plugin/shadow.go`](../../internal/mcp/memory/plugin/shadow.go)
-(`ShadowPlugin` wrapper) and its companion `shadow_recorder.go` / `shadow_score.go`.
-Production wiring remains deferred; runtime plugin selection is still done only by the
-optional per-call `plugin` argument and the global `settings.mcp.tools.memory.default_plugin`
-fallback. The promotion-gate analyzer is a separate
-binary at [`../../cmd/promote-pageindex/main.go`](../../cmd/promote-pageindex/main.go)
-that consumes the JSONL recorder output and emits the §7.8 win-rate verdict.
+The Phase-3 shadow-replay subsystem (live/shadow wrapper, mutation replay, JSONL
+recorder, win-rate scorer and `cmd/promote-pageindex`) is removed: both plugins share
+one FileIO service, so a replayed mutation changed the same file twice, and there is
+no requirement for it ([proposal §7.8](../proposals/mcp_memory_plugin_manager.md)).
+The manager registers RAG as itself (`newMCPFileManager` in `cmd/api_memory_plugins.go`), so every
+file operation runs once, on the plugin selected by the optional per-call `plugin`
+argument or the global `settings.mcp.tools.memory.default_plugin` fallback. Stale
+`settings.mcp.tools.memory.shadow.*` keys are ignored; `enabled=true` logs one startup
+warning.

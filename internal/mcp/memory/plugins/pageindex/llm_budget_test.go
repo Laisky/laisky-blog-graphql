@@ -219,7 +219,7 @@ func TestSearchPromptStaysWithinTreeQueryBudget(t *testing.T) {
 	idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg, Spend: frozenSpend(cfg.Limits)})
 	require.NoError(t, err)
 	searcher := NewSearcher(llm, store, idx, cfg)
-	res, err := searcher.Run(ctx, SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "where?", Limit: 3})
+	res, err := searcher.Run(ctx, SearchInput{Project: "p", Query: "where?", Limit: 3})
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Chunks, "an oversized outline must degrade, not break retrieval")
 	require.Positive(t, llm.Calls(), "the planner still runs on a reduced outline that fits the budget")

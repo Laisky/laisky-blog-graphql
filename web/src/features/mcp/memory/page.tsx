@@ -42,7 +42,7 @@ type ListDirPayload = {
   summaries: ListDirSummary[];
 };
 
-type MemoryPlugin = 'rag' | 'pageindex' | 'auto';
+type MemoryPlugin = 'rag' | 'auto';
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -54,9 +54,17 @@ const defaultMemoryProject = 'default';
 const defaultMemorySessionID = 'default';
 const defaultMemoryPlugin: MemoryPlugin = 'rag';
 
+/**
+ * normalizeMemoryPlugin maps a persisted or selected value to a supported memory plugin.
+ * The server disabled pageindex, so a stored pageindex selection falls back to auto (the server default).
+ */
 function normalizeMemoryPlugin(value: string | undefined): MemoryPlugin {
-  if (value === 'pageindex' || value === 'auto' || value === 'rag') {
+  if (value === 'auto' || value === 'rag') {
     return value;
+  }
+
+  if (value === 'pageindex') {
+    return 'auto';
   }
 
   return defaultMemoryPlugin;
@@ -354,7 +362,6 @@ export function MemoryPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="rag">RAG</SelectItem>
-                <SelectItem value="pageindex">pageindex</SelectItem>
                 <SelectItem value="auto">auto (server default)</SelectItem>
               </SelectContent>
             </Select>

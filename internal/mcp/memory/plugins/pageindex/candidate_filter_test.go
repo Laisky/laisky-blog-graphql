@@ -79,7 +79,7 @@ func TestSearcherRunCandidateLimitKeepsLexicalFirstDocuments(t *testing.T) {
 	cfg.TreeQuery.MaxSteps = 3
 	searcher := NewSearcher(llm, store, &Indexer{}, cfg)
 
-	result, err := searcher.Run(ctx, SearchInput{Catalogs: []SearchCatalog{{Storage: "project"}}, Query: "query", Limit: 10})
+	result, err := searcher.Run(ctx, SearchInput{Project: "project", Query: "query", Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, result.Chunks, 2)
 	require.Equal(t, []string{"/a.pdf", "/b.pdf"}, []string{

@@ -102,9 +102,10 @@ func TestRefreshedTruncatedTreeSettlesOnDocumentLimit(t *testing.T) {
 	clock.Advance(2 * time.Hour)
 	_, err = h.plugin.Search(ctx, auth, "p", "topic", "", 5)
 	require.NoError(t, err)
+	// The summary row and the catalog entry are published one after the other.
 	require.Eventually(t, func() bool {
 		_, code := h.summaryStatus(t, auth, "p", "/doc.md")
-		return code == degradedDocumentLimit
+		return code == degradedDocumentLimit && h.entry(t, auth, "p", "/doc.md").Degraded == degradedDocumentLimit
 	}, 10*time.Second, 10*time.Millisecond, "the refreshed tree reports the permanent limit")
 	entry := h.entry(t, auth, "p", "/doc.md")
 	require.Equal(t, degradedDocumentLimit, entry.Degraded)
@@ -360,7 +361,7 @@ func TestSearchPlannerReservesItsAnswer(t *testing.T) {
 	llm := &verboseLLM{tok: tok, output: 150_000}
 	idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg, Spend: frozenSpend(cfg.Limits)})
 	require.NoError(t, err)
-	_, err = NewSearcher(llm, store, idx, cfg).Run(ctx, SearchInput{Catalogs: []SearchCatalog{{Storage: "p"}}, Query: "where?", Limit: 3})
+	_, err = NewSearcher(llm, store, idx, cfg).Run(ctx, SearchInput{Project: "p", Query: "where?", Limit: 3})
 	require.NoError(t, err)
 	require.Equal(t, 1, llm.Calls(), "the planner runs on an outline that leaves room for its answer")
 	maxOut := int64(llm.MaxOut()[0])

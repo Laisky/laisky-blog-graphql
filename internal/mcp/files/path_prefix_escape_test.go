@@ -15,7 +15,7 @@ func newPrefixTestService(t *testing.T) (*Service, AuthContext) {
 	settings.Search.Enabled = false
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 1_000_000
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	return svc, AuthContext{APIKeyHash: "prefix-hash", APIKey: "prefix-key", UserIdentity: "user:prefix"}
 }
 
@@ -56,7 +56,7 @@ func TestSearchPathPrefixTreatsUnderscoreLiterally(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.Search.Enabled = true
-	svc := newTestService(t, settings, nil, &memoryCredentialStore{})
+	svc := newTestService(t, settings, nil)
 	auth := AuthContext{APIKeyHash: "prefix-search", APIKey: "key"}
 
 	_, err := svc.Write(ctx, auth, "proj", "/a_b/hit.txt", "needle literal", "utf-8", 0, WriteModeTruncate)

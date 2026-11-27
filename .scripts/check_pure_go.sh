@@ -88,16 +88,18 @@ else
     pass "no IPC bring-up in pageindex plugin"
 fi
 
-# 8. Positive check: the pageindex package exists and is wired into cmd/api.go.
+# 8. The dormant pageindex package stays in the tree for offline tooling, but
+#    PageIndex is disabled (maintainer decision 2026-11-27, superseding the
+#    §2.7 enablement gate): the API server must not import or wire it.
 if [ ! -d "internal/mcp/memory/plugins/pageindex" ]; then
     fail "internal/mcp/memory/plugins/pageindex/ is missing (proposal §2.6)"
 else
     pass "pageindex package present"
 fi
-if ! grep -q 'pageindexplugin' cmd/api.go; then
-    fail "cmd/api.go does not import the pageindex plugin (proposal §2.7)"
+if grep -rqE 'memory/plugins/pageindex"' cmd/*.go; then
+    fail "the API server imports the disabled pageindex plugin (proposal status note, 2026-11-27)"
 else
-    pass "cmd/api.go wires the pageindex plugin behind the §2.7 enablement gate"
+    pass "the API server does not wire the disabled pageindex plugin"
 fi
 
 # 9. Frontmatter guard: the proposal must still declare itself pure-Go-only.

@@ -268,6 +268,8 @@ func validateMCPMemoryConfig(get configGetter, errs *[]string) {
 	validateOptionalURL(get, "settings.mcp.tools.memory.heuristic.base_url", errs)
 	validateOptionalIntMin(get, "settings.mcp.tools.memory.heuristic.timeout_ms", 1, errs)
 	validateOptionalIntMin(get, "settings.mcp.tools.memory.heuristic.max_output_tokens", 1, errs)
+	// pageindex stays accepted as a stale value: the plugin is disabled, and
+	// newMCPFileManager routes such a default to rag with a warning.
 	validateOptionalStringOneOf(get, "settings.mcp.tools.memory.default_plugin", []string{"rag", "pageindex"}, errs)
 }
 
@@ -340,7 +342,6 @@ func validateFileIOConfigAtPrefix(get configGetter, prefix string, errs *[]strin
 	validateOptionalIntMin(get, joinConfigKey(prefix, "index.retry_max"), 0, errs)
 
 	validateOptionalIntMin(get, joinConfigKey(prefix, "security.credential_cache_ttl_seconds"), 1, errs)
-	validateOptionalStringNonEmpty(get, joinConfigKey(prefix, "security.credential_cache_prefix"), errs)
 }
 
 // validateWebsearchConfig validates web search engine configuration.

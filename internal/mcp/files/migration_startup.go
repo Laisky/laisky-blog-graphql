@@ -14,7 +14,8 @@ import (
 
 // fileSchemaVersion is a durable checkpoint, not a process-local cache. Add a
 // new numbered step when changing the schema; never repurpose a recorded step.
-const fileSchemaVersion int64 = 1
+// Step 1 is the file baseline; step 2 adds the credential envelope kv table.
+const fileSchemaVersion int64 = 2
 
 const fileMigrationVersionQuery = `SELECT version FROM mcp_file_schema_migrations ORDER BY version DESC LIMIT 1`
 
@@ -41,15 +42,16 @@ func RunMigrations(ctx context.Context, db *sql.DB, logger logSDK.Logger) error 
 	if err != nil {
 		return errors.Wrap(err, "detect database dialect")
 	}
-	return runFileMigrations(ctx, db, isPostgres, func(tx *sql.Tx) error {
-		return migrateFileSchema(ctx, tx, logger, isPostgres)
+	return runFileMigrations(ctx, db, isPostgres, func(tx *sql.Tx, from int64) error {
+		return migrateFileSchema(ctx, tx, logger, isPostgres, from)
 	})
 }
 
 // runFileMigrations checks before locking and rechecks after acquiring the
-// database lock. Schema changes and their completion marker commit together;
+// database lock. apply receives the recorded version and runs only the later
+// steps. Schema changes and their completion marker commit together;
 // interrupted/failed attempts leave no success marker and are retried on startup.
-func runFileMigrations(ctx context.Context, db *sql.DB, isPostgres bool, apply func(*sql.Tx) error) error {
+func runFileMigrations(ctx context.Context, db *sql.DB, isPostgres bool, apply func(tx *sql.Tx, from int64) error) error {
 	version, err := readFileMigrationVersion(ctx, db, isPostgres, true)
 	if err != nil {
 		return err
@@ -95,7 +97,7 @@ func runFileMigrations(ctx context.Context, db *sql.DB, isPostgres bool, apply f
 		return validateFileSchemaVersion(version)
 	}
 	if version < fileSchemaVersion {
-		if err := apply(tx); err != nil {
+		if err := apply(tx, version); err != nil {
 			return errors.Wrap(err, "apply file schema migration")
 		}
 		if _, err := tx.ExecContext(ctx, rebindSQL(`INSERT INTO mcp_file_schema_migrations (version) VALUES (?)`, isPostgres), fileSchemaVersion); err != nil {

@@ -30,34 +30,6 @@ func (e2eEmbedder) EmbedTexts(_ context.Context, _ string, inputs []string) ([]p
 	return vectors, nil
 }
 
-type e2eCredentialStore struct {
-	data map[string]string
-}
-
-// Store stores encrypted credential envelopes in memory for tests.
-func (s *e2eCredentialStore) Store(_ context.Context, key, payload string, _ time.Duration) error {
-	if s.data == nil {
-		s.data = map[string]string{}
-	}
-	s.data[key] = payload
-	return nil
-}
-
-// Load loads encrypted credential envelopes from memory for tests.
-func (s *e2eCredentialStore) Load(_ context.Context, key string) (string, error) {
-	value, ok := s.data[key]
-	if !ok {
-		return "", sql.ErrNoRows
-	}
-	return value, nil
-}
-
-// Delete removes encrypted credential envelopes from memory for tests.
-func (s *e2eCredentialStore) Delete(_ context.Context, key string) error {
-	delete(s.data, key)
-	return nil
-}
-
 // TestFileToolsEndToEndFlow verifies the full MCP tool flow for file operations.
 func TestFileToolsEndToEndFlow(t *testing.T) {
 	svc := newE2EFileService(t, false)
@@ -275,7 +247,6 @@ func newE2EFileService(t *testing.T, allowRootWipe bool) *files.Service {
 		e2eEmbedder{},
 		nil,
 		credential,
-		&e2eCredentialStore{},
 		nil,
 		nil,
 		func() time.Time { return time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC) },

@@ -11,12 +11,10 @@ import (
 // that stores it, under the locks runUserMutation selects. With overlay,
 // deleting a path served by DefaultProject removes that default for every
 // project, while deleting a project file that shadowed a default reveals the
-// default again. state, when set, mirrors each physical project's removed paths
-// into plugin-owned system state in the same transaction; such transactional
-// plugin deletes keep their own catalog instead of queueing RAG delete jobs.
-func (s *Service) deleteFiles(ctx context.Context, auth AuthContext, project, path string, recursive bool, state renameStateTx) (int, error) {
+// default again.
+func (s *Service) deleteFiles(ctx context.Context, auth AuthContext, project, path string, recursive bool) (int, error) {
 	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationDelete)
-	enqueueIndex := state == nil && systemOwnerFromContext(ctx) == ""
+	enqueueIndex := systemOwnerFromContext(ctx) == ""
 	deleted := 0
 	err := s.runUserMutation(ctx, auth.APIKeyHash, project, []string{project}, []string{path}, func(tx *sql.Tx, overlay bool) error {
 		if err := s.checkVersionTx(ctx, tx, auth, project, path, conditions.ExpectedVersion, false, overlay); err != nil {
@@ -31,11 +29,6 @@ func (s *Service) deleteFiles(ctx context.Context, auth AuthContext, project, pa
 		for _, layer := range layers {
 			if err := s.softDeletePathsTx(ctx, tx, auth, layer, grouped[layer], now, enqueueIndex); err != nil {
 				return err
-			}
-			if state != nil {
-				if err := state(ctx, tx, RenameStateChange{Project: layer, TargetProject: layer, OverwrittenPaths: grouped[layer]}); err != nil {
-					return err
-				}
 			}
 		}
 		deleted = len(targets)

@@ -63,7 +63,8 @@ is not an atomic directory transaction and does not cover new descendants.
 Malformed or empty version strings, numeric/null versions, invalid booleans,
 unsupported conditional backends, and contradictory conditions fail with
 `INVALID_ARGUMENT`; they never silently become blind writes. The native RAG
-adapter and PageIndex with its transactional SystemFS support conditions. The
+adapter supports conditions; PageIndex is disabled
+([memory plugins §6](mcp_memory_plugins.md#6-pageindex-phase-2)). The
 MCP plugin manager resolves a supporting adapter before calling it. Third-party
 adapters must explicitly advertise and actually enforce the version-precondition
 capability. Missing mutation intent is `PRECONDITION_REQUIRED` with
@@ -135,8 +136,8 @@ needed after deploying a changed tool schema.
 The production Web HTTP save and restore routes resolve the same version-aware
 project plugin as MCP. Historical bytes come from the immutable tenant-scoped
 history store; restoration keeps the original live token and validates it in the
-plugin's atomic write, without fetching a newer token. PageIndex side effects
-therefore run for editor saves/restores as well as MCP writes. Plugin resolution
+plugin's atomic write, without fetching a newer token. Plugin side effects, such
+as RAG index jobs, therefore run for editor saves/restores as well as MCP writes. Plugin resolution
 errors never fall back to raw storage. A standalone storage-only handler remains
 available for explicitly constructed storage tests; it still requires CAS.
 
@@ -156,8 +157,8 @@ Go callers can pass `WriteOpts{ExpectedVersion: read.Version}` or
 context produced by `WithFilePreconditions(ctx, auth, project, canonicalPath,
 operation, conditions)`. Always check its error. The context is scoped to the
 operation, authenticated tenant, project, canonical path, and system owner; use
-it only for that operation. Internal indexing reads and system-state mutations
-do not inherit a user-write precondition. The internal Service methods are
+it only for that operation. Internal indexing reads and system-namespace
+(`SystemFS`) writes do not inherit a user-write precondition. The internal Service methods are
 imperative storage primitives, not an external legacy-client compatibility path.
 Public MCP and HTTP adapters always require conditions for mutations. Internal
 writes continue to advance revisions so stale external tokens are invalidated.
@@ -218,7 +219,10 @@ Initial schema privileges must permit table alteration, index/trigger/function
 creation and backfill updates. Startup does not grant privileges. Permission or
 connection errors do not masquerade as an absent checkpoint. An unknown newer
 schema version fails closed. Future schema changes must add an ordered numbered
-step, not repurpose a completed one or replay the whole baseline. Manual schema
+step, not repurpose a completed one or replay the whole baseline. Step 1 is the
+file baseline. Step 2 creates the `kv` table (`library/db/sql/kv`) and its
+`expire_at` index, which hold the index worker's encrypted credential envelopes;
+a database at step 1 runs only step 2. Manual schema
 drift with a retained marker is not automatically repaired by scanning all
 objects on every startup. No new service, scheduler, or CI is required.
 

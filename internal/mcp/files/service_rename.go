@@ -3,7 +3,6 @@ package files
 import (
 	"context"
 	"database/sql"
-	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -31,63 +30,57 @@ type RenameMapping struct {
 	ContentHash  string
 }
 
-// renameRequest describes one rename or move. targetProject equals project for
-// an ordinary rename and names another project of the same caller for a
-// cross-project move.
-type renameRequest struct {
-	project, fromPath     string
-	targetProject, toPath string
-	overwrite             bool
+// RenameRequest describes one rename or move of a file or directory subtree.
+// An empty TargetProject, or one equal to Project, renames inside Project.
+// Any other TargetProject moves the files into that project of the same
+// caller, where ToPath, overwrite and destination conditions apply.
+type RenameRequest struct {
+	Project       string
+	FromPath      string
+	TargetProject string
+	ToPath        string
+	Overwrite     bool
+}
+
+// Destination returns the project that receives the renamed files.
+func (r RenameRequest) Destination() string {
+	if r.TargetProject == "" {
+		return r.Project
+	}
+	return r.TargetProject
 }
 
 // crossProject reports whether the request moves files into another project.
-func (r renameRequest) crossProject() bool {
-	return r.targetProject != r.project
+func (r RenameRequest) crossProject() bool {
+	return r.Destination() != r.Project
 }
 
-// renameStateTx persists plugin-owned system state inside the rename transaction.
-// It runs once for every physical project pair the mutation changed.
-type renameStateTx func(ctx context.Context, tx *sql.Tx, change RenameStateChange) error
-
-// Rename renames or moves a file path or directory subtree within one project.
-func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPath, toPath string, overwrite bool) (RenameResult, error) {
-	return s.rename(ctx, auth, renameRequest{project: project, fromPath: fromPath, targetProject: project, toPath: toPath, overwrite: overwrite}, nil)
-}
-
-// RenameAcrossProjects moves a file or directory subtree from project into
-// targetProject of the same caller in one transaction. File identity, version
-// history and summary metadata travel with the rows. The source is the file the
-// project shows at fromPath, which may be stored in DefaultProject; moving it
-// removes it from there. The destination is the physical targetProject: its
-// collision, overwrite and precondition rules see only targetProject's own
-// files, and the moved bytes must fit its quota. An empty targetProject keeps
-// the move inside project.
-func (s *Service) RenameAcrossProjects(ctx context.Context, auth AuthContext, project, fromPath, targetProject, toPath string, overwrite bool) (RenameResult, error) {
-	if targetProject == "" {
-		targetProject = project
-	}
-	return s.rename(ctx, auth, renameRequest{project: project, fromPath: fromPath, targetProject: targetProject, toPath: toPath, overwrite: overwrite}, nil)
-}
-
-// rename validates and applies one rename request. mutateState, when non-nil,
-// persists plugin-owned system state in the same transaction.
-func (s *Service) rename(ctx context.Context, auth AuthContext, req renameRequest, mutateState renameStateTx) (RenameResult, error) {
+// Rename renames or moves a file path or directory subtree, within one project
+// or into another project of the same caller, in one transaction. File
+// identity, version history and summary metadata travel with the rows; moved
+// bytes must fit the destination project's quota. It is the only rename
+// implementation and never depends on a search index: the RAG outbox
+// re-indexes the moved paths after commit. The source is the file, or the
+// files below a directory, that the project shows, which may be stored in
+// DefaultProject; see applyRenameTx.
+func (s *Service) Rename(ctx context.Context, auth AuthContext, req RenameRequest) (RenameResult, error) {
+	req.TargetProject = req.Destination()
 	if err := s.validateRenameRequest(auth, req); err != nil {
 		return RenameResult{}, errors.WithStack(err)
 	}
-	conditions := filePreconditionsFromContext(ctx, auth, req.project, req.fromPath, FileOperationRename)
-	samePath := !req.crossProject() && req.fromPath == req.toPath
+	conditions := filePreconditionsFromContext(ctx, auth, req.Project, req.FromPath, FileOperationRename)
+	samePath := !req.crossProject() && req.FromPath == req.ToPath
 	if samePath && conditions.Empty() {
 		return RenameResult{MovedCount: 0}, nil
 	}
 	// Only the source of a cross-project move resolves through the default
 	// layer; its destination is the explicit physical target project.
-	touched := []string{req.fromPath}
+	touched := []string{req.FromPath}
 	if !req.crossProject() {
-		touched = append(touched, req.toPath)
+		touched = append(touched, req.ToPath)
 	}
 	movedCount := 0
-	err := s.runUserMutation(ctx, auth.APIKeyHash, req.project, []string{req.project, req.targetProject}, touched, func(tx *sql.Tx, overlay bool) error {
+	err := s.runUserMutation(ctx, auth.APIKeyHash, req.Project, []string{req.Project, req.TargetProject}, touched, func(tx *sql.Tx, overlay bool) error {
 		if err := s.checkRenamePreconditionsTx(ctx, tx, auth, req, conditions, overlay); err != nil {
 			return err
 		}
@@ -95,19 +88,9 @@ func (s *Service) rename(ctx context.Context, auth AuthContext, req renameReques
 		if samePath {
 			return nil
 		}
-		changes, err := s.applyRenameTx(ctx, tx, auth, req, overlay)
-		if err != nil {
-			return err
-		}
-		for _, change := range changes {
-			movedCount += len(change.Mappings)
-			if mutateState != nil {
-				if err := mutateState(ctx, tx, change); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
+		var err error
+		movedCount, err = s.applyRenameTx(ctx, tx, auth, req, overlay)
+		return err
 	})
 	if err != nil {
 		return RenameResult{}, errors.WithStack(err)
@@ -117,78 +100,93 @@ func (s *Service) rename(ctx context.Context, auth AuthContext, req renameReques
 
 // validateRenameRequest checks the caller, both projects and both paths before
 // any lock or storage access.
-func (s *Service) validateRenameRequest(auth AuthContext, req renameRequest) error {
+func (s *Service) validateRenameRequest(auth AuthContext, req RenameRequest) error {
 	if err := s.validateAuth(auth); err != nil {
 		return err
 	}
-	if err := ValidateProject(req.project); err != nil {
+	if err := ValidateProject(req.Project); err != nil {
 		return err
 	}
-	if err := ValidateTargetProject(req.targetProject); err != nil {
+	if err := ValidateTargetProject(req.TargetProject); err != nil {
 		return err
 	}
-	if err := ValidatePath(req.fromPath); err != nil {
+	if err := ValidatePath(req.FromPath); err != nil {
 		return err
 	}
-	if err := ValidatePath(req.toPath); err != nil {
+	if err := ValidatePath(req.ToPath); err != nil {
 		return err
 	}
-	if req.fromPath == "" || req.toPath == "" {
+	if req.FromPath == "" || req.ToPath == "" {
 		return NewError(ErrCodeInvalidPath, "source and destination paths must be non-root", false)
 	}
 	return nil
 }
 
-// applyRenameTx resolves the sources and moves them, returning one state change
-// per physical project pair. Without overlay this is a single physical move.
-func (s *Service) applyRenameTx(ctx context.Context, tx *sql.Tx, auth AuthContext, req renameRequest, overlay bool) ([]RenameStateChange, error) {
-	sources, sourceIsDirectory, err := s.resolveRenameSources(ctx, tx, auth.APIKeyHash, req.project, req.fromPath, overlay)
+// renameMove is one validated physical move: the source rows of req.Project,
+// their destination paths in req.TargetProject, and the one destination file a
+// file rename replaces.
+type renameMove struct {
+	req         RenameRequest
+	sources     []renameSourceFile
+	mappings    []RenameMapping
+	overwritten []string
+}
+
+// applyRenameTx resolves the sources and moves them, returning how many files
+// moved. Each source moves from the physical project that stores it, with the
+// ordinary move rules of planRenameMoveTx: within that project for a rename
+// (so renaming an inherited default renames it in DefaultProject), into the
+// target project for a cross-project move. A same-project rename of an
+// overlaid project is also judged on the merged view (checkOverlayDestinationTx).
+// Every move is planned before the first change, so no destination check sees
+// files an earlier move of the same request placed there, and a rejected
+// rename leaves rows, history and the index outbox untouched.
+func (s *Service) applyRenameTx(ctx context.Context, tx *sql.Tx, auth AuthContext, req RenameRequest, overlay bool) (int, error) {
+	sources, sourceIsDirectory, err := s.resolveRenameSources(ctx, tx, auth.APIKeyHash, req.Project, req.FromPath, overlay)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	if !overlay {
-		change, err := s.moveFilesTx(ctx, tx, auth, req, sources, sourceIsDirectory)
-		if err != nil {
-			return nil, err
-		}
-		return []RenameStateChange{change}, nil
-	}
-	var changes []RenameStateChange
-	if !req.crossProject() {
-		displaced, err := s.checkOverlayDestinationTx(ctx, tx, auth.APIKeyHash, req, sources, sourceIsDirectory)
-		if err != nil {
-			return nil, err
-		}
-		if displaced != "" {
-			if err := s.softDeletePathsTx(ctx, tx, auth, req.project, []string{displaced}, s.clock(), systemOwnerFromContext(ctx) == ""); err != nil {
-				return nil, err
-			}
-			changes = append(changes, RenameStateChange{Project: req.project, TargetProject: req.project, OverwrittenPaths: []string{displaced}})
+	displaced := ""
+	if overlay && !req.crossProject() {
+		if displaced, err = s.checkOverlayDestinationTx(ctx, tx, auth.APIKeyHash, req, sources, sourceIsDirectory); err != nil {
+			return 0, err
 		}
 	}
-	// Every source moves from its own physical project with the ordinary move
-	// rules: within that project for a rename, into the target for a move.
 	byProject := make(map[string][]renameSourceFile)
 	for _, source := range sources {
 		byProject[source.Project] = append(byProject[source.Project], source)
 	}
+	moves := make([]renameMove, 0, len(byProject))
 	for _, layer := range sortedProjects(byProject) {
 		move := req
-		move.project = layer
+		move.Project = layer
 		if !req.crossProject() {
-			move.targetProject = layer
+			move.TargetProject = layer
 		}
-		if !move.crossProject() && move.fromPath == move.toPath {
-			// A default moved to the same path of DefaultProject is already there.
+		if !move.crossProject() && move.FromPath == move.ToPath {
+			// A default moved to its own path of DefaultProject is already there.
 			continue
 		}
-		change, err := s.moveFilesTx(ctx, tx, auth, move, byProject[layer], sourceIsDirectory)
+		planned, err := s.planRenameMoveTx(ctx, tx, auth.APIKeyHash, move, byProject[layer], sourceIsDirectory)
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
-		changes = append(changes, change)
+		moves = append(moves, planned)
 	}
-	return changes, nil
+	if displaced != "" {
+		if err := s.softDeletePathsTx(ctx, tx, auth, req.Project, []string{displaced}, s.clock(), systemOwnerFromContext(ctx) == ""); err != nil {
+			return 0, err
+		}
+	}
+	movedCount := 0
+	for _, move := range moves {
+		n, err := s.applyRenameMoveTx(ctx, tx, auth, move)
+		if err != nil {
+			return 0, err
+		}
+		movedCount += n
+	}
+	return movedCount, nil
 }
 
 // sortedProjects returns the keys of grouped with the addressed project before DefaultProject.
@@ -206,43 +204,63 @@ func sortedProjects(grouped map[string][]renameSourceFile) []string {
 	return projects
 }
 
-// moveFilesTx validates the destination in the physical target project and
-// moves the given sources of one physical project there.
-func (s *Service) moveFilesTx(ctx context.Context, tx *sql.Tx, auth AuthContext, req renameRequest, sources []renameSourceFile, sourceIsDirectory bool) (RenameStateChange, error) {
+// planRenameMoveTx validates moving sources, the rows of req.Project that
+// req.FromPath selects, to req.ToPath in req.TargetProject, and computes their
+// new paths. It changes nothing. A file keeps the ordinary contract checked by
+// checkFileDestinationTx; a directory is relocated, never merged or replaced:
+// overwrite is rejected and the destination must be vacant.
+func (s *Service) planRenameMoveTx(ctx context.Context, tx *sql.Tx, apiKeyHash string, req RenameRequest,
+	sources []renameSourceFile, sourceIsDirectory bool,
+) (renameMove, error) {
+	var overwritten []string
+	if sourceIsDirectory {
+		if req.Overwrite {
+			return renameMove{}, NewError(ErrCodeInvalidArgument, "overwrite applies only to a file; a directory moves only to a vacant path", false)
+		}
+		if !req.crossProject() && strings.HasPrefix(req.ToPath, req.FromPath+"/") {
+			return renameMove{}, NewError(ErrCodeInvalidPath, "destination cannot be within source subtree", false)
+		}
+		if err := s.checkVacantDestinationTx(ctx, tx, apiKeyHash, req.TargetProject, req.ToPath); err != nil {
+			return renameMove{}, err
+		}
+	} else {
+		var err error
+		if overwritten, err = s.checkFileDestinationTx(ctx, tx, apiKeyHash, req.TargetProject, req.ToPath, req.Overwrite); err != nil {
+			return renameMove{}, err
+		}
+	}
+	mappings, err := buildRenameMappings(sources, req.FromPath, req.ToPath, sourceIsDirectory)
+	if err != nil {
+		return renameMove{}, err
+	}
+	return renameMove{req: req, sources: sources, mappings: mappings, overwritten: overwritten}, nil
+}
+
+// applyRenameMoveTx applies one planned move: it releases the overwritten
+// destination file, enforces the target quota of a cross-project move and
+// remaps the rows, their history and their index jobs. It returns how many
+// files moved.
+func (s *Service) applyRenameMoveTx(ctx context.Context, tx *sql.Tx, auth AuthContext, move renameMove) (int, error) {
 	owner := systemOwnerFromContext(ctx)
-	if !req.crossProject() && sourceIsDirectory && strings.HasPrefix(req.toPath, req.fromPath+"/") {
-		return RenameStateChange{}, NewError(ErrCodeInvalidPath, "destination cannot be within source subtree", false)
-	}
-	if err := s.ensureNoParentFile(ctx, tx, auth.APIKeyHash, req.targetProject, req.toPath); err != nil {
-		return RenameStateChange{}, err
-	}
-	mappings, err := buildRenameMappings(sources, req.fromPath, req.toPath, sourceIsDirectory)
-	if err != nil {
-		return RenameStateChange{}, err
-	}
 	now := s.clock()
-	overwritePaths, err := s.validateRenameDestinations(ctx, tx, auth.APIKeyHash, req.targetProject, mappings, req.toPath, sourceIsDirectory, req.overwrite)
-	if err != nil {
-		return RenameStateChange{}, err
-	}
 	// A replaced destination keeps a history snapshot. Its index rows are
 	// replaced by the moved file's upsert, or cleared for an unindexed file.
-	if len(overwritePaths) > 0 {
-		if err := s.softDeletePathsTx(ctx, tx, auth, req.targetProject, overwritePaths, now, false); err != nil {
-			return RenameStateChange{}, err
+	if len(move.overwritten) > 0 {
+		if err := s.softDeletePathsTx(ctx, tx, auth, move.req.TargetProject, move.overwritten, now, false); err != nil {
+			return 0, err
 		}
 	}
-	if req.crossProject() {
+	if move.req.crossProject() {
 		// Overwritten destinations are already released, so the quota sees the
 		// target project exactly as it will be after the move commits.
-		if err := s.ensureProjectQuota(ctx, tx, auth.APIKeyHash, req.targetProject, renameSourceBytes(sources), nil); err != nil {
-			return RenameStateChange{}, err
+		if err := s.ensureProjectQuota(ctx, tx, auth.APIKeyHash, move.req.TargetProject, renameSourceBytes(move.sources), nil); err != nil {
+			return 0, err
 		}
 	}
-	if err := s.applyRenameMappingsTx(ctx, tx, auth, req, owner, mappings, now); err != nil {
-		return RenameStateChange{}, err
+	if err := s.applyRenameMappingsTx(ctx, tx, auth, move.req, owner, move.mappings, now); err != nil {
+		return 0, err
 	}
-	return RenameStateChange{Project: req.project, TargetProject: req.targetProject, Mappings: mappings, OverwrittenPaths: overwritePaths}, nil
+	return len(move.mappings), nil
 }
 
 // checkOverlayDestinationTx judges a same-project rename's destination on the
@@ -251,27 +269,35 @@ func (s *Service) moveFilesTx(ctx context.Context, tx *sql.Tx, auth AuthContext,
 // overwriting rename of a default must delete because it would hide the moved
 // default. A default the project hides is never replaced: the caller has not
 // seen it and could not condition on its version.
-func (s *Service) checkOverlayDestinationTx(ctx context.Context, tx *sql.Tx, apiKeyHash string, req renameRequest, sources []renameSourceFile, sourceIsDirectory bool) (string, error) {
-	if sourceIsDirectory && strings.HasPrefix(req.toPath, req.fromPath+"/") {
+func (s *Service) checkOverlayDestinationTx(ctx context.Context, tx *sql.Tx, apiKeyHash string, req RenameRequest, sources []renameSourceFile, sourceIsDirectory bool) (string, error) {
+	if sourceIsDirectory && req.Overwrite {
+		return "", NewError(ErrCodeInvalidArgument, "overwrite applies only to a file; a directory moves only to a vacant path", false)
+	}
+	if sourceIsDirectory && strings.HasPrefix(req.ToPath, req.FromPath+"/") {
 		return "", NewError(ErrCodeInvalidPath, "destination cannot be within source subtree", false)
 	}
-	blocked, err := s.visibleFileAtAncestor(ctx, tx, apiKeyHash, req.project, req.toPath, true)
+	blocked, err := s.visibleFileAtAncestor(ctx, tx, apiKeyHash, req.Project, req.ToPath, true)
 	if err != nil {
 		return "", err
 	}
 	if blocked {
 		return "", NewError(ErrCodeNotDirectory, "parent path is a file", false)
 	}
-	destination, err := s.resolveActiveFile(ctx, tx, apiKeyHash, req.project, req.toPath, true)
+	destination, err := s.resolveActiveFile(ctx, tx, apiKeyHash, req.Project, req.ToPath, true)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", errors.Wrap(err, "query rename destination")
 	}
-	below, err := s.visibleDescendants(ctx, tx, apiKeyHash, req.project, req.toPath, true)
+	below, err := s.visibleDescendants(ctx, tx, apiKeyHash, req.Project, req.ToPath, true)
 	if err != nil {
 		return "", err
 	}
 	if sourceIsDirectory {
-		return "", checkOverlayDirectoryDestination(req, sources, destination, below)
+		// The merged view has the same relocation rule as a physical project:
+		// a visible file at or below the destination occupies it.
+		if destination != nil || len(below) > 0 {
+			return "", NewError(ErrCodeAlreadyExists, "destination path already exists; a directory moves only to a vacant path", false)
+		}
+		return "", nil
 	}
 	if len(below) > 0 {
 		return "", NewError(ErrCodeAlreadyExists, "destination path already exists", false)
@@ -279,44 +305,19 @@ func (s *Service) checkOverlayDestinationTx(ctx context.Context, tx *sql.Tx, api
 	switch {
 	case destination == nil:
 		return "", nil
-	case !req.overwrite:
+	case !req.Overwrite:
 		return "", NewError(ErrCodeAlreadyExists, "destination path already exists", false)
 	case destination.Project == sources[0].Project || destination.Project == DefaultProject:
 		// The physical overwrite replaces a destination of the source's own
 		// project; a project file moved onto a default shadows it.
 		return "", nil
 	}
-	if _, err := s.findActiveFileQ(ctx, tx, apiKeyHash, DefaultProject, req.toPath); err == nil {
+	if _, err := s.findActiveFileQ(ctx, tx, apiKeyHash, DefaultProject, req.ToPath); err == nil {
 		return "", NewError(ErrCodeAlreadyExists, "destination is also occupied by a default this project hides", false)
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return "", errors.Wrap(err, "query hidden default destination")
 	}
 	return destination.Path, nil
-}
-
-// checkOverlayDirectoryDestination rejects a directory rename whose moved files
-// would conflict by name with a visible file that is not itself moved.
-func checkOverlayDirectoryDestination(req renameRequest, sources []renameSourceFile, destination *File, below []layerFile) error {
-	if destination != nil {
-		return NewError(ErrCodeAlreadyExists, "destination path already exists", false)
-	}
-	moved := make(map[uint64]struct{}, len(sources))
-	for _, source := range sources {
-		moved[source.ID] = struct{}{}
-	}
-	occupied := make([]string, 0, len(below))
-	for _, file := range below {
-		if _, isSource := moved[file.ID]; !isSource {
-			occupied = append(occupied, file.Path)
-		}
-	}
-	shadow := newUpperShadow(occupied)
-	for _, source := range sources {
-		if shadow.hides(req.toPath + strings.TrimPrefix(source.Path, req.fromPath)) {
-			return NewError(ErrCodeAlreadyExists, "destination path collision", false)
-		}
-	}
-	return nil
 }
 
 // ValidateTargetProject validates a rename destination project and names it in
@@ -357,41 +358,41 @@ func (s *Service) withProjectLocks(ctx context.Context, apiKeyHash string, proje
 // checkRenamePreconditionsTx checks both names before any lifecycle side effect.
 // The source and a same-project destination are checked against the files the
 // project shows; a cross-project destination against the physical target row.
-func (s *Service) checkRenamePreconditionsTx(ctx context.Context, tx *sql.Tx, auth AuthContext, req renameRequest, p FilePreconditions, overlay bool) error {
+func (s *Service) checkRenamePreconditionsTx(ctx context.Context, tx *sql.Tx, auth AuthContext, req RenameRequest, p FilePreconditions, overlay bool) error {
 	if p.Empty() {
 		return nil
 	}
 	if p.DestinationPath != "" {
 		destinationProject := p.DestinationProject
 		if destinationProject == "" {
-			destinationProject = req.project
+			destinationProject = req.Project
 		}
-		if p.DestinationPath != req.toPath || destinationProject != req.targetProject {
+		if p.DestinationPath != req.ToPath || destinationProject != req.TargetProject {
 			return NewError(ErrCodeInvalidArgument, "rename destination does not match its precondition scope", false)
 		}
 	}
 	source := func(path, expected string, createOnly bool) error {
-		return s.checkVersionTx(ctx, tx, auth, req.project, path, expected, createOnly, overlay)
+		return s.checkVersionTx(ctx, tx, auth, req.Project, path, expected, createOnly, overlay)
 	}
 	destination := source
 	if req.crossProject() {
 		destination = func(path, expected string, createOnly bool) error {
-			return s.checkPathVersionTx(ctx, tx, auth, req.targetProject, path, expected, createOnly)
+			return s.checkPathVersionTx(ctx, tx, auth, req.TargetProject, path, expected, createOnly)
 		}
 	}
-	if err := source(req.fromPath, p.ExpectedVersion, false); err != nil {
+	if err := source(req.FromPath, p.ExpectedVersion, false); err != nil {
 		return err
 	}
-	if !req.crossProject() && req.fromPath == req.toPath {
-		return destination(req.toPath, p.ExpectedDestinationVersion, p.DestinationMustNotExist)
+	if !req.crossProject() && req.FromPath == req.ToPath {
+		return destination(req.ToPath, p.ExpectedDestinationVersion, p.DestinationMustNotExist)
 	}
-	if req.overwrite && p.ExpectedDestinationVersion == "" && !p.DestinationMustNotExist {
+	if req.Overwrite && p.ExpectedDestinationVersion == "" && !p.DestinationMustNotExist {
 		return NewError(ErrCodeInvalidArgument, "conditional overwrite rename requires a destination version or destination_must_not_exist", false)
 	}
-	if !req.overwrite && p.ExpectedDestinationVersion != "" {
+	if !req.Overwrite && p.ExpectedDestinationVersion != "" {
 		return NewError(ErrCodeInvalidArgument, "expected_destination_version requires overwrite=true", false)
 	}
-	return destination(req.toPath, p.ExpectedDestinationVersion, p.DestinationMustNotExist || !req.overwrite)
+	return destination(req.ToPath, p.ExpectedDestinationVersion, p.DestinationMustNotExist || !req.Overwrite)
 }
 
 // resolveRenameSources resolves the file at fromPath, or else the files below
@@ -423,7 +424,9 @@ func (s *Service) resolveRenameSources(ctx context.Context, tx *sql.Tx, apiKeyHa
 	return sources, true, nil
 }
 
-// buildRenameMappings computes destination paths for the selected rename source files.
+// buildRenameMappings computes the destination path of every selected source
+// and validates each one, so a directory move cannot create a path the
+// ordinary path rules reject, such as one over the length limit.
 func buildRenameMappings(sourceFiles []renameSourceFile, fromPath, toPath string, sourceIsDirectory bool) ([]RenameMapping, error) {
 	mappings := make([]RenameMapping, 0, len(sourceFiles))
 	for _, source := range sourceFiles {
@@ -435,85 +438,77 @@ func buildRenameMappings(sourceFiles []renameSourceFile, fromPath, toPath string
 			}
 			newPath = toPath + suffix
 		}
+		if err := ValidatePath(newPath); err != nil {
+			return nil, errors.WithStack(err)
+		}
 		mappings = append(mappings, RenameMapping{ID: source.ID, OldPath: source.Path, NewPath: newPath, SkipRAGIndex: source.SkipRAGIndex, ContentHash: source.ContentHash})
 	}
 	return mappings, nil
 }
 
-// validateRenameDestinations checks rename collisions and returns overwrite targets.
-func (s *Service) validateRenameDestinations(
-	ctx context.Context, tx *sql.Tx, apiKeyHash, project string, mappings []RenameMapping,
-	toPath string, sourceIsDirectory, overwrite bool,
-) ([]string, error) {
-	destinationPaths := make([]string, 0, len(mappings))
-	sourcePathByID := make(map[uint64]string, len(mappings))
-	pathSet := make(map[string]struct{}, len(mappings))
-	for _, mapping := range mappings {
-		sourcePathByID[mapping.ID] = mapping.OldPath
-		if _, exists := pathSet[mapping.NewPath]; exists {
-			return nil, NewError(ErrCodeAlreadyExists, "destination path collision", false)
-		}
-		pathSet[mapping.NewPath] = struct{}{}
-		destinationPaths = append(destinationPaths, mapping.NewPath)
+// checkVacantDestinationTx is the destination check of a directory move. The
+// destination is occupied by a file at toPath, by any file below it (FileIO
+// directories are implicit, so every existing directory has one) or by a file
+// ancestor, and an occupied destination is rejected: directories are relocated,
+// never merged or replaced. It runs under the project locks before any change.
+func (s *Service) checkVacantDestinationTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, toPath string) error {
+	if err := s.ensureNoParentFile(ctx, tx, apiKeyHash, project, toPath); err != nil {
+		return err
 	}
-	owner := systemOwnerFromContext(ctx)
-	if !sourceIsDirectory {
-		below, belowArgs := belowPathSQL("path", toPath)
-		var descendantCount int64
-		if err := tx.QueryRowContext(ctx,
-			rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND `+below, s.isPostgres),
-			append([]any{apiKeyHash, project, owner}, belowArgs...)...,
-		).Scan(&descendantCount); err != nil {
-			return nil, errors.Wrap(err, "check destination descendants")
-		}
-		if descendantCount > 0 {
-			return nil, NewError(ErrCodeAlreadyExists, "destination path already exists", false)
-		}
-	}
-	if sourceIsDirectory {
-		var destinationRootFileCount int64
-		if err := tx.QueryRowContext(ctx,
-			rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-			apiKeyHash, project, toPath, owner,
-		).Scan(&destinationRootFileCount); err != nil {
-			return nil, errors.Wrap(err, "check destination root collision")
-		}
-		if destinationRootFileCount > 0 {
-			return nil, NewError(ErrCodeAlreadyExists, "destination path already exists", false)
-		}
-	}
-	inClause, inArgs := buildInClause(destinationPaths, s.isPostgres, 4)
-	query := rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
-	args := make([]any, 0, 3+len(inArgs))
-	args = append(args, apiKeyHash, project, owner)
-	args = append(args, inArgs...)
-	rows, err := tx.QueryContext(ctx, strings.Replace(query, "%s", inClause, 1), args...)
+	below, belowArgs := belowPathSQL("path", toPath)
+	occupied, err := s.liveFileExistsTx(ctx, tx, apiKeyHash, project, "(path = ? OR "+below+")", append([]any{toPath}, belowArgs...))
 	if err != nil {
-		return nil, errors.Wrap(err, "query destination collisions")
+		return err
 	}
-	defer func() { _ = rows.Close() }()
-	var destinationFiles []renameSourceFile
-	for rows.Next() {
-		var row renameSourceFile
-		if scanErr := rows.Scan(&row.ID, &row.Path); scanErr != nil {
-			return nil, errors.Wrap(scanErr, "scan destination collision")
-		}
-		destinationFiles = append(destinationFiles, row)
+	if occupied {
+		return NewError(ErrCodeAlreadyExists, "destination path already exists; a directory moves only to a vacant path", false)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "iterate destination collisions")
+	return nil
+}
+
+// checkFileDestinationTx is the destination check of a single-file rename. The
+// destination must not be a directory or have a file ancestor; an existing
+// file there is replaced only with overwrite, and is returned for release.
+func (s *Service) checkFileDestinationTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, toPath string, overwrite bool) ([]string, error) {
+	if err := s.ensureNoParentFile(ctx, tx, apiKeyHash, project, toPath); err != nil {
+		return nil, err
 	}
-	overwritePaths := make([]string, 0, len(destinationFiles))
-	for _, destination := range destinationFiles {
-		if sourcePath, ok := sourcePathByID[destination.ID]; ok && sourcePath == destination.Path {
-			continue
-		}
-		if !overwrite || sourceIsDirectory {
-			return nil, NewError(ErrCodeAlreadyExists, "destination path already exists", false)
-		}
-		overwritePaths = append(overwritePaths, destination.Path)
+	below, belowArgs := belowPathSQL("path", toPath)
+	isDirectory, err := s.liveFileExistsTx(ctx, tx, apiKeyHash, project, below, belowArgs)
+	if err != nil {
+		return nil, err
 	}
-	return overwritePaths, nil
+	if isDirectory {
+		return nil, NewError(ErrCodeAlreadyExists, "destination path already exists", false)
+	}
+	exists, err := s.liveFileExistsTx(ctx, tx, apiKeyHash, project, "path = ?", []any{toPath})
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, nil
+	}
+	if !overwrite {
+		return nil, NewError(ErrCodeAlreadyExists, "destination path already exists", false)
+	}
+	return []string{toPath}, nil
+}
+
+// liveFileExistsTx reports whether project has a live file whose row matches
+// predicate, a SQL condition with placeholders bound to args.
+func (s *Service) liveFileExistsTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, predicate string, args []any) (bool, error) {
+	var one int
+	err := tx.QueryRowContext(ctx,
+		rebindSQL(`SELECT 1 FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND `+predicate+` LIMIT 1`, s.isPostgres),
+		append([]any{apiKeyHash, project, systemOwnerFromContext(ctx)}, args...)...,
+	).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, errors.Wrap(err, "query rename destination")
+	}
+	return true, nil
 }
 
 // applyRenameMappingsTx moves file/version rows into the destination project
@@ -521,24 +516,24 @@ func (s *Service) validateRenameDestinations(
 // project, so a cross-project move deletes the old index entry in the source
 // project and rebuilds the new one in the target project.
 func (s *Service) applyRenameMappingsTx(ctx context.Context, tx *sql.Tx, auth AuthContext,
-	req renameRequest, owner string, mappings []RenameMapping, now time.Time,
+	req RenameRequest, owner string, mappings []RenameMapping, now time.Time,
 ) error {
 	for _, mapping := range mappings {
 		if _, err := tx.ExecContext(ctx,
 			rebindSQL(`UPDATE mcp_files SET project = ?, path = ?, updated_at = ? WHERE id = ? AND system_owner = ?`, s.isPostgres),
-			req.targetProject, mapping.NewPath, now, mapping.ID, owner,
+			req.TargetProject, mapping.NewPath, now, mapping.ID, owner,
 		); err != nil {
 			return errors.Wrap(err, "apply rename path remap")
 		}
 		if _, err := tx.ExecContext(ctx,
 			rebindSQL(`UPDATE mcp_file_versions SET project = ?, path = ? WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ?`, s.isPostgres),
-			req.targetProject, mapping.NewPath, auth.APIKeyHash, req.project, mapping.OldPath, owner,
+			req.TargetProject, mapping.NewPath, auth.APIKeyHash, req.Project, mapping.OldPath, owner,
 		); err != nil {
 			return errors.Wrap(err, "apply rename version path remap")
 		}
 		if owner == "" {
 			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-				APIKeyHash: auth.APIKeyHash, Project: req.project, FilePath: mapping.OldPath,
+				APIKeyHash: auth.APIKeyHash, Project: req.Project, FilePath: mapping.OldPath,
 				Operation: indexOperationDelete, FileUpdatedAt: &now, Status: indexStatusPending, RetryCount: 0,
 				AvailableAt: now, CreatedAt: now, UpdatedAt: now,
 			}); err != nil {
@@ -547,89 +542,23 @@ func (s *Service) applyRenameMappingsTx(ctx context.Context, tx *sql.Tx, auth Au
 			if mapping.SkipRAGIndex {
 				// This destination will not get an upsert. Clear old RAG rows
 				// atomically, also covering a path reused at the same timestamp.
-				if err := s.deleteIndexRowsTx(ctx, tx, auth.APIKeyHash, req.targetProject, mapping.NewPath); err != nil {
+				if err := s.deleteIndexRowsTx(ctx, tx, auth.APIKeyHash, req.TargetProject, mapping.NewPath); err != nil {
 					return err
 				}
 				continue
 			}
 			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-				APIKeyHash: auth.APIKeyHash, Project: req.targetProject, FilePath: mapping.NewPath,
+				APIKeyHash: auth.APIKeyHash, Project: req.TargetProject, FilePath: mapping.NewPath,
 				Operation: indexOperationUpsert, FileUpdatedAt: &now, ContentHash: mapping.ContentHash, Status: indexStatusPending, RetryCount: 0,
 				AvailableAt: now, CreatedAt: now, UpdatedAt: now,
 			}); err != nil {
 				return errors.Wrap(err, "enqueue rename upsert job")
 			}
-			if err := s.storeCredentialEnvelopeTx(ctx, tx, auth, req.targetProject, mapping.NewPath, now); err != nil {
+			if err := s.storeCredentialEnvelopeTx(ctx, tx, auth, req.TargetProject, mapping.NewPath, now); err != nil {
 				return err
 			}
 		}
 	}
 
-	return nil
-}
-
-// mutateRenameSystemStateTx persists the plugin manifest in the same rename transaction.
-func (s *Service) mutateRenameSystemStateTx(ctx context.Context, tx *sql.Tx,
-	systemProject, systemOwner string, mutate SystemStateMutator,
-) error {
-	stateCtx := contextWithSystemOwner(ctx, systemOwner)
-	state, err := s.loadSystemStateTx(stateCtx, tx, systemOwner, systemProject)
-	if err != nil {
-		return err
-	}
-	if err := mutate(state); err != nil {
-		return errors.Wrap(err, "mutate rename system state")
-	}
-	return s.persistSystemStateTx(stateCtx, tx, systemOwner, systemProject, state)
-}
-
-// mutateMoveSystemStateTx applies one physical change to the system namespaces
-// plan maps its projects to. It reads only the selected rows, once, and keeps
-// the snapshot to diff mutations without reloading state under the locks.
-func (s *Service) mutateMoveSystemStateTx(ctx context.Context, tx *sql.Tx, systemOwner string, change RenameStateChange, plan SystemStateMovePlan) error {
-	systemProject, targetSystemProject := plan.SystemProject(change.Project), plan.SystemProject(change.TargetProject)
-	if err := ValidateProject(systemProject); err != nil {
-		return errors.Wrap(err, "validate source system project")
-	}
-	if err := ValidateProject(targetSystemProject); err != nil {
-		return errors.Wrap(err, "validate target system project")
-	}
-	if (change.Project == change.TargetProject) != (systemProject == targetSystemProject) {
-		return errors.New("project and system namespace move scopes must agree")
-	}
-	stateCtx := contextWithSystemOwner(ctx, systemOwner)
-	sourceSnapshot := make(map[string][]byte)
-	if err := s.readSelectedSystemStateTx(stateCtx, tx, systemOwner, systemProject, plan.CatalogPaths, sourceSnapshot); err != nil {
-		return err
-	}
-	var targetSnapshot map[string][]byte
-	if systemProject != targetSystemProject {
-		targetSnapshot = make(map[string][]byte)
-		if err := s.readSelectedSystemStateTx(stateCtx, tx, systemOwner, targetSystemProject, plan.CatalogPaths, targetSnapshot); err != nil {
-			return err
-		}
-	}
-	sourcePaths, targetPaths, err := plan.AffectedPaths(change, sourceSnapshot, targetSnapshot)
-	if err != nil {
-		return errors.Wrap(err, "select rename system state")
-	}
-	if err := s.readSelectedSystemStateTx(stateCtx, tx, systemOwner, systemProject, sourcePaths, sourceSnapshot); err != nil {
-		return err
-	}
-	if targetSnapshot != nil {
-		if err := s.readSelectedSystemStateTx(stateCtx, tx, systemOwner, targetSystemProject, targetPaths, targetSnapshot); err != nil {
-			return err
-		}
-	}
-	source, target := maps.Clone(sourceSnapshot), maps.Clone(targetSnapshot)
-	if err := plan.Mutate(change, source, target); err != nil {
-		return errors.Wrap(err, "mutate rename system state")
-	}
-	if err := s.persistSystemStateDiffTx(stateCtx, tx, systemOwner, systemProject, sourceSnapshot, source); err != nil {
-		return err
-	}
-	if target != nil {
-		return s.persistSystemStateDiffTx(stateCtx, tx, systemOwner, targetSystemProject, targetSnapshot, target)
-	}
 	return nil
 }

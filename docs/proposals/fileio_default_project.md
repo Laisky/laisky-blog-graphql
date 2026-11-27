@@ -37,7 +37,7 @@ project of the same API key, similar to the lower layer of an OverlayFS mount:
 - Every other user project `P` is **overlaid**: its filesystem view is `P` (upper
   layer) over `@DEFAULT` (lower layer).
 - Never overlaid: the `file_search` wildcard `project="*"`, system namespaces
-  (`system_owner <> ''`, such as PageIndex catalogs), and internal workers (index
+  (`system_owner <> ''`, such as the dormant PageIndex catalogs), and internal workers (index
   worker, summary refresh, backfill), which address physical rows.
 - Storage is unchanged: `@DEFAULT` rows are ordinary `mcp_files` rows with
   `project = '@DEFAULT'` under the same `apikey_hash`. No migration is needed.
@@ -122,7 +122,18 @@ This applies when `target_project` is omitted, empty, or equal to `project`.
   destination without `overwrite=true`, fail with `ALREADY_EXISTS`. The source's
   physical project must also stay self-consistent; for example, a default cannot
   move below a default file that `P` hides (`NOT_DIRECTORY`).
-- **Overwrite replaces only what `P` sees:**
+- **A directory is relocated, never merged or replaced** (the #106 rule, applied
+  to the view and to every physical project). `overwrite=true` fails with
+  `INVALID_ARGUMENT`. The destination must be vacant in `P`'s view: no visible
+  file at `to_path` and none below it, so a visible default below `to_path`
+  occupies it (`ALREADY_EXISTS`). Each physical group of a mixed-layer source
+  (`P`'s files and inherited defaults) must also find its own physical
+  destination vacant, by the ordinary #106 check.
+- **Every physical group is planned before the first change.** A request whose
+  source spans both layers validates all of its moves, then applies them, so no
+  destination check sees files an earlier group of the same request moved there,
+  and a rejected rename changes no file, history or outbox row in any project.
+- **Overwrite (single file) replaces only what `P` sees:**
   - A visible destination in the source's own project is replaced. It is
     snapshotted into history first.
   - A `P` file moved onto a visible default **shadows** it. The default stays
@@ -142,8 +153,12 @@ This applies when `target_project` names another project. It is the #106 move.
   `P`'s own file or the inherited `@DEFAULT` file (for an internal directory move,
   every file `P` sees below `from_path`).
 - **Destination:** the explicit physical `target_project`/`to_path`. Collisions,
-  `overwrite`, `expected_destination_version`, `destination_must_not_exist` and
-  the quota are judged on `target_project`'s own physical files only.
+  `overwrite`, `expected_destination_version`, `destination_must_not_exist`, the
+  directory vacancy rule and the quota are judged on `target_project`'s own
+  physical files only. A directory moves only to a vacant physical path; a default
+  the target project merely inherits there does not occupy it. Every physical
+  group of a mixed-layer source is planned against the target before any group
+  moves (§5.1).
 - A `@DEFAULT` file at the destination path is not a collision of an ordinary
   target project. The moved file becomes that project's own file and shadows the
   default there. The default is never overwritten or deleted as a side effect.
@@ -151,9 +166,9 @@ This applies when `target_project` names another project. It is the #106 move.
   and disappears from every project that inherited it.
 - `target_project="@DEFAULT"` moves a project file into the shared layer. Its
   destination is judged on `@DEFAULT`'s physical files.
-- The row keeps its id and incarnation. Its history, index jobs, PageIndex trees and
-  catalog entries move with it in one transaction, with the same locking, version
-  checks, quotas, history and plugin hooks as every #106 move.
+- The row keeps its id and incarnation. Its history and index jobs move with it in
+  one transaction, with the same locking, version checks, quotas and history as
+  every #106 move. No search-index state takes part in the move.
 - **Locks:** `project` and `target_project`, plus `@DEFAULT` when the default layer
   touches the source path, always acquired in `ProjectLockOrder` (§9). The source
   is re-resolved and validated under those locks.
@@ -198,7 +213,7 @@ History belongs to one physical file. It is never a union of `P` and `@DEFAULT`.
 - History of a moved file moves with its row (§5.2), so it follows a cross-project
   move.
 
-## 7. Retrieval is physical (RAG and PageIndex)
+## 7. Retrieval is physical (RAG)
 
 Search does not apply the filesystem view.
 
@@ -216,17 +231,21 @@ Search does not apply the filesystem view.
   physical; its hits carry no `project` field. The wildcard `*` is unchanged: all
   projects of the caller, every hit labelled.
 - `path_prefix` is a literal, case-sensitive string prefix.
-- Indexing and summaries are physical. A default is chunked, embedded, summarized
-  and PageIndex-indexed once, under `@DEFAULT`, never per inheriting project.
-  `WriteResult.ResolvedProject` (internal, never on the wire) names the physical
-  project a write stored, and plugins index that project.
+- Indexing and summaries are physical. A default is chunked, embedded and
+  summarized once, under `@DEFAULT`, never per inheriting project; the RAG outbox
+  job of a write names the physical project that stored it.
+  `WriteResult.ResolvedProject` (internal, never on the wire) names that project.
+  RAG is the only supported retrieval backend; PageIndex is disabled
+  (`docs/manual/mcp_memory_plugins.md` §6) and takes no part in the layer.
 
 ## 8. Automated project-local state
 
 The memory engine (`memory_before_turn`, `memory_after_turn`, and maintenance:
-retention, compaction and rewrites under `/memory/...`) and the shadow plugin's
-replay address physical projects only. They never read, rewrite, archive or
-delete a shared default as if it were project state. The memory tools' implicit
+retention, compaction and rewrites under `/memory/...`) addresses physical
+projects only. It never reads, rewrites, archives or deletes a shared default as
+if it were project state. Every write, including an `APPEND` to an inherited
+default, runs exactly once, on the selected plugin; the shadow replay that used to
+re-run mutations through a second plugin was removed (#106). The memory tools' implicit
 project `default` (lowercase) is an ordinary project unrelated to `@DEFAULT`.
 
 ## 9. Concurrency
@@ -291,9 +310,13 @@ The review replaced view-filtered retrieval with physical retrieval, which
 removed the correlated shadow predicate in RAG retrieval and its existence
 probe, and the PageIndex fallback and shadowed-catalog merge. The
 overlay-specific rename planner (its merged and physical conflict planners)
-gave way to the ordinary move, run once per physical project. `SystemStateHooks`
-and `PathMove` gave way to #106's change-based plugin state plan, and the
-duplicated physical delete-target helpers gave way to one view-aware resolver.
+gave way to the ordinary move, run once per physical project, and all of those
+moves are planned before any is applied. `SystemStateHooks` and `PathMove` are
+gone, and so is every plugin state hook: PageIndex is disabled and shadow replay
+was removed in #106, so no overlay-specific PageIndex catalog merge, search
+fallback or shadow replay map exists. The duplicated physical delete-target
+helpers gave way to one view-aware resolver. A directory rename relocates only to
+a vacant path, in the view and physically, instead of merging per leaf.
 History stopped being a union of `P` and `@DEFAULT` (`historyProjects` and its
 `project IN (P, @DEFAULT)` queries): it is the resolved file's own physical
 history, through the same resolver (§6).

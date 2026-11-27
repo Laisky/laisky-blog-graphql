@@ -3,7 +3,6 @@ package files
 import (
 	"context"
 	"database/sql"
-	"time"
 
 	errors "github.com/Laisky/errors/v2"
 )
@@ -52,35 +51,4 @@ func (s *Service) reactivateSummaryRefreshJobs(ctx context.Context, q sqlQueryEx
 type sqlQueryExecutor interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
-}
-
-// storeCredentialEnvelopeTx stores a credential and reactivates waiting refresh
-// jobs on the caller's transaction. It is used by write and rename paths, which
-// already hold the project lock and must not open a second database transaction.
-func (s *Service) storeCredentialEnvelopeTx(ctx context.Context, tx *sql.Tx, auth AuthContext, project, path string, updatedAt time.Time) error {
-	if !s.settings.Search.Enabled {
-		return nil
-	}
-	if s.credential == nil || s.credStore == nil {
-		return NewError(ErrCodeSearchBackend, "credential store not configured", false)
-	}
-	ref := CredentialReference{
-		APIKeyHash: auth.APIKeyHash,
-		Project:    project,
-		Path:       path,
-		UpdatedAt:  updatedAt,
-	}
-	payload, err := s.credential.EncryptCredential(ctx, auth.APIKey, ref.AAD())
-	if err != nil {
-		return errors.Wrap(err, "encrypt credential")
-	}
-	key := ref.CacheKey(s.settings.Security.CredentialCachePrefix)
-	if err := s.credStore.Store(ctx, key, payload, s.settings.Security.CredentialCacheTTL); err != nil {
-		return errors.Wrap(err, "store credential envelope")
-	}
-	err = s.reactivateSummaryRefreshJobs(ctx, tx, ref)
-	if err != nil {
-		return err
-	}
-	return nil
 }

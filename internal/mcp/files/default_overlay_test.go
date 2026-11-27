@@ -31,7 +31,7 @@ func newOverlayFixture(t *testing.T) *overlayFixture {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.Index.BatchSize = 50
 	settings.MaxProjectBytes = 1_000_000
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	return &overlayFixture{
 		t: t, ctx: context.Background(), svc: svc,
 		auth:    AuthContext{APIKeyHash: "tenant-a", APIKey: "key-a", UserIdentity: "user:a"},
@@ -340,7 +340,7 @@ func TestDefaultOverlayRenameSemantics(t *testing.T) {
 	// history moves with it.
 	f.put(DefaultProject, "/old.md", "default v1")
 	f.put(DefaultProject, "/old.md", "default v2")
-	moved, err := f.svc.Rename(f.ctx, f.auth, "alpha", "/old.md", "/new.md", false)
+	moved, err := f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "alpha", FromPath: "/old.md", ToPath: "/new.md", Overwrite: false})
 	require.NoError(t, err)
 	require.Equal(t, 1, moved.MovedCount)
 	require.Equal(t, "default v2", f.read("beta", "/new.md"))
@@ -354,9 +354,9 @@ func TestDefaultOverlayRenameSemantics(t *testing.T) {
 	// A project file renamed onto a visible default fails without overwrite, and
 	// with overwrite only shadows it in that project.
 	f.put("alpha", "/draft.md", "alpha draft")
-	_, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/draft.md", "/new.md", false)
+	_, err = f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "alpha", FromPath: "/draft.md", ToPath: "/new.md", Overwrite: false})
 	f.requireCode(err, ErrCodeAlreadyExists)
-	_, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/draft.md", "/new.md", true)
+	_, err = f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "alpha", FromPath: "/draft.md", ToPath: "/new.md", Overwrite: true})
 	require.NoError(t, err)
 	require.Equal(t, "alpha draft", f.read("alpha", "/new.md"))
 	require.Equal(t, "default v2", f.read("beta", "/new.md"))
@@ -366,11 +366,11 @@ func TestDefaultOverlayRenameSemantics(t *testing.T) {
 	// so every project sees the source. A default the override hides at the same
 	// name was never visible, so its replacement is refused instead.
 	f.put(DefaultProject, "/src.md", "default src")
-	_, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/src.md", "/new.md", true)
+	_, err = f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "alpha", FromPath: "/src.md", ToPath: "/new.md", Overwrite: true})
 	f.requireCode(err, ErrCodeAlreadyExists)
 	require.Equal(t, "default v2", f.read("beta", "/new.md"), "the hidden default is untouched")
 	f.svc.mustWritePhysical(t, f.auth, "alpha", "/fresh.md", "alpha draft")
-	moved, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/src.md", "/fresh.md", true)
+	moved, err = f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "alpha", FromPath: "/src.md", ToPath: "/fresh.md", Overwrite: true})
 	require.NoError(t, err)
 	require.Equal(t, 1, moved.MovedCount)
 	require.Equal(t, "default src", f.read("alpha", "/fresh.md"))
@@ -392,14 +392,14 @@ func TestDefaultOverlayRenameSemantics(t *testing.T) {
 	// Destination parents are judged on the merged view and on the source layer.
 	f.put(DefaultProject, "/parentfile", "file")
 	f.put("alpha", "/mine.md", "mine")
-	_, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/mine.md", "/parentfile/mine.md", false)
+	_, err = f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "alpha", FromPath: "/mine.md", ToPath: "/parentfile/mine.md", Overwrite: false})
 	f.requireCode(err, ErrCodeNotDirectory)
 	f.put(DefaultProject, "/hidden", "default file hidden by alpha dir")
 	f.svc.mustWritePhysical(t, f.auth, "alpha", "/hidden/own.txt", "own")
 	f.put(DefaultProject, "/global.md", "global")
-	_, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/global.md", "/hidden/global.md", false)
+	_, err = f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "alpha", FromPath: "/global.md", ToPath: "/hidden/global.md", Overwrite: false})
 	f.requireCode(err, ErrCodeNotDirectory) // the default layer cannot nest under its own file
-	_, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/mine.md", "/hidden/mine.md", false)
+	_, err = f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "alpha", FromPath: "/mine.md", ToPath: "/hidden/mine.md", Overwrite: false})
 	require.NoError(t, err, "a project file may move into the project's own directory")
 
 	// Rename conditions compare the versions alpha actually sees.
@@ -410,20 +410,20 @@ func TestDefaultOverlayRenameSemantics(t *testing.T) {
 	ctx, err := WithFilePreconditions(f.ctx, f.auth, "alpha", "/cond.md", FileOperationRename,
 		FilePreconditions{ExpectedVersion: stale.Version, DestinationPath: "/cond2.md", DestinationMustNotExist: true})
 	require.NoError(t, err)
-	_, err = f.svc.Rename(ctx, f.auth, "alpha", "/cond.md", "/cond2.md", false)
+	_, err = f.svc.Rename(ctx, f.auth, RenameRequest{Project: "alpha", FromPath: "/cond.md", ToPath: "/cond2.md", Overwrite: false})
 	f.requireCode(err, ErrCodeVersionConflict)
 
 	// A directory rename moves every visible file within its own layer.
 	f.put(DefaultProject, "/tree/a.txt", "default a")
 	f.put(DefaultProject, "/tree/b.txt", "default b")
 	f.svc.mustWritePhysical(t, f.auth, "alpha", "/tree/a.txt", "alpha a")
-	moved, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/tree", "/moved", false)
+	moved, err = f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "alpha", FromPath: "/tree", ToPath: "/moved", Overwrite: false})
 	require.NoError(t, err)
 	require.Equal(t, 2, moved.MovedCount)
 	require.Equal(t, "alpha a", f.read("alpha", "/moved/a.txt"))
 	require.Equal(t, "default b", f.read("beta", "/moved/b.txt"))
 	require.Equal(t, "default a", f.read("alpha", "/tree/a.txt"), "the hidden default stays at its name")
-	_, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/moved", "/moved/inner", false)
+	_, err = f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "alpha", FromPath: "/moved", ToPath: "/moved/inner", Overwrite: false})
 	f.requireCode(err, ErrCodeInvalidPath)
 }
 
@@ -518,7 +518,7 @@ func TestDefaultOverlaySearch(t *testing.T) {
 
 	// Creating or deleting an override never changes which defaults are found.
 	f.put("alpha", "/new-override.md", "needle temporary")
-	_, err = f.svc.Rename(f.ctx, f.auth, "alpha", "/new-override.md", "/only.md", true)
+	_, err = f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "alpha", FromPath: "/new-override.md", ToPath: "/only.md", Overwrite: true})
 	require.NoError(t, err)
 	require.NoError(t, f.svc.NewIndexWorker().RunOnce(f.ctx))
 	withOverride := hits("alpha")
@@ -582,12 +582,12 @@ func TestRenameOntoOwnParentIsModeIndependent(t *testing.T) {
 	t.Parallel()
 	f := newOverlayFixture(t)
 	f.put("plain", "/p/a/b", "plain")
-	_, err := f.svc.Rename(f.ctx, f.auth, "plain", "/p/a/b", "/p/a", false)
+	_, err := f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "plain", FromPath: "/p/a/b", ToPath: "/p/a", Overwrite: false})
 	f.requireCode(err, ErrCodeAlreadyExists)
 
 	f.put(DefaultProject, "/q", "a default file the project hides")
 	f.svc.mustWritePhysical(t, f.auth, "overlaid", "/q/a/b", "overlaid")
-	_, err = f.svc.Rename(f.ctx, f.auth, "overlaid", "/q/a/b", "/q/a", false)
+	_, err = f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "overlaid", FromPath: "/q/a/b", ToPath: "/q/a", Overwrite: false})
 	f.requireCode(err, ErrCodeAlreadyExists)
 }
 
@@ -599,7 +599,7 @@ func TestOverwritingRenameKeepsReplacedHistory(t *testing.T) {
 	f := newOverlayFixture(t)
 	f.put("plain", "/dst.md", "replaced content")
 	f.put("plain", "/src.md", "moved content")
-	_, err := f.svc.Rename(f.ctx, f.auth, "plain", "/src.md", "/dst.md", true)
+	_, err := f.svc.Rename(f.ctx, f.auth, RenameRequest{Project: "plain", FromPath: "/src.md", ToPath: "/dst.md", Overwrite: true})
 	require.NoError(t, err)
 	require.Equal(t, "moved content", f.read("plain", "/dst.md"))
 	versions, err := f.svc.ListVersions(f.ctx, f.auth, "plain", "/dst.md")

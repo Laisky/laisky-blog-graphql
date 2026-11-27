@@ -10,26 +10,16 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
-	pageindex "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/pageindex"
 	ragplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 )
 
-// fixtureHistoryTools uses real RAG/PageIndex adapters and the fixture's shared persistent history.
-func fixtureHistoryTools(t *testing.T, f *entrypointFixture, pluginName string) map[string]tools.Tool {
+// fixtureHistoryTools uses the real RAG adapter and the fixture's shared persistent history.
+func fixtureHistoryTools(t *testing.T, f *entrypointFixture) map[string]tools.Tool {
 	t.Helper()
-	var adapter mcpplugin.Plugin
-	var err error
-	if pluginName == "pageindex" {
-		system, err := f.svc[0].SystemNamespace("pageindex")
-		require.NoError(t, err)
-		adapter, err = pageindex.New(pageindex.PluginDeps{UserFS: f.svc[0], SystemFS: system})
-		require.NoError(t, err)
-	} else {
-		adapter, err = ragplugin.New(f.svc[0])
-		require.NoError(t, err)
-	}
-	manager, err := mcpplugin.NewManager(pluginName, adapter)
+	adapter, err := ragplugin.New(f.svc[0])
+	require.NoError(t, err)
+	manager, err := mcpplugin.NewManager(mcpplugin.DefaultPluginRAG, adapter)
 	require.NoError(t, err)
 	list, err := tools.NewFileHistoryTools(manager, f.svc[0])
 	require.NoError(t, err)
@@ -43,64 +33,58 @@ func fixtureHistoryTools(t *testing.T, f *entrypointFixture, pluginName string) 
 // TestFileIOHistoryToolsRestoreUsesOriginalLiveVersion checks the real history/read/write pipeline.
 func TestFileIOHistoryToolsRestoreUsesOriginalLiveVersion(t *testing.T) {
 	for _, backend := range []string{"sqlite", "postgres"} {
-		for _, pluginName := range []string{"rag", "pageindex"} {
-			t.Run(backend+"/"+pluginName, func(t *testing.T) {
-				f := newEntrypointFixture(t, backend, pluginName)
-				history := fixtureHistoryTools(t, f, pluginName)
-				path := "/restore.txt"
-				f.write(t, 0, path, "original 漢🙂", files.WriteModeTruncate, 0)
-				f.write(t, 1, path, "second", files.WriteModeTruncate, 0)
-				base := readRaceVersion(t, f.raceFixture, path)
-				args := map[string]any{"project": "race", "path": path}
-				listed := callRaceTool(t, f.toolCtx, history[tools.FileListVersionsToolName], tools.FileListVersionsToolName, args)
-				rows := listed["versions"].([]any)
-				require.Len(t, rows, 1)
-				id := rows[0].(map[string]any)["id"].(string)
-				args["history_id"] = id
-				snapshot := callRaceTool(t, f.toolCtx, history[tools.FileReadVersionToolName], tools.FileReadVersionToolName, args)
-				require.Equal(t, "original 漢🙂", snapshot["content"])
-				require.Equal(t, "utf-8", snapshot["content_encoding"])
-				require.Equal(t, id, snapshot["history_id"])
-				require.NotContains(t, snapshot, "version", "a history ID is not a live token")
+		t.Run(backend+"/rag", func(t *testing.T) {
+			f := newEntrypointFixture(t, backend)
+			history := fixtureHistoryTools(t, f)
+			path := "/restore.txt"
+			f.write(t, 0, path, "original 漢🙂", files.WriteModeTruncate, 0)
+			f.write(t, 1, path, "second", files.WriteModeTruncate, 0)
+			base := readRaceVersion(t, f.raceFixture, path)
+			args := map[string]any{"project": "race", "path": path}
+			listed := callRaceTool(t, f.toolCtx, history[tools.FileListVersionsToolName], tools.FileListVersionsToolName, args)
+			rows := listed["versions"].([]any)
+			require.Len(t, rows, 1)
+			id := rows[0].(map[string]any)["id"].(string)
+			args["history_id"] = id
+			snapshot := callRaceTool(t, f.toolCtx, history[tools.FileReadVersionToolName], tools.FileReadVersionToolName, args)
+			require.Equal(t, "original 漢🙂", snapshot["content"])
+			require.Equal(t, "utf-8", snapshot["content_encoding"])
+			require.Equal(t, id, snapshot["history_id"])
+			require.NotContains(t, snapshot, "version", "a history ID is not a live token")
 
-				// Another connection changes the file after the client chose its restore base.
-				f.write(t, 1, path, "concurrent third", files.WriteModeTruncate, 0)
-				current := readRaceVersion(t, f.raceFixture, path)
-				jobs, snapshots := f.count(t, "mcp_file_index_jobs"), f.count(t, "mcp_file_versions")
-				args["expected_version"] = base.Version
-				failure := callRaceToolError(t, f.toolCtx, history[tools.FileRestoreVersionToolName], tools.FileRestoreVersionToolName, args)
-				require.Equal(t, "VERSION_CONFLICT", failure["code"])
-				require.Equal(t, current, readRaceVersion(t, f.raceFixture, path))
-				require.Equal(t, jobs, f.count(t, "mcp_file_index_jobs"))
-				require.Equal(t, snapshots, f.count(t, "mcp_file_versions"))
+			// Another connection changes the file after the client chose its restore base.
+			f.write(t, 1, path, "concurrent third", files.WriteModeTruncate, 0)
+			current := readRaceVersion(t, f.raceFixture, path)
+			jobs, snapshots := f.count(t, "mcp_file_index_jobs"), f.count(t, "mcp_file_versions")
+			args["expected_version"] = base.Version
+			failure := callRaceToolError(t, f.toolCtx, history[tools.FileRestoreVersionToolName], tools.FileRestoreVersionToolName, args)
+			require.Equal(t, "VERSION_CONFLICT", failure["code"])
+			require.Equal(t, current, readRaceVersion(t, f.raceFixture, path))
+			require.Equal(t, jobs, f.count(t, "mcp_file_index_jobs"))
+			require.Equal(t, snapshots, f.count(t, "mcp_file_versions"))
 
-				delete(args, "expected_version")
-				failure = callRaceToolError(t, f.toolCtx, history[tools.FileRestoreVersionToolName], tools.FileRestoreVersionToolName, args)
-				require.Equal(t, "PRECONDITION_REQUIRED", failure["code"])
-				args["expected_version"] = current.Version
-				args["create_only"] = true
-				failure = callRaceToolError(t, f.toolCtx, history[tools.FileRestoreVersionToolName], tools.FileRestoreVersionToolName, args)
-				require.Equal(t, "INVALID_ARGUMENT", failure["code"])
-				require.Equal(t, current, readRaceVersion(t, f.raceFixture, path))
-				require.Equal(t, jobs, f.count(t, "mcp_file_index_jobs"))
-				require.Equal(t, snapshots, f.count(t, "mcp_file_versions"))
-				delete(args, "create_only")
-				restored := callRaceTool(t, f.toolCtx, history[tools.FileRestoreVersionToolName], tools.FileRestoreVersionToolName, args)
-				require.NotEqual(t, current.Version, restored["version"])
-				f.assertStored(t, path, "original 漢🙂")
-				if pluginName == "pageindex" {
-					require.Equal(t, jobs, f.count(t, "mcp_file_index_jobs"), "restore must not bypass PageIndex and enqueue RAG")
-				} else {
-					require.Equal(t, jobs+1, f.count(t, "mcp_file_index_jobs"))
-				}
-				require.Equal(t, snapshots+1, f.count(t, "mcp_file_versions"))
+			delete(args, "expected_version")
+			failure = callRaceToolError(t, f.toolCtx, history[tools.FileRestoreVersionToolName], tools.FileRestoreVersionToolName, args)
+			require.Equal(t, "PRECONDITION_REQUIRED", failure["code"])
+			args["expected_version"] = current.Version
+			args["create_only"] = true
+			failure = callRaceToolError(t, f.toolCtx, history[tools.FileRestoreVersionToolName], tools.FileRestoreVersionToolName, args)
+			require.Equal(t, "INVALID_ARGUMENT", failure["code"])
+			require.Equal(t, current, readRaceVersion(t, f.raceFixture, path))
+			require.Equal(t, jobs, f.count(t, "mcp_file_index_jobs"))
+			require.Equal(t, snapshots, f.count(t, "mcp_file_versions"))
+			delete(args, "create_only")
+			restored := callRaceTool(t, f.toolCtx, history[tools.FileRestoreVersionToolName], tools.FileRestoreVersionToolName, args)
+			require.NotEqual(t, current.Version, restored["version"])
+			f.assertStored(t, path, "original 漢🙂")
+			require.Equal(t, jobs+1, f.count(t, "mcp_file_index_jobs"))
+			require.Equal(t, snapshots+1, f.count(t, "mcp_file_versions"))
 
-				// The same numeric history row is invisible in another tenant's namespace.
-				otherCtx := authtest.WithVerified(f.ctx, "sk-fileio-race-other-tenant")
-				failure = callRaceToolError(t, otherCtx, history[tools.FileReadVersionToolName], tools.FileReadVersionToolName, args)
-				require.Equal(t, "NOT_FOUND", failure["code"])
-			})
-		}
+			// The same numeric history row is invisible in another tenant's namespace.
+			otherCtx := authtest.WithVerified(f.ctx, "sk-fileio-race-other-tenant")
+			failure = callRaceToolError(t, otherCtx, history[tools.FileReadVersionToolName], tools.FileReadVersionToolName, args)
+			require.Equal(t, "NOT_FOUND", failure["code"])
+		})
 	}
 }
 
@@ -196,8 +180,8 @@ func TestFileIOHistoryNewRowsDoNotShiftOlderPages(t *testing.T) {
 func TestFileIOHistoryCreateOnlyRestoreDoesNotReplay(t *testing.T) {
 	for _, backend := range []string{"sqlite", "postgres"} {
 		t.Run(backend, func(t *testing.T) {
-			f := newEntrypointFixture(t, backend, "rag")
-			history := fixtureHistoryTools(t, f, "rag")
+			f := newEntrypointFixture(t, backend)
+			history := fixtureHistoryTools(t, f)
 			path := "/recreate.txt"
 			f.write(t, 0, path, "retained", files.WriteModeTruncate, 0)
 			old := readRaceVersion(t, f.raceFixture, path)
@@ -221,8 +205,8 @@ func TestFileIOHistoryCreateOnlyRestoreDoesNotReplay(t *testing.T) {
 
 // TestFileIOHistoryArgumentsAndLegacyBytes rejects lossy IDs and never repairs binary data silently.
 func TestFileIOHistoryArgumentsAndLegacyBytes(t *testing.T) {
-	f := newEntrypointFixture(t, "sqlite", "rag")
-	history := fixtureHistoryTools(t, f, "rag")
+	f := newEntrypointFixture(t, "sqlite")
+	history := fixtureHistoryTools(t, f)
 	path := "/old.txt"
 	f.write(t, 0, path, "before", files.WriteModeTruncate, 0)
 	f.write(t, 0, path, "current", files.WriteModeTruncate, 0)

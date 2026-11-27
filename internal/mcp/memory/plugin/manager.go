@@ -42,6 +42,9 @@ func NewManager(defaultPlugin string, plugins ...Plugin) (*Manager, error) {
 	if resolvedDefault == "" || resolvedDefault == DefaultPluginAuto {
 		resolvedDefault = DefaultPluginRAG
 	}
+	if resolvedDefault == DefaultPluginPageIndex {
+		return nil, errors.New(PageIndexDisabledMessage)
+	}
 
 	if _, exists := plugs[resolvedDefault]; !exists {
 		return nil, errors.Errorf("default plugin %q is not registered", resolvedDefault)
@@ -116,9 +119,15 @@ func (m *Manager) Resolve(ctx context.Context, _ files.AuthContext, _ string, ov
 		requested = m.defaultPlugin
 	}
 
-	item, exists := m.plugins[requested]
-	if !exists {
-		return nil, &ResolveError{Requested: requested, Available: m.AvailablePlugins()}
+	return m.lookup(requested)
+}
+
+// lookup returns the registered plugin named name. PageIndex is disabled, so
+// it is never routed to, even when a caller registered a plugin of that name.
+func (m *Manager) lookup(name string) (Plugin, error) {
+	item, exists := m.plugins[name]
+	if !exists || name == DefaultPluginPageIndex {
+		return nil, &ResolveError{Requested: name, Available: m.AvailablePlugins()}
 	}
 
 	return item, nil
@@ -130,12 +139,7 @@ func (m *Manager) ForName(name string) (Plugin, error) {
 		return nil, errors.New("plugin manager is nil")
 	}
 
-	item, exists := m.plugins[NormalizeName(name)]
-	if !exists {
-		return nil, &ResolveError{Requested: NormalizeName(name), Available: m.AvailablePlugins()}
-	}
-
-	return item, nil
+	return m.lookup(NormalizeName(name))
 }
 
 // StartAll starts every registered plugin in a deterministic order.
@@ -202,25 +206,14 @@ func (m *Manager) Delete(ctx context.Context, auth files.AuthContext, project, p
 	return item.Delete(ctx, auth, project, path, recursive)
 }
 
-// Rename routes file_rename to the selected plugin.
-func (m *Manager) Rename(ctx context.Context, auth files.AuthContext, project, fromPath, toPath string, overwrite bool) (files.RenameResult, error) {
-	item, err := m.Resolve(ctx, auth, project, "")
+// Rename routes file_rename to the plugin selected for the source project.
+func (m *Manager) Rename(ctx context.Context, auth files.AuthContext, req files.RenameRequest) (files.RenameResult, error) {
+	item, err := m.Resolve(ctx, auth, req.Project, "")
 	if err != nil {
 		return files.RenameResult{}, err
 	}
 
-	return item.Rename(ctx, auth, project, fromPath, toPath, overwrite)
-}
-
-// RenameAcrossProjects routes a cross-project file_rename to the selected
-// plugin, which must implement CrossProjectRenamer.
-func (m *Manager) RenameAcrossProjects(ctx context.Context, auth files.AuthContext, project, fromPath, targetProject, toPath string, overwrite bool) (files.RenameResult, error) {
-	item, err := m.Resolve(ctx, auth, project, "")
-	if err != nil {
-		return files.RenameResult{}, err
-	}
-
-	return RenameAcrossProjects(ctx, item, auth, project, fromPath, targetProject, toPath, overwrite)
+	return item.Rename(ctx, auth, req)
 }
 
 // List routes file_list to the selected plugin.
