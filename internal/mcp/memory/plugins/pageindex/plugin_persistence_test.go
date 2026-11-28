@@ -151,7 +151,6 @@ func newPersistenceTestServiceWithLimit(t testing.TB, maxFileBytes int64) (*sql.
 		MaxProjectBytes:  100_000_000,
 		ListLimitDefault: 20,
 		ListLimitMax:     100,
-		LockTimeout:      time.Second,
 		DeleteRetention:  time.Hour,
 		Search:           files.SearchSettings{Enabled: false},
 		Index:            files.IndexSettings{Workers: 1, BatchSize: 1, ChunkBytes: 4096},

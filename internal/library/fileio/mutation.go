@@ -8,6 +8,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcptools "github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/library"
 )
 
@@ -195,9 +196,15 @@ func (r *MutationResolver) FileRestoreVersion(ctx context.Context, project, path
 	if err != nil {
 		return nil, err
 	}
+	// The history read checks the same conditions against the file it reads, so
+	// the write below cannot store the snapshot in another layer (MCP parity).
+	readCtx, err := mcptools.RestoreHistoryContext(writeCtx, auth, project, path)
+	if err != nil {
+		return nil, graphQLError(err, "apply file preconditions")
+	}
 	startAt := time.Now().UTC()
 	log := logger(ctx, "file_restore_version").With(zap.String(fieldProject, project))
-	snapshot, readErr := r.history.ReadVersion(writeCtx, auth, project, path, id)
+	snapshot, readErr := r.history.ReadVersion(readCtx, auth, project, path, id)
 	if readErr != nil {
 		r.record(ctx, log, auth, "file_restore_version", map[string]any{fieldProject: project, fieldPath: path,
 			fieldHistoryID: historyID}, startAt, readErr)

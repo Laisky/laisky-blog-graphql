@@ -286,7 +286,7 @@ func TestFileIOPostgresConditionalWriters(t *testing.T) {
 			}
 			const n = 24
 			var results [n]files.WriteResult
-			errs := parallelRaceCalls(t, f.ctx, n, func(i int) error {
+			errs := parallelMutationCalls(t, f.ctx, n, func(i int) error {
 				var err error
 				results[i], err = f.svc[i%2].WriteWith(f.ctx, f.auth, "race", "/shared.txt", fmt.Sprintf("winner-%02d-漢", i), "utf-8", 0, files.WriteModeTruncate, opts)
 				return err
@@ -317,7 +317,7 @@ func TestFileIOPostgresConditionalWriters(t *testing.T) {
 		f := newRaceFixture(t, "postgres", nil)
 		f.write(t, 0, "/counter", "0", files.WriteModeTruncate, 0)
 		const n = 16
-		errs := parallelRaceCalls(t, f.ctx, n, func(i int) error {
+		errs := parallelMutationCalls(t, f.ctx, n, func(i int) error {
 			for {
 				r, err := f.svc[i%2].Read(f.ctx, f.auth, "race", "/counter", 0, -1)
 				if err != nil {

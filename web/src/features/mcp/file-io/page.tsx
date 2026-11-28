@@ -23,7 +23,8 @@ type FileStatPayload = FileEntry & { exists: boolean; version?: string };
 type FileWritePayload = { bytes_written: number; version: string };
 type FileVersionEntry = { id: string; size: number; created_at: string };
 type HistoryContent = { content: string; content_encoding: string; size: number; created_at: string };
-type FileSearchChunk = { file_path: string; file_seek_start_bytes: number; file_seek_end_bytes: number; chunk_content: string; score: number };
+/** FileSearchChunk is one file_search hit; project names the physical project storing it (the searched project or @DEFAULT) and is absent when the searched project is @DEFAULT. */
+type FileSearchChunk = { file_path: string; file_seek_start_bytes: number; file_seek_end_bytes: number; chunk_content: string; score: number; project?: string };
 type DirCache = Record<string, { entries: FileEntry[]; hasMore: boolean }>;
 const inputLabelClass = 'text-xs font-medium uppercase tracking-wide text-muted-foreground';
 const selectClass = 'h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm disabled:opacity-60';
@@ -453,7 +454,7 @@ function FileIOWorkspace({ apiKey, project, defaults, openPath, onOpenProject, o
           </CardContent>
         </Card>
       </div>
-      <Card><CardHeader><CardTitle className="text-xl">Search</CardTitle><CardDescription>Search indexed content; read the live file before editing a result.</CardDescription></CardHeader>
+      <Card><CardHeader><CardTitle className="text-xl">Search</CardTitle><CardDescription>Search indexed content of this project and @DEFAULT; read the live file from the result&apos;s project before editing it.</CardDescription></CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
             <Field id="file-io-search-query" label="Search Query"><Input id="file-io-search-query" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} /></Field>
@@ -462,10 +463,21 @@ function FileIOWorkspace({ apiKey, project, defaults, openPath, onOpenProject, o
           </div>
           <Button onClick={() => void submitSearch()} disabled={unavailable || !searchQuery || searching}><Search className="mr-2 h-4 w-4" />Search</Button>
           <Feedback error={searchError} />
-          <div className="space-y-3">{!searchResults.length ? <p className="text-sm text-muted-foreground">No results yet.</p> : searchResults.map((chunk) => <div key={`${chunk.file_path}-${chunk.file_seek_start_bytes}`} className="rounded-md border p-3">
-            <div className="flex justify-between gap-2"><Button variant="link" onClick={() => void loadPreview(chunk.file_path)}>{chunk.file_path}</Button><Badge variant="secondary">Score {chunk.score.toFixed(3)}</Badge></div>
-            <p className="text-xs text-muted-foreground">Bytes {chunk.file_seek_start_bytes} - {chunk.file_seek_end_bytes}</p><p className="mt-2 whitespace-pre-wrap text-sm">{chunk.chunk_content}</p>
-          </div>)}</div>
+          <div className="space-y-3">{!searchResults.length ? <p className="text-sm text-muted-foreground">No results yet.</p> : searchResults.map((chunk) => {
+            // A hit stored in another project (e.g. a @DEFAULT file this project overrides) must not open through this project, which could return its override instead.
+            const storedIn = chunk.project && chunk.project !== project.trim() ? chunk.project : null;
+            return <div key={`${chunk.project ?? ''}:${chunk.file_path}-${chunk.file_seek_start_bytes}`} className="rounded-md border p-3">
+              <div className="flex justify-between gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  {storedIn ? <span className="break-all text-sm font-medium">{chunk.file_path}</span> : <Button variant="link" onClick={() => void loadPreview(chunk.file_path)}>{chunk.file_path}</Button>}
+                  {storedIn && <Badge variant="outline">{storedIn}</Badge>}
+                </div>
+                <Badge variant="secondary">Score {chunk.score.toFixed(3)}</Badge>
+              </div>
+              {storedIn && <p className="text-xs text-muted-foreground">Stored in {storedIn} — select that project to open it.</p>}
+              <p className="text-xs text-muted-foreground">Bytes {chunk.file_seek_start_bytes} - {chunk.file_seek_end_bytes}</p><p className="mt-2 whitespace-pre-wrap text-sm">{chunk.chunk_content}</p>
+            </div>;
+          })}</div>
         </CardContent>
       </Card>
     </fieldset>

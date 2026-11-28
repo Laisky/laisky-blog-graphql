@@ -318,7 +318,6 @@ func validateFileIOConfigAtPrefix(get configGetter, prefix string, errs *[]strin
 	validateOptionalInt64Min(get, joinConfigKey(prefix, "max_project_bytes"), 1, errs)
 	validateOptionalIntMin(get, joinConfigKey(prefix, "list_limit_default"), 1, errs)
 	validateOptionalIntMin(get, joinConfigKey(prefix, "list_limit_max"), 1, errs)
-	validateOptionalIntMin(get, joinConfigKey(prefix, "lock_timeout_ms"), 1, errs)
 	validateOptionalIntMin(get, joinConfigKey(prefix, "delete_retention_days"), 1, errs)
 
 	validateOptionalBool(get, joinConfigKey(prefix, "search.enabled"), errs)

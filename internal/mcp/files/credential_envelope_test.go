@@ -89,14 +89,9 @@ var errInjectedAbort = errors.New("injected failure before commit")
 // transaction, then fails it after every write, as a failed commit would.
 type abortBeforeCommit struct{}
 
-// WithProjectLock delegates to the production lock and aborts before commit.
-func (abortBeforeCommit) WithProjectLock(ctx context.Context, db *sql.DB, pg bool, key, project string, timeout time.Duration, fn func(*sql.Tx) error) error {
-	return (files.DefaultLockProvider{}).WithProjectLock(ctx, db, pg, key, project, timeout, abortAfter(fn))
-}
-
-// WithProjectsLock delegates to the production lock and aborts before commit.
-func (abortBeforeCommit) WithProjectsLock(ctx context.Context, db *sql.DB, pg bool, key string, projects []string, timeout time.Duration, fn func(*sql.Tx) error) error {
-	return (files.DefaultLockProvider{}).WithProjectsLock(ctx, db, pg, key, projects, timeout, abortAfter(fn))
+// WithTenantLock delegates to the production lock and aborts before commit.
+func (abortBeforeCommit) WithTenantLock(ctx context.Context, db *sql.DB, pg bool, key string, fn func(*sql.Tx) error) error {
+	return (files.DefaultLockProvider{}).WithTenantLock(ctx, db, pg, key, abortAfter(fn))
 }
 
 func abortAfter(fn func(*sql.Tx) error) func(*sql.Tx) error {
@@ -550,7 +545,7 @@ func TestSameClockWritesKeepDistinctCredentialIDs(t *testing.T) {
 				return err
 			}
 			if backend == "postgres" {
-				for _, err := range parallelRaceCalls(t, c.ctx, 2, write) {
+				for _, err := range parallelMutationCalls(t, c.ctx, 2, write) {
 					require.NoError(t, err)
 				}
 			} else {

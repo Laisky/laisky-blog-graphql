@@ -3,11 +3,14 @@ import { callFileAPI } from './client';
 /** ProjectPage is a bounded page from the authenticated project discovery API. */
 export type ProjectPage = { projects: string[]; has_more: boolean; next_cursor?: string };
 export const PROJECT_PAGE_SIZE = 50;
-const projectID = /^[A-Za-z0-9_.-]{1,128}$/;
+/** DEFAULT_PROJECT is the API key's shared base project, inherited by every other project. */
+export const DEFAULT_PROJECT = '@DEFAULT';
+const projectID = /^(?:[A-Za-z0-9_.-]{1,128}|@DEFAULT)$/;
+const projectQuery = /^[A-Za-z0-9_.@-]{1,128}$/;
 
-/** isProjectQuery accepts an empty search or a bounded fragment of a project ID. */
+/** isProjectQuery accepts an empty search or a bounded fragment of a project ID, including "@" for @DEFAULT. */
 export function isProjectQuery(query: string): boolean {
-  return query === '' || projectID.test(query);
+  return query === '' || projectQuery.test(query);
 }
 
 /** parseProjectPage rejects malformed data rather than displaying an ambiguous page. */

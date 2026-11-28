@@ -140,15 +140,27 @@ func TestFileIOPostgresMCPAndHTTPContendOnOneVersion(t *testing.T) {
 	version := seed["version"].(string)
 	var mcpResult *mcp.CallToolResult
 	var httpResult *httptest.ResponseRecorder
-	errs := parallelRaceCalls(t, f.ctx, 2, func(i int) error {
+	errs := parallelMutationCalls(t, f.ctx, 2, func(i int) error {
 		if i == 0 {
 			var err error
 			mcpResult, err = f.writer.Handle(f.toolCtx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 				"project": "race", "path": "/shared.txt", "content": "MCP漢", "mode": "TRUNCATE", "expected_version": version,
 			}}})
+			if err == nil && mcpResult.IsError {
+				wire, encodeErr := json.Marshal(mcpResult)
+				if encodeErr != nil {
+					return encodeErr
+				}
+				if strings.Contains(string(wire), "RESOURCE_BUSY") {
+					return files.NewError(files.ErrCodeResourceBusy, "resource busy", true)
+				}
+			}
 			return err
 		}
 		httpResult = f.request(http.MethodPut, "/api/file", `{"project":"race","path":"/shared.txt","content":"HTTP漢"}`, "If-Match", `"`+version+`"`)
+		if httpResult.Code == http.StatusConflict && strings.Contains(httpResult.Body.String(), "resource busy") {
+			return files.NewError(files.ErrCodeResourceBusy, "resource busy", true)
+		}
 		return nil
 	})
 	for _, err := range errs {

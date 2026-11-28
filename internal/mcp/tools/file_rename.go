@@ -28,11 +28,13 @@ func (t *FileRenameTool) Definition() mcp.Tool {
 		mcp.WithDescription("Rename one file using its required source expected_version. Non-overwriting moves require an absent destination. Overwriting moves also require "+
 			"expected_destination_version or destination_must_not_exist=true. Set target_project to move the file into another project of the same caller. "+
 			"Directory moves are not supported by file tokens."),
-		mcp.WithString("project", mcp.Required(), mcp.Description("Source project namespace.")),
+		mcp.WithString("project", mcp.Required(), mcp.Description("Source project namespace. The source is the file this project shows at from_path, "+
+			"which may be inherited from the reserved project \"@DEFAULT\"; renaming or moving an inherited file changes it for every project.")),
 		mcp.WithString("from_path", mcp.Required(), mcp.Description("Source file path.")),
 		mcp.WithString("to_path", mcp.Required(), mcp.Description("Destination file path, inside target_project when it is set.")),
 		mcp.WithString(targetProjectKey, mcp.Description("Optional destination project namespace for a cross-project move. "+
-			"Omit it or pass an empty string to rename within project. Destination conditions and overwrite apply in this project.")),
+			"Omit it or pass an empty string to rename within project. Destination conditions, overwrite and quota apply to this project's own files: "+
+			"an \"@DEFAULT\" file at to_path is not a collision, and the moved file then overrides it there.")),
 		mcp.WithBoolean("overwrite", mcp.Description("When true, a destination version or destination_must_not_exist=true is also required.")),
 		expectedFileVersionOption(true),
 		mcp.WithString("expected_destination_version", mcp.Description("Version of the existing destination; requires overwrite=true.")),

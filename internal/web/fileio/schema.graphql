@@ -64,7 +64,10 @@ type FileIOListResult {
 }
 
 type FileIOChunk {
-  # project is populated only for cross-project searches (project = "*").
+  # project names the physical project that stores the hit whenever a search
+  # spans more than one project: an ordinary project searches itself and
+  # "@DEFAULT", and "*" searches every project. Read a hit with this project.
+  # It is absent for a single-project search such as project = "@DEFAULT".
   project: String
   file_path: String!
   file_seek_start_bytes: BigInt!
@@ -274,8 +277,10 @@ extend type Mutation {
     from_path: String!
     to_path: String!
     # target_project moves the file into another project of the same caller;
-    # omitted or empty renames within project. to_path and the destination
-    # conditions are evaluated in target_project.
+    # omitted or empty renames within project. The source is the file project
+    # shows at from_path, possibly inherited from "@DEFAULT" (moving it removes
+    # it from "@DEFAULT"). to_path and the destination conditions are evaluated
+    # on target_project's own files; an "@DEFAULT" file there is no collision.
     target_project: String
     overwrite: Boolean! = false
     expected_version: String!

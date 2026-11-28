@@ -56,7 +56,7 @@ func (t *FileSearchTool) Definition() mcp.Tool {
 		mcp.WithDescription("Search file content using hybrid retrieval (semantic + keyword). "+
 			"Use this to find text, code, or patterns within files, similar to grep or full-text search. "+
 			"Each hit returns the matched chunk plus a concise file-level summary in file_summary."),
-		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace. Use \"*\" to search across every project owned by the caller; in that case each returned chunk includes its source project.")),
+		mcp.WithString("project", mcp.Required(), mcp.Description(fileSearchProjectDescription)),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query string.")),
 		mcp.WithString("path_prefix", mcp.Description("Optional path prefix filter.")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of chunks to return.")),

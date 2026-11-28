@@ -13,6 +13,9 @@ import (
 )
 
 // storageAdapter adapts internal FileIO service to memory storage engine API.
+// Memory state is project-local: retention, compaction and rewrites must never
+// treat an inherited @DEFAULT file as disposable project state, so every call
+// addresses the physical project only (files.WithPhysicalProjects).
 type storageAdapter struct {
 	fileService mcpplugin.Plugin
 	auth        files.AuthContext
@@ -35,7 +38,7 @@ func newStorageAdapter(fileService mcpplugin.Plugin, auth files.AuthContext) (*s
 
 // Read reads file content bytes from storage.
 func (adapter *storageAdapter) Read(ctx context.Context, project, path string, offset, length int64) (string, error) {
-	result, err := adapter.fileService.Read(ctx, adapter.auth, project, path, offset, length)
+	result, err := adapter.fileService.Read(files.WithPhysicalProjects(ctx), adapter.auth, project, path, offset, length)
 	if err != nil {
 		return "", errors.WithStack(err)
 	}
@@ -48,7 +51,7 @@ func (adapter *storageAdapter) Write(ctx context.Context, project, path, content
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	_, err = adapter.fileService.Write(ctx, adapter.auth, project, path, content, "utf-8", offset, writeMode)
+	_, err = adapter.fileService.Write(files.WithPhysicalProjects(ctx), adapter.auth, project, path, content, "utf-8", offset, writeMode)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -57,7 +60,7 @@ func (adapter *storageAdapter) Write(ctx context.Context, project, path, content
 
 // Stat returns metadata for one storage path.
 func (adapter *storageAdapter) Stat(ctx context.Context, project, path string) (memorystorage.FileInfo, error) {
-	result, err := adapter.fileService.Stat(ctx, adapter.auth, project, path)
+	result, err := adapter.fileService.Stat(files.WithPhysicalProjects(ctx), adapter.auth, project, path)
 	if err != nil {
 		return memorystorage.FileInfo{}, errors.WithStack(err)
 	}
@@ -83,7 +86,7 @@ func (adapter *storageAdapter) Stat(ctx context.Context, project, path string) (
 
 // List lists descendants under one path.
 func (adapter *storageAdapter) List(ctx context.Context, project, path string, depth, limit int) (entries []memorystorage.FileInfo, hasMore bool, err error) {
-	result, err := adapter.fileService.List(ctx, adapter.auth, project, path, depth, limit)
+	result, err := adapter.fileService.List(files.WithPhysicalProjects(ctx), adapter.auth, project, path, depth, limit)
 	if err != nil {
 		if typed, ok := files.AsError(err); ok {
 			if typed.Code == files.ErrCodeNotFound {
@@ -119,7 +122,7 @@ func (adapter *storageAdapter) List(ctx context.Context, project, path string, d
 
 // Search performs hybrid retrieval under the project path prefix.
 func (adapter *storageAdapter) Search(ctx context.Context, project, query, pathPrefix string, limit int) ([]memorystorage.FileChunk, error) {
-	result, err := adapter.fileService.Search(ctx, adapter.auth, project, query, pathPrefix, limit)
+	result, err := adapter.fileService.Search(files.WithPhysicalProjects(ctx), adapter.auth, project, query, pathPrefix, limit)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -140,7 +143,7 @@ func (adapter *storageAdapter) Search(ctx context.Context, project, query, pathP
 
 // Delete removes a file path or subtree.
 func (adapter *storageAdapter) Delete(ctx context.Context, project, path string, recursive bool) error {
-	_, err := adapter.fileService.Delete(ctx, adapter.auth, project, path, recursive)
+	_, err := adapter.fileService.Delete(files.WithPhysicalProjects(ctx), adapter.auth, project, path, recursive)
 	if err != nil {
 		return errors.WithStack(err)
 	}

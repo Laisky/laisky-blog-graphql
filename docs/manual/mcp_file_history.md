@@ -16,6 +16,14 @@ IDs are canonical positive decimal **strings**, bounded by the storage BIGINT
 range. Never parse them into a JavaScript number, pass an exponent/leading zero,
 or confuse them with an `incarnation:revision` file token.
 
+History is per physical file. The path resolves like `file_read`: when a
+project overrides a `@DEFAULT` file, you see the project file's history only;
+when the path shows the inherited default, you see the default's history only.
+With no visible file (a deleted path) you see the named project's own history.
+A `history_id` from another project's history is `NOT_FOUND` for read and
+restore, without side effects. See
+[`docs/manual/mcp_files.md` §9.5](mcp_files.md#95-history-and-isolation).
+
 List pages are ordered by descending immutable row ID. Pass `next_cursor` from
 one page as the next `before_id`. Newer insertions do not shift older pages.
 Retention can still remove entries between requests; paging is not a pinned
@@ -50,7 +58,11 @@ condition-aware project/plugin resolver and calls the selected writer with
 TRUNCATE. The writer validates the original condition atomically with content,
 revision, historical preimage and outbox updates. A failed precondition has no
 mutation side effects. Historical bytes are read outside a long-running plugin
-transaction; the final write, not that read, enforces the live version.
+transaction; the final write, not that read, enforces the live version. For a
+project that inherits `@DEFAULT`, the history read also checks the condition
+against the file whose history it reads. A version names one physical file, so
+the write cannot store the snapshot in another layer, for example in `@DEFAULT`
+after the project's override was deleted between the two steps.
 
 The plugin contract does not promise rollback of every post-write error. (PageIndex,
 which could fail after the file content commit, is disabled; see

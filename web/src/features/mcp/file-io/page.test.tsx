@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FileIOPage } from './page';
@@ -290,6 +290,35 @@ describe('FileIO page mandatory version workflow', () => {
     await act(async () => old.resolve(read()));
     expect(enabled('Write')).toBe(false);
     expect(screen.queryByText(/Read version:/)).toBeNull();
+  });
+  it('lists same-path search hits from the project and @DEFAULT, opening only the own-project hit', async () => {
+    window.localStorage.setItem(fileIOInputStorageKey('test-key')!, JSON.stringify({ project: 'work' }));
+    const hit = { file_path: '/notes.md', file_seek_start_bytes: 0, file_seek_end_bytes: 12, score: 0.9 };
+    const implementation = tool.getMockImplementation()!;
+    tool.mockImplementation((key, name, args) => name === 'file_search' ? Promise.resolve({ chunks: [
+      { ...hit, chunk_content: 'work override', project: 'work' },
+      { ...hit, chunk_content: 'shared default', project: '@DEFAULT', score: 0.8 },
+      { ...hit, file_path: '/plain.md', chunk_content: 'no project field', score: 0.7 },
+    ] }) : implementation(key, name, args));
+    const consoleError = vi.spyOn(console, 'error');
+    render(<FileIOPage />);
+    input('Search Query', 'notes'); click('Search');
+    const defaultHit = (await screen.findByText('shared default')).parentElement!;
+    const ownHit = screen.getByText('work override').parentElement!;
+    const plainHit = screen.getByText('no project field').parentElement!;
+    expect(tool).toHaveBeenCalledWith('test-key', 'file_search', expect.objectContaining({ project: 'work', query: 'notes' }));
+    // Both same-path hits render under distinct keys.
+    expect(consoleError.mock.calls.some((call) => call.some((arg) => String(arg).includes('same key')))).toBe(false);
+    // The @DEFAULT hit names its project and cannot be opened through "work", which would read the override.
+    expect(within(defaultHit).getByText('@DEFAULT')).toBeTruthy();
+    expect(within(defaultHit).getByText('Stored in @DEFAULT — select that project to open it.')).toBeTruthy();
+    expect(within(defaultHit).queryByRole('button', { name: '/notes.md' })).toBeNull();
+    // Hits stored in the workspace project, or carrying no project, keep the preview link and need no badge.
+    expect(within(ownHit).queryByText(/Stored in/)).toBeNull();
+    expect(within(plainHit).queryByText(/Stored in/)).toBeNull();
+    expect(within(plainHit).getByRole('button', { name: '/plain.md' })).toBeTruthy();
+    fireEvent.click(within(ownHit).getByRole('button', { name: '/notes.md' }));
+    await waitFor(() => expect(tool).toHaveBeenCalledWith('test-key', 'file_read', { project: 'work', path: '/notes.md', offset: 0, length: -1 }));
   });
   it('does not persist observed version tokens with stored draft inputs', async () => {
     render(<FileIOPage />); input('Target Path', '/a.txt'); click('Read write base');

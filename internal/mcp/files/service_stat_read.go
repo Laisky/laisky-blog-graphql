@@ -20,28 +20,35 @@ func (s *Service) Stat(ctx context.Context, auth AuthContext, project, path stri
 	if err := ValidatePath(path); err != nil {
 		return StatResult{}, errors.WithStack(err)
 	}
-	if path == "" {
-		updatedAt, exists, err := s.findDirectoryUpdatedAt(ctx, auth.APIKeyHash, project, path)
-		if err != nil {
-			return StatResult{}, errors.WithStack(err)
-		}
-		if !exists {
-			updatedAt = time.Time{}
-		}
-		return StatResult{Exists: true, Type: FileTypeDirectory, Size: 0, CreatedAt: time.Time{}, UpdatedAt: updatedAt}, nil
-	}
-	file, err := s.findActiveFile(ctx, auth.APIKeyHash, project, path)
-	if err == nil {
-		return StatResult{Exists: true, Type: FileTypeFile, Size: file.Size, CreatedAt: file.CreatedAt, UpdatedAt: file.UpdatedAt, Version: file.Version}, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return StatResult{}, errors.Wrap(err, "query file")
-	}
-	updatedAt, exists, err := s.findDirectoryUpdatedAt(ctx, auth.APIKeyHash, project, path)
+	overlay := overlayApplies(ctx, project)
+	var result StatResult
+	err := s.withReadSnapshot(ctx, overlay, func(q sqlQueryer) error {
+		var err error
+		result, err = s.statQ(ctx, q, auth.APIKeyHash, project, path, overlay)
+		return err
+	})
 	if err != nil {
 		return StatResult{}, errors.WithStack(err)
 	}
-	if !exists {
+	return result, nil
+}
+
+// statQ resolves path as a file, then as an implicit directory, on q.
+func (s *Service) statQ(ctx context.Context, q sqlQueryer, apiKeyHash, project, path string, overlay bool) (StatResult, error) {
+	if path != "" {
+		file, err := s.resolveActiveFile(ctx, q, apiKeyHash, project, path, overlay)
+		if err == nil {
+			return StatResult{Exists: true, Type: FileTypeFile, Size: file.Size, CreatedAt: file.CreatedAt, UpdatedAt: file.UpdatedAt, Version: file.Version}, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return StatResult{}, errors.Wrap(err, "query file")
+		}
+	}
+	updatedAt, exists, err := s.findDirectoryUpdatedAt(ctx, q, apiKeyHash, project, path, overlay)
+	if err != nil {
+		return StatResult{}, err
+	}
+	if !exists && path != "" {
 		return StatResult{Exists: false}, nil
 	}
 	return StatResult{Exists: true, Type: FileTypeDirectory, Size: 0, CreatedAt: time.Time{}, UpdatedAt: updatedAt}, nil
@@ -69,13 +76,15 @@ func (s *Service) Read(ctx context.Context, auth AuthContext, project, path stri
 		return ReadResult{}, errors.WithStack(NewError(ErrCodeInvalidOffset, "length must be -1 or >= 0", false))
 	}
 	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationRead)
-	file, err := s.findActiveFile(ctx, auth.APIKeyHash, project, path)
+	overlay := overlayApplies(ctx, project)
+	// Content and version come from one statement, so they share one snapshot.
+	file, err := s.resolveFile(ctx, s.db, auth.APIKeyHash, project, path, overlay, true)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			if conditions.ExpectedVersion != "" {
 				return ReadResult{}, errors.WithStack(checkFileVersion("", conditions.ExpectedVersion, false))
 			}
-			if exists, dirErr := s.directoryExists(ctx, auth.APIKeyHash, project, path); dirErr == nil && exists {
+			if _, exists, dirErr := s.findDirectoryUpdatedAt(ctx, s.db, auth.APIKeyHash, project, path, overlay); dirErr == nil && exists {
 				return ReadResult{}, errors.WithStack(NewError(ErrCodeIsDirectory, "path is a directory", false))
 			}
 			return ReadResult{}, errors.WithStack(NewError(ErrCodeNotFound, "file not found", false))
@@ -106,43 +115,41 @@ func (s *Service) Read(ctx context.Context, auth AuthContext, project, path stri
 	return result, nil
 }
 
-// findActiveFile loads a non-deleted file row by path.
+// findActiveFile loads a non-deleted file row of one physical project by path.
 func (s *Service) findActiveFile(ctx context.Context, apiKeyHash, project, path string) (*File, error) {
-	owner := systemOwnerFromContext(ctx)
-	var file File
-	err := s.db.QueryRowContext(ctx,
-		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at,
-			skip_rag_index, content_hash, summary_content_hash, summary_status, summary_generation_key, incarnation_id || ':' || CAST(revision AS TEXT)
-			FROM mcp_files
-			WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?
-			LIMIT 1`, s.isPostgres),
-		apiKeyHash, project, path, owner,
-	).Scan(
-		&file.ID, &file.APIKeyHash, &file.Project, &file.Path, &file.Content,
-		&file.Size, &file.CreatedAt, &file.UpdatedAt, &file.Deleted, &file.DeletedAt,
-		&file.SkipRAGIndex, &file.ContentHash, &file.SummaryContentHash, &file.SummaryStatus, &file.SummaryGenerationKey, &file.Version,
-	)
-	if err != nil {
-		return nil, err
+	return s.findActiveFileQ(ctx, s.db, apiKeyHash, project, path)
+}
+
+// findDirectoryUpdatedAt returns the latest update time of the files the
+// project shows below path, if any. With overlay, the merged view is computed
+// only when a bounded probe finds default descendants; otherwise the
+// single-project aggregate runs unchanged. Callers needing more than one
+// statement pass a read snapshot as q.
+func (s *Service) findDirectoryUpdatedAt(ctx context.Context, q sqlQueryer, apiKeyHash, project, path string, overlay bool) (time.Time, bool, error) {
+	if overlay {
+		hasDefaults, err := s.layerHasDescendants(ctx, q, apiKeyHash, DefaultProject, path)
+		if err != nil {
+			return time.Time{}, false, err
+		}
+		if hasDefaults {
+			visible, err := s.visibleDescendants(ctx, q, apiKeyHash, project, path, true)
+			if err != nil {
+				return time.Time{}, false, err
+			}
+			var latest time.Time
+			for _, file := range visible {
+				if file.UpdatedAt.After(latest) {
+					latest = file.UpdatedAt.UTC()
+				}
+			}
+			return latest, len(visible) > 0, nil
+		}
 	}
-	return &file, nil
-}
-
-// directoryExists reports whether the path has any active descendants.
-func (s *Service) directoryExists(ctx context.Context, apiKeyHash, project, path string) (bool, error) {
-	_, exists, err := s.findDirectoryUpdatedAt(ctx, apiKeyHash, project, path)
-	return exists, err
-}
-
-// findDirectoryUpdatedAt returns the latest update time for descendants, if any.
-func (s *Service) findDirectoryUpdatedAt(ctx context.Context, apiKeyHash, project, path string) (time.Time, bool, error) {
 	below, belowArgs := belowPathSQL("path", path)
+	query := `SELECT MAX(updated_at) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND ` + below
+	args := append([]any{apiKeyHash, project, systemOwnerFromContext(ctx)}, belowArgs...)
 	var rawValue any
-	err := s.db.QueryRowContext(ctx,
-		rebindSQL(`SELECT MAX(updated_at) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND `+below, s.isPostgres),
-		append([]any{apiKeyHash, project, systemOwnerFromContext(ctx)}, belowArgs...)...,
-	).Scan(&rawValue)
-	if err != nil {
+	if err := q.QueryRowContext(ctx, rebindSQL(query, s.isPostgres), args...).Scan(&rawValue); err != nil {
 		return time.Time{}, false, errors.Wrap(err, "query directory updated_at")
 	}
 	if rawValue == nil {

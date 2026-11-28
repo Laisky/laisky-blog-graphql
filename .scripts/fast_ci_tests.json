@@ -150,6 +150,9 @@
       "TestRequestBodySettingsLoadMCPInflightBudget",
       "TestBalanceProxyBoundsTheKeyBeforeNormalizing",
       "TestGraphQLFileRenameTargetProject",
+      "TestGraphQLFileIODefaultOverlayParity",
+      "TestGraphQLFileIODefaultOverlayWildcardSearchParity",
+      "TestGraphQLFileIODefaultHistoryIsPerFile",
       "TestGraphQLPageIndexSelectionIsDisabled"
     ]
   },
@@ -416,7 +419,8 @@
     "package": "./internal/library/fileio",
     "tests": [
       "TestGraphQLSharedToolRejectsUnissuedBearer",
-      "TestGraphQLRenameTargetValidatedBeforeDispatch"
+      "TestGraphQLRenameTargetValidatedBeforeDispatch",
+      "TestGraphQLRestoreChecksConditionsOnTheHistoryRead"
     ]
   },
   {
@@ -502,6 +506,10 @@
       "TestFileAuthFromContextRefusesUnverifiedIdentity",
       "TestFileRenameDefinitionAdvertisesOptionalTargetProject",
       "TestFileRenameTargetProjectRouting",
+      "TestFileToolsDefaultProjectSearchLabelsEveryHit",
+      "TestFileToolsDefaultProjectCrossProjectMove",
+      "TestFileToolsDefaultProjectHistoryIsPerFile",
+      "TestFileToolsRestoreNeverMovesASnapshotAcrossLayers",
       "TestFileToolsRefuseDisabledPageIndex",
       "TestMemoryToolRefusesDisabledPageIndex"
     ]
@@ -554,6 +562,15 @@
     "tests": [
       "TestRenameOverwritePreservesReplacementSearch",
       "TestRenameOptOutNeverPublishesRAG",
+      "TestDefaultViewDirectoryUnion",
+      "TestDefaultViewPathsAreCaseSensitiveAndSegmentAware",
+      "TestDefaultViewReadResolvesOneSnapshot",
+      "TestDefaultCrossProjectMoves",
+      "TestDefaultSameProjectRenameReplacesOnlyVisibleFiles",
+      "TestDefaultOverlaySearch",
+      "TestDefaultHistoryIsTheResolvedFileHistory",
+      "TestDefaultHistoryRecoveryAndPagination",
+      "TestDefaultHistoryRestoreReadChecksConditions",
       "TestRenameWithPendingAndFailedRAGIndexing",
       "TestIndexWorkerRetainsCredentialUntilExpiry",
       "TestPurgeExpiredCredentialsIsBoundedAndThrottled",
@@ -562,7 +579,16 @@
       "TestVacantDirectoryRelocation",
       "TestFreshCredentialReachesClaimedRefresh",
       "TestFreshCredentialReachesPendingRefresh",
-      "TestSummaryRefreshSurvivesRenameRoundTrip"
+      "TestSummaryRefreshSurvivesRenameRoundTrip",
+      "TestTenantLockAttemptsOnceAndReturnsBusy",
+      "TestTenantLockDoesNotClassifyCommitFailureAsBusy",
+      "TestDefaultCreateNeverUsesStaleNamespaceSQLite"
+    ]
+  },
+  {
+    "package": "./internal/mcp/memory",
+    "tests": [
+      "TestMemoryEngineKeepsSharedDefaultsOutOfProjectState"
     ]
   },
   {

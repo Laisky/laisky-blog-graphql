@@ -25,7 +25,7 @@ func (t *FileWriteTool) Definition() mcp.Tool {
 	return mcp.NewTool("file_write",
 		mcp.WithDescription("Write UTF-8 file content and return its committed version. Every call, including APPEND, MUST supply expected_version from a prior read or create_only=true for "+
 			"a new file. Missing conditions fail; stale versions require re-reading and recomputing."),
-		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
+		mcp.WithString("project", mcp.Required(), mcp.Description(fileProjectDescription)),
 		mcp.WithString("path", mcp.Required(), mcp.Description("File path to write.")),
 		mcp.WithString("content", mcp.Required(), mcp.Description("UTF-8 encoded content.")),
 		mcp.WithString("content_encoding", mcp.Description("Content encoding; must be utf-8.")),

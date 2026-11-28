@@ -23,7 +23,7 @@ func NewFileReadTool(svc FileService) (*FileReadTool, error) {
 func (t *FileReadTool) Definition() mcp.Tool {
 	return mcp.NewTool("file_read",
 		mcp.WithDescription("Read UTF-8 content and its version from one snapshot. Pin subsequent ranges with expected_version to reject mixed-generation reads. Byte ranges must align with UTF-8 characters."),
-		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
+		mcp.WithString("project", mcp.Required(), mcp.Description(fileProjectDescription)),
 		mcp.WithString("path", mcp.Required(), mcp.Description("File path to read.")),
 		mcp.WithNumber("offset", mcp.Description("Byte offset to start reading from.")),
 		mcp.WithNumber("length", mcp.Description("Number of bytes to read; -1 reads to EOF.")),

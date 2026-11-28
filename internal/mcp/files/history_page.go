@@ -39,7 +39,9 @@ func ParseHistoryID(raw string) (uint64, error) {
 	return id, nil
 }
 
-// ListVersionPage returns bounded, tenant/project/owner-scoped historical metadata.
+// ListVersionPage returns bounded, tenant/project/owner-scoped historical metadata
+// of the file a path of project addresses: the path resolves like a normal read
+// and only that file's physical project is paged (see fileNamespaceQ).
 // Use the last page's next_cursor as beforeID; newly created rows cannot shift an older page.
 func (s *Service) ListVersionPage(ctx context.Context, auth AuthContext, project, path string, beforeID uint64, limit int) (HistoryPage, error) {
 	if err := s.validateAuth(auth); err != nil {
@@ -54,16 +56,36 @@ func (s *Service) ListVersionPage(ctx context.Context, auth AuthContext, project
 	if path == "" || limit < 1 || limit > 200 || beforeID > uint64(1<<63-1) {
 		return HistoryPage{}, errors.WithStack(NewError(ErrCodeInvalidArgument, "history requires a file path, limit 1..200 and a valid cursor", false))
 	}
+	overlay := overlayApplies(ctx, project)
+	var page HistoryPage
+	err := s.withReadSnapshot(ctx, overlay, func(q sqlQueryer) error {
+		var err error
+		page, err = s.versionPageQ(ctx, q, auth.APIKeyHash, project, path, beforeID, limit, overlay)
+		return err
+	})
+	if err != nil {
+		return HistoryPage{}, errors.WithStack(err)
+	}
+	return page, nil
+}
+
+// versionPageQ resolves the history namespace of a path and reads one page of
+// it with q, so both statements see the same snapshot when q is one.
+func (s *Service) versionPageQ(ctx context.Context, q sqlQueryer, apiKeyHash, project, path string, beforeID uint64, limit int, overlay bool) (HistoryPage, error) {
+	physical, _, err := s.fileNamespaceQ(ctx, q, apiKeyHash, project, path, overlay)
+	if err != nil {
+		return HistoryPage{}, err
+	}
 	query := `SELECT id, size, created_at FROM mcp_file_versions
 		WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ?`
-	args := []any{auth.APIKeyHash, project, path, systemOwnerFromContext(ctx)}
+	args := []any{apiKeyHash, physical, path, systemOwnerFromContext(ctx)}
 	if beforeID != 0 {
 		query += ` AND id < ?`
 		args = append(args, beforeID)
 	}
 	query += ` ORDER BY id DESC LIMIT ?`
 	args = append(args, limit+1)
-	rows, err := s.db.QueryContext(ctx, rebindSQL(query, s.isPostgres), args...)
+	rows, err := q.QueryContext(ctx, rebindSQL(query, s.isPostgres), args...)
 	if err != nil {
 		return HistoryPage{}, errors.Wrap(err, "query history page")
 	}

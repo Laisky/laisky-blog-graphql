@@ -501,7 +501,7 @@ func (s *Service) buildEmbeddingPlan(ctx context.Context, job FileIndexJob, apiK
 
 // processDeleteJob removes index rows for a file path.
 func (s *Service) processDeleteJob(ctx context.Context, job FileIndexJob) error {
-	return s.withProjectLocks(ctx, job.APIKeyHash, []string{job.Project}, func(tx *sql.Tx) error {
+	return s.withTenantLock(ctx, job.APIKeyHash, func(tx *sql.Tx) error {
 		active, err := s.checkActiveRAGFileTx(ctx, tx, job)
 		if err == nil && !active.skipRAGIndex {
 			// An active RAG generation owns the path regardless of clock
@@ -530,7 +530,7 @@ func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, versio
 	if hashErr != nil {
 		_ = tx.Rollback()
 		if errors.Is(hashErr, sql.ErrNoRows) {
-			// Recheck the path under the same project lock as creates and
+			// Recheck the path under the same tenant lock as creates and
 			// renames; an old worker cannot erase a replacement generation.
 			return s.processDeleteJob(ctx, job)
 		}

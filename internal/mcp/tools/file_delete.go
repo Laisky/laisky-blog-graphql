@@ -24,7 +24,7 @@ func (t *FileDeleteTool) Definition() mcp.Tool {
 	return mcp.NewTool("file_delete",
 		mcp.WithDescription("Delete one file using its required expected_version from file_read or file_stat. Recursive directory mutations are not supported by file-version tokens; list "+
 			"and delete individual files with their own versions. The root cannot be deleted."),
-		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
+		mcp.WithString("project", mcp.Required(), mcp.Description(fileProjectDescription)),
 		mcp.WithString("path", mcp.Required(), mcp.Description("Non-root file path to delete.")),
 		mcp.WithBoolean("recursive", mcp.Description("Does not bypass version checks or authorize a directory subtree.")),
 		expectedFileVersionOption(true), fileToolPluginOption(), mcp.WithIdempotentHintAnnotation(false),

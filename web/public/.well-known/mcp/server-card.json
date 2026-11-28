@@ -380,7 +380,7 @@
     },
     {
       "name": "file_search",
-      "description": "Search project-scoped FileIO memory for relevant files or chunks using the configured memory backend.",
+      "description": "Search project-scoped FileIO memory for relevant files or chunks using the configured memory backend. A project's search also covers its @DEFAULT files; each hit then names the project that stores it.",
       "inputSchema": {
         "type": "object",
         "required": [
@@ -465,7 +465,7 @@
           },
           "target_project": {
             "type": "string",
-            "description": "Optional destination project for a cross-project move; omit or leave empty to rename within project."
+            "description": "Optional destination project for a cross-project move; omit or leave empty to rename within project. Destination conditions apply to that project's own files; a @DEFAULT file there is no collision."
           },
           "overwrite": {
             "type": "boolean"

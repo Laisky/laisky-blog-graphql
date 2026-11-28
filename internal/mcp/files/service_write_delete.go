@@ -69,16 +69,27 @@ func (s *Service) WriteWith(ctx context.Context, auth AuthContext, project, path
 	opts.ExpectedVersion, opts.CreateOnly = conditions.ExpectedVersion, conditions.CreateOnly
 
 	var result WriteResult
-	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
-		n, err := s.writeWithinTx(ctx, tx, auth, project, path, []byte(content), mode, offset, payloadBytes, opts)
+	err := s.runUserMutation(ctx, auth.APIKeyHash, project, func(tx *sql.Tx, overlay bool) error {
+		layer := project
+		if overlay {
+			// Conditions are judged before namespace conflicts, as in physical mode.
+			if err := s.checkVersionTx(ctx, tx, auth, project, path, opts.ExpectedVersion, opts.CreateOnly, true); err != nil {
+				return err
+			}
+			var resolveErr error
+			if layer, resolveErr = s.resolveWriteLayerTx(ctx, tx, auth.APIKeyHash, project, path); resolveErr != nil {
+				return resolveErr
+			}
+		}
+		n, err := s.writeWithinTx(ctx, tx, auth, layer, path, []byte(content), mode, offset, payloadBytes, opts)
 		if err != nil {
 			return err
 		}
-		version, err := s.fileVersionTx(ctx, tx, auth, project, path)
+		version, err := s.fileVersionTx(ctx, tx, auth, layer, path)
 		if err != nil {
 			return err
 		}
-		result = WriteResult{BytesWritten: n, Version: version}
+		result = WriteResult{BytesWritten: n, Version: version, ResolvedProject: layer}
 		return nil
 	})
 	if err != nil {
@@ -87,7 +98,7 @@ func (s *Service) WriteWith(ctx context.Context, auth AuthContext, project, path
 	return result, nil
 }
 
-// writeWithinTx executes the write pipeline assuming the project lock is held.
+// writeWithinTx executes the write pipeline assuming the tenant lock is held.
 // Preconditions, content, historical preimage, and indexing outbox share this
 // transaction. The database trigger increments the revision on every write path.
 func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple validation and upsert steps
@@ -164,7 +175,7 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 			return 0, err
 		}
 		// Preserve the previous summary until its replacement publishes. The
-		// generation predicate is defense in depth in addition to the project lock.
+		// generation predicate is defense in depth in addition to the tenant lock.
 		updated, err := tx.ExecContext(ctx,
 			rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, updated_at = ?, deleted = FALSE, deleted_at = NULL, skip_rag_index = ?, content_hash = ?
 				WHERE id = ? AND apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND deleted = FALSE
@@ -220,27 +231,7 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 	if path == "" {
 		return DeleteResult{}, errors.WithStack(NewError(ErrCodePermissionDenied, "root directory cannot be deleted", false))
 	}
-	owner := systemOwnerFromContext(ctx)
-	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationDelete)
-	var deletedCount int
-	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
-		if err := s.checkPathVersionTx(ctx, tx, auth, project, path, conditions.ExpectedVersion, false); err != nil {
-			return err
-		}
-		now := s.clock()
-		paths, err := s.resolveDeleteTargets(ctx, tx, auth.APIKeyHash, project, path, recursive)
-		if err != nil {
-			return err
-		}
-		if len(paths) == 0 {
-			return errors.WithStack(NewError(ErrCodeNotFound, "path not found", false))
-		}
-		if err := s.softDeletePathsTx(ctx, tx, auth, project, paths, now, owner == ""); err != nil {
-			return err
-		}
-		deletedCount = len(paths)
-		return nil
-	})
+	deletedCount, err := s.deleteFiles(ctx, auth, project, path, recursive)
 	if err != nil {
 		return DeleteResult{}, errors.WithStack(err)
 	}

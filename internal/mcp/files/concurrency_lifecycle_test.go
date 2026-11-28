@@ -18,7 +18,7 @@ func TestFileIOPostgresLifecycle(t *testing.T) {
 	t.Run("delete_vs_write", func(t *testing.T) {
 		f := newRaceFixture(t, "postgres", nil)
 		f.write(t, 0, "/state.txt", "base", files.WriteModeTruncate, 0)
-		for _, err := range parallelRaceCalls(t, f.ctx, 2, func(i int) error {
+		for _, err := range parallelMutationCalls(t, f.ctx, 2, func(i int) error {
 			if i == 0 {
 				_, err := f.svc[i].Delete(f.ctx, f.auth, "race", "/state.txt", false)
 				return err
@@ -44,7 +44,7 @@ func TestFileIOPostgresLifecycle(t *testing.T) {
 	t.Run("rename_vs_write", func(t *testing.T) {
 		f := newRaceFixture(t, "postgres", nil)
 		f.write(t, 0, "/old.txt", "base", files.WriteModeTruncate, 0)
-		for _, err := range parallelRaceCalls(t, f.ctx, 2, func(i int) error {
+		for _, err := range parallelMutationCalls(t, f.ctx, 2, func(i int) error {
 			if i == 0 {
 				_, err := f.svc[i].Rename(f.ctx, f.auth, files.RenameRequest{Project: "race", FromPath: "/old.txt", ToPath: "/new.txt"})
 				return err
@@ -75,7 +75,7 @@ func TestFileIOPostgresLifecycle(t *testing.T) {
 		versions, err := f.svc[0].ListVersions(f.ctx, f.auth, "race", "/restore.txt")
 		require.NoError(t, err)
 		require.Len(t, versions, 1)
-		for _, err := range parallelRaceCalls(t, f.ctx, 2, func(i int) error {
+		for _, err := range parallelMutationCalls(t, f.ctx, 2, func(i int) error {
 			if i == 0 {
 				_, err := f.svc[i].RestoreVersion(f.ctx, f.auth, "race", "/restore.txt", versions[0].ID)
 				return err
@@ -92,40 +92,59 @@ func TestFileIOPostgresLifecycle(t *testing.T) {
 	})
 }
 
-// TestFileIOPostgresScopeIsolation proves unrelated projects and tenants make
-// progress while a real project lock is held, without sharing content.
-func TestFileIOPostgresScopeIsolation(t *testing.T) {
+// TestFileIOPostgresTenantIsolation holds one tenant's uncommitted mutation.
+func TestFileIOPostgresTenantIsolation(t *testing.T) {
 	f := newRaceFixture(t, "postgres", nil)
 	f.write(t, 0, "/same.txt", "base", files.WriteModeTruncate, 0)
+	f.write(t, 0, "/restore.txt", "v1", files.WriteModeTruncate, 0)
+	f.write(t, 0, "/restore.txt", "v2", files.WriteModeTruncate, 0)
+	history, err := f.svc[0].ListVersions(f.ctx, f.auth, "race", "/restore.txt")
+	require.NoError(t, err)
+	require.Len(t, history, 1)
+	seed, err := f.svc[0].Read(f.ctx, f.auth, "race", "/restore.txt", 0, -1)
+	require.NoError(t, err)
+	restoreCtx, err := files.WithFilePreconditions(f.ctx, f.auth, "race", "/restore.txt", files.FileOperationWrite,
+		files.FilePreconditions{ExpectedVersion: seed.Version})
+	require.NoError(t, err)
 	gate := &commitGate{prepared: make(chan struct{}), release: make(chan struct{})}
 	t.Cleanup(gate.Release)
 	writer := f.service(t, 0, gate)
 	done := make(chan error, 1)
 	go func() {
-		_, err := writer.Write(f.ctx, f.auth, "race", "/same.txt", "held", "utf-8", 0, files.WriteModeTruncate)
-		done <- err
+		_, writeErr := writer.Write(f.ctx, f.auth, "race", "/same.txt", "held", "utf-8", 0, files.WriteModeTruncate)
+		done <- writeErr
 	}()
 	select {
 	case <-gate.prepared:
 	case <-f.ctx.Done():
 		t.Fatal("writer never reached gate")
 	}
-	other := files.AuthContext{APIKeyHash: strings.Repeat("b", 64)}
 	ctx, cancel := context.WithTimeout(f.ctx, 5*time.Second)
 	defer cancel()
-	for _, scope := range []struct {
-		auth    files.AuthContext
-		project string
-		content string
-	}{{f.auth, "other", "other-project"}, {other, "race", "other-tenant"}} {
-		_, err := f.svc[1].Write(ctx, scope.auth, scope.project, "/same.txt", scope.content, "utf-8", 0, files.WriteModeTruncate)
-		require.NoError(t, err, "unrelated scope must finish before held transaction releases")
-		read, err := f.svc[1].Read(ctx, scope.auth, scope.project, "/same.txt", 0, -1)
-		require.NoError(t, err)
-		require.Equal(t, scope.content, read.Content)
-	}
+	contender := f.svc[1]
+	_, err = contender.Write(ctx, f.auth, "other", "/same.txt", "other-project", "utf-8", 0, files.WriteModeTruncate)
+	requireRetryableTenantBusy(t, err)
+	_, err = contender.Write(ctx, f.auth, files.DefaultProject, "/default.txt", "default", "utf-8", 0, files.WriteModeTruncate)
+	requireRetryableTenantBusy(t, err)
+	_, err = contender.Write(files.WithPhysicalProjects(ctx), f.auth, "other", "/local.txt", "local", "utf-8", 0, files.WriteModeTruncate)
+	requireRetryableTenantBusy(t, err)
+	_, err = contender.Delete(ctx, f.auth, "race", "/restore.txt", false)
+	requireRetryableTenantBusy(t, err)
+	_, err = contender.Rename(ctx, f.auth, files.RenameRequest{Project: "race", FromPath: "/restore.txt", TargetProject: "other", ToPath: "/moved.txt"})
+	requireRetryableTenantBusy(t, err)
+	_, err = contender.RestoreVersion(restoreCtx, f.auth, "race", "/restore.txt", history[0].ID)
+	requireRetryableTenantBusy(t, err)
+
+	other := files.AuthContext{APIKeyHash: strings.Repeat("b", 64)}
+	_, err = contender.Write(ctx, other, "race", "/same.txt", "other-tenant", "utf-8", 0, files.WriteModeTruncate)
+	require.NoError(t, err, "a different tenant continues before release")
+	read, err := contender.Read(ctx, other, "race", "/same.txt", 0, -1)
+	require.NoError(t, err)
+	require.Equal(t, "other-tenant", read.Content)
 	f.assertStored(t, "/same.txt", "base")
-	require.Equal(t, 1, f.count(t, "mcp_file_index_jobs"))
+	require.Equal(t, 2, f.count(t, "mcp_files"))
+	require.Equal(t, 1, f.count(t, "mcp_file_versions"))
+	require.Equal(t, 3, f.count(t, "mcp_file_index_jobs"))
 	gate.Release()
 	select {
 	case err := <-done:
@@ -134,6 +153,11 @@ func TestFileIOPostgresScopeIsolation(t *testing.T) {
 		t.Fatal("writer failed to finish")
 	}
 	f.assertStored(t, "/same.txt", "held")
+	_, err = contender.RestoreVersion(restoreCtx, f.auth, "race", "/restore.txt", history[0].ID)
+	require.NoError(t, err, "the same conditional restore is safe after admission releases")
+	f.assertStored(t, "/restore.txt", "v1")
+	require.Equal(t, 3, f.count(t, "mcp_file_versions"))
+	require.Equal(t, 5, f.count(t, "mcp_file_index_jobs"))
 }
 
 // TestFileIORejectedWrites checks that failed validations leave no content,

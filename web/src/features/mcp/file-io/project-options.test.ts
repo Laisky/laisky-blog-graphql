@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callFileAPI } from './client';
-import { isProjectQuery, listProjects, parseProjectPage, PROJECT_PAGE_SIZE } from './project-options';
+import { DEFAULT_PROJECT, isProjectQuery, listProjects, parseProjectPage, PROJECT_PAGE_SIZE } from './project-options';
 
 vi.mock('./client', () => ({ callFileAPI: vi.fn() }));
 afterEach(() => vi.clearAllMocks());
@@ -22,8 +22,19 @@ describe('project discovery protocol', () => {
     expect(callFileAPI).not.toHaveBeenCalled();
   });
   it('accepts literal punctuation and all valid length boundaries', () => {
-    for (const query of ['', '.', '-', '_', 'MCP', 'a'.repeat(128)]) expect(isProjectQuery(query)).toBe(true);
+    for (const query of ['', '.', '-', '_', 'MCP', '@', '@def', 'a'.repeat(128)]) expect(isProjectQuery(query)).toBe(true);
     for (const query of ['%', '\\', 'a b', '*', 'a'.repeat(129)]) expect(isProjectQuery(query)).toBe(false);
+  });
+  it('accepts the reserved @DEFAULT project, and no other @ name, in pages and cursors', async () => {
+    expect(parseProjectPage({ projects: [DEFAULT_PROJECT, 'alpha'], has_more: true, next_cursor: 'alpha' }))
+      .toEqual({ projects: ['@DEFAULT', 'alpha'], has_more: true, next_cursor: 'alpha' });
+    for (const project of ['@default', '@DEFAULTS', 'a@b']) {
+      expect(() => parseProjectPage({ projects: [project], has_more: false })).toThrow();
+    }
+    vi.mocked(callFileAPI).mockResolvedValue({ projects: ['alpha'], has_more: false });
+    const signal = new AbortController().signal;
+    await expect(listProjects('a', '@def', DEFAULT_PROJECT, signal)).resolves.toEqual({ projects: ['alpha'], has_more: false });
+    await expect(listProjects('a', '', '@nope', signal)).rejects.toThrow();
   });
   it('accepts an empty page and a correctly bounded continuation', () => {
     expect(parseProjectPage({ projects: [], has_more: false })).toEqual({ projects: [], has_more: false });

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	jitter "math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,7 +51,6 @@ func newRaceFixture(t *testing.T, backend string, configure func(*files.Settings
 	f.settings.MaxPayloadBytes = 1 << 20
 	f.settings.MaxFileBytes = 2 << 20
 	f.settings.MaxProjectBytes = 16 << 20
-	f.settings.LockTimeout = 20 * time.Second
 	if configure != nil {
 		configure(&f.settings)
 	}
@@ -228,6 +228,34 @@ func parallelRaceCalls(t *testing.T, ctx context.Context, n int, call func(int) 
 	return errs
 }
 
+// retryRaceBusy models a client retrying one definite pre-mutation rejection.
+// The callback must make at most one mutation and preserve its preconditions.
+func retryRaceBusy[T any](ctx context.Context, call func() (T, error)) (T, error) {
+	for {
+		value, err := call()
+		typed, ok := files.AsError(err)
+		if !ok || typed.Code != files.ErrCodeResourceBusy || !typed.Retryable {
+			return value, err
+		}
+		delay := time.NewTimer(time.Duration(1+jitter.IntN(8)) * time.Millisecond) // test-client jitter only
+		select {
+		case <-ctx.Done():
+			delay.Stop()
+			return value, errors.WithStack(ctx.Err())
+		case <-delay.C:
+		}
+	}
+}
+
+// parallelMutationCalls runs a single retryable operation per test client.
+func parallelMutationCalls(t *testing.T, ctx context.Context, n int, call func(int) error) []error {
+	t.Helper()
+	return parallelRaceCalls(t, ctx, n, func(i int) error {
+		_, err := retryRaceBusy(ctx, func() (struct{}, error) { return struct{}{}, call(i) })
+		return err
+	})
+}
+
 // commitGate pauses AFTER the actual mutation, snapshot and outbox writes, while
 // retaining DefaultLockProvider's real advisory lock and transaction. It is not
 // an in-memory substitute for the lock under test.
@@ -238,9 +266,9 @@ type commitGate struct {
 	once     sync.Once
 }
 
-// WithProjectLock delegates production locking and exposes the pre-commit boundary.
-func (g *commitGate) WithProjectLock(ctx context.Context, db *sql.DB, pg bool, key, project string, timeout time.Duration, fn func(*sql.Tx) error) error {
-	return (files.DefaultLockProvider{}).WithProjectLock(ctx, db, pg, key, project, timeout, func(tx *sql.Tx) error {
+// WithTenantLock delegates production locking and exposes the pre-commit boundary.
+func (g *commitGate) WithTenantLock(ctx context.Context, db *sql.DB, pg bool, key string, fn func(*sql.Tx) error) error {
+	return (files.DefaultLockProvider{}).WithTenantLock(ctx, db, pg, key, func(tx *sql.Tx) error {
 		if err := fn(tx); err != nil {
 			return err
 		}

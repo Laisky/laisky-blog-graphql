@@ -36,7 +36,9 @@ type FileEntry struct {
 
 // ChunkEntry describes a file chunk returned by file_search.
 type ChunkEntry struct {
-	// Project is populated only for cross-project searches (project="*").
+	// Project names the physical project storing the hit whenever the search
+	// spans several projects: an ordinary project with DefaultProject, or "*".
+	// It is empty for a single-project search such as DefaultProject itself.
 	Project            string `json:"project,omitempty"`
 	FilePath           string `json:"file_path"`
 	FileSeekStartBytes int64  `json:"file_seek_start_bytes"`
@@ -83,6 +85,10 @@ type WriteResult struct {
 	BytesWritten int64
 	// Version is captured inside the mutation transaction, not read after commit.
 	Version string
+	// ResolvedProject is the physical project that stored the write. It differs
+	// from the addressed project only when the path resolved to a DefaultProject
+	// file. It is internal metadata, never a wire field.
+	ResolvedProject string `json:"-"`
 }
 
 // DeleteResult returns the file_delete outcome.

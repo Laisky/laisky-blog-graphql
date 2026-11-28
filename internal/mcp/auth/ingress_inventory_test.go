@@ -62,11 +62,10 @@ var (
 	// identityBuilders construct an identity value directly instead of
 	// receiving a verified one from the authenticator.
 	identityBuilders = map[string]string{
-		"internal/mcp/auth/auth.go":                      "DeriveFromAPIKey: the unverified candidate that Authenticate verifies",
-		"internal/mcp/askuser/auth.go":                   "NewTelegramAnswerer: the one key-less delegated principal",
-		"internal/mcp/files/auth_context.go":             "AuthFromVerified: the only conversion from a verified context",
-		"internal/mcp/files/system_fs.go":                "system-owned files, never a caller tenant",
-		"internal/mcp/files/service_mutation_helpers.go": "rescoping an already authorized identity",
+		"internal/mcp/auth/auth.go":          "DeriveFromAPIKey: the unverified candidate that Authenticate verifies",
+		"internal/mcp/askuser/auth.go":       "NewTelegramAnswerer: the one key-less delegated principal",
+		"internal/mcp/files/auth_context.go": "AuthFromVerified: the only conversion from a verified context",
+		"internal/mcp/files/system_fs.go":    "system-owned files, never a caller tenant",
 		// Offline tools: synthetic tenants for benchmarks and plugin
 		// conformance runs (cmd/eval-plugin, cmd/memory-bench); no request
 		// reaches them.

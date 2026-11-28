@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// keyedMutexLockProvider serializes callbacks by api key hash and project while allowing independent scopes to proceed.
+// keyedMutexLockProvider serializes callbacks by API key hash while allowing independent scopes to proceed.
 type keyedMutexLockProvider struct {
 	guard sync.Mutex
 	locks map[string]*sync.Mutex
@@ -24,13 +24,13 @@ type globalMutexLockProvider struct {
 	guard sync.Mutex
 }
 
-// WithProjectLock acquires a per-scope mutex, opens a transaction, and commits or rolls back around the callback.
-func (p *keyedMutexLockProvider) WithProjectLock(ctx context.Context, db *sql.DB, _ bool, apiKeyHash, project string, _ time.Duration, fn func(tx *sql.Tx) error) error {
+// WithTenantLock acquires a per-scope mutex, opens a transaction, and commits or rolls back around the callback.
+func (p *keyedMutexLockProvider) WithTenantLock(ctx context.Context, db *sql.DB, _ bool, apiKeyHash string, fn func(tx *sql.Tx) error) error {
 	p.guard.Lock()
 	if p.locks == nil {
 		p.locks = map[string]*sync.Mutex{}
 	}
-	scope := apiKeyHash + ":" + project
+	scope := apiKeyHash
 	lock, ok := p.locks[scope]
 	if !ok {
 		lock = &sync.Mutex{}
@@ -54,8 +54,8 @@ func (p *keyedMutexLockProvider) WithProjectLock(ctx context.Context, db *sql.DB
 	return tx.Commit()
 }
 
-// WithProjectLock executes the callback under a single mutex to avoid sqlite table-lock false negatives.
-func (p *globalMutexLockProvider) WithProjectLock(ctx context.Context, db *sql.DB, _ bool, _ string, _ string, _ time.Duration, fn func(tx *sql.Tx) error) error {
+// WithTenantLock executes the callback under a single mutex to avoid sqlite table-lock false negatives.
+func (p *globalMutexLockProvider) WithTenantLock(ctx context.Context, db *sql.DB, _ bool, _ string, fn func(tx *sql.Tx) error) error {
 	p.guard.Lock()
 	defer p.guard.Unlock()
 
@@ -94,7 +94,7 @@ func newConcurrentTestService(t *testing.T, settings Settings, lockProvider Lock
 	return svc
 }
 
-// TestConcurrentAppendsPreserveAllWrites verifies conflicting appends do not lose data when serialized by project lock scope.
+// TestConcurrentAppendsPreserveAllWrites verifies conflicting appends do not lose data when serialized by tenant lock scope.
 func TestConcurrentAppendsPreserveAllWrites(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false

@@ -100,7 +100,7 @@ type FileEntry struct {
 }
 
 type ChunkEntry struct {
-    Project            string // populated only for file_search with project="*"
+    Project            string // physical project of the hit; set when the search spans several projects (an ordinary project or "*")
     FilePath           string
     FileSeekStartBytes int64 // inclusive
     FileSeekEndBytes   int64 // exclusive
@@ -126,7 +126,7 @@ chunk. Key architecture points (full contract:
   `last_error_code`, and `summary_generation_key`. All columns are additive and
   migrated idempotently on Postgres and SQLite.
 - The RAG index worker generates one summary per content generation off the
-  transaction path (never under the project lock), then publishes chunks + summary
+  transaction path (never under the tenant lock), then publishes chunks + summary
   atomically after rechecking the active `content_hash`. A stale worker whose hash no
   longer matches is discarded. Search pairs a chunk with a summary only when
   `summary_content_hash == file_content_hash` and the status is ready or degraded.
@@ -191,7 +191,7 @@ Error payload:
 2. MCP transport normalizes authorization into trusted `AuthContext`.
 3. Tool validates input and calls `files.Service`.
 4. For writes/deletes/renames:
-   - acquire advisory transaction lock for `(apikey_hash, project)`
+   - acquire one advisory transaction lock for the API-key hash
    - mutate `mcp_files`
    - enqueue outbox job in same transaction
    - for rename/move, enqueue `DELETE(old_path)` and `UPSERT(new_path)` per moved file
@@ -397,6 +397,7 @@ ON mcp_file_index_jobs (status, available_at, id);
 
 - required, length `1..128`
 - recommended safe charset: `A-Z a-z 0-9 _-.`
+- the exact name `@DEFAULT` is reserved for the per-API-key default layer (§10.4)
 
 ### 8.2 Path Validation
 
@@ -428,6 +429,14 @@ Error mapping:
 ## 9. Tool Contracts and Behavior
 
 All offsets are byte-based and follow `[start, end)`.
+
+Every path-prefix predicate below (`path + "/%"` descendants, `path_prefix`) is built by `prefixSQL`/`belowPathSQL`:
+an escaped `LIKE ... ESCAPE '\'` keeps the prefix scan, and a `substr` comparison keeps the match case-sensitive
+on SQLite, whose `LIKE` folds ASCII case. Prefixes are therefore literal (`_` is not a wildcard), case-sensitive
+and, for descendants, segment-aware on both databases.
+
+For an overlaid project (every user project except `@DEFAULT`), stat, read, list and the resolution of an
+existing file operand use the filesystem view of §10.4; `file_search` does not.
 
 ### 9.1 `file_stat(project, path)`
 
@@ -491,7 +500,7 @@ Creation:
 Execution outline:
 
 1. validate project/path/content/encoding/mode/offset.
-2. start transaction and acquire project advisory lock.
+2. start transaction and acquire the tenant advisory lock.
 3. check path conflicts:
    - descendant exists under target path => `IS_DIRECTORY`
    - any parent segment is an active file => `NOT_DIRECTORY`
@@ -521,7 +530,7 @@ Root handling:
 Execution outline:
 
 1. validate inputs and root-wipe policy.
-2. start transaction and acquire project advisory lock.
+2. start transaction and acquire the tenant advisory lock.
 3. resolve deletion target set:
    - file exact match
    - directory descendants by prefix
@@ -555,19 +564,26 @@ Rename/move semantics:
   - descendants are matched by a literal, case-sensitive path prefix (escaped `LIKE` plus `substr`), so `_`, `%` and
     ASCII case never widen the match; the source subtree is selected the same way
 - every generated destination path must pass `ValidatePath`, including the 512-byte limit (`INVALID_PATH`)
-- every check runs under the project locks before the first row, history or outbox change.
+- every check runs under the tenant lock before the first row, history or outbox change.
+
+Same-project rename of an overlaid project: the source is the file the view shows and is renamed within its own
+physical project (a default for every project). The destination is judged on the view; overwrite replaces only a
+visible file, and a hidden default at the destination fails with `ALREADY_EXISTS`. Contract:
+[`fileio_default_project.md` §5.1](../proposals/fileio_default_project.md#51-same-project-rename).
 
 Cross-project move (`target_project` set and different from `project`):
 
 - `target_project` is validated like `project` and is scoped to the caller's `apikey_hash`; `"*"` is rejected.
-- the source is resolved in `project`; `to_path`, parent-file checks, collisions, overwrite and the
-  destination conditions (`expected_destination_version`, `destination_must_not_exist`) apply in `target_project`.
+- the source is the physical file a read of `project` resolves: its own file or, for an overlaid project, the
+  inherited `@DEFAULT` file, which then leaves `@DEFAULT` for every project. `to_path`, parent-file checks,
+  collisions, overwrite and the destination conditions (`expected_destination_version`,
+  `destination_must_not_exist`) apply to `target_project`'s own physical files only. A `@DEFAULT` file at the
+  destination is not a collision of an ordinary target project and is never overwritten or deleted by the move.
 - `from_path == to_path` is a real move, not a no-op, and the own-subtree rule does not apply.
 - moved bytes must fit `target_project`'s quota after overwritten destinations are released (`QUOTA_EXCEEDED`).
 - rows keep their id and incarnation, `mcp_file_versions` history moves with them, and the revision trigger advances
   each moved file's revision.
-- the transaction holds both project advisory locks, taken in ascending `(lock key, project)` order by
-  `MultiProjectLockProvider.WithProjectsLock`; a lock provider without it refuses the move.
+- the transaction holds one tenant-wide advisory lock. It resolves the source and validates both paths under that same lock.
 
 One rename implementation (`files.Service.Rename(ctx, auth, files.RenameRequest)`) serves same-project and
 cross-project moves; every memory plugin's `Rename` receives the same `RenameRequest`.
@@ -590,14 +606,14 @@ Execution outline:
 1. validate `project`, `from_path`, `to_path`, and `overwrite`.
 2. reject root source or root destination.
 3. if `from_path == to_path` within one project, return `moved_count=0`.
-4. start transaction and acquire the project advisory lock (both projects' locks for a cross-project move).
-5. resolve source file set:
+4. start the transaction and acquire the tenant advisory lock once.
+5. resolve source file set (through the view for an overlaid project):
    - exact file match at `from_path`, or
    - descendant files strictly below `from_path` (literal prefix `from_path + "/"`), else `NOT_FOUND`.
 6. validate the destination (`planRenameMoveTx`): the single-file rules, or for a directory a vacant `to_path`,
    then compute and validate every new path. Because a directory destination is vacant, no new path can equal
    another moved file's old path, so the remap order does not matter.
-7. if overwrite-replace applies, soft-delete the replaced destination file first.
+7. if overwrite-replace applies, snapshot the replaced destination file into history and soft-delete it first.
 8. apply transactional path remap update on `mcp_files` with `updated_at=now`.
 9. enqueue a `DELETE` for `old_path`. For a RAG-indexed destination, queue one `UPSERT` that replaces
    old chunks. For an opted-out destination, clear obsolete RAG chunks in the move transaction without
@@ -628,51 +644,96 @@ Execution outline:
 ### 9.7 `file_search(project, query, path_prefix="", limit=5)`
 
 - `query` must be non-empty after trim, else `INVALID_QUERY`.
-- `path_prefix` is a raw string-prefix filter (not directory-boundary filter);
+- `path_prefix` is a literal, case-sensitive string-prefix filter (not directory-boundary filter);
   the MCP tool layer normalizes a missing leading `/`.
 - limit default 5, max 20.
 - return only chunks from active files (never deleted).
 - order by final score descending.
 - eventual consistency accepted.
 - `project="*"` is the cross-project wildcard. It is accepted only by `file_search`; all other file tools must continue to reject `"*"` and require an explicit project. Tenant isolation by `apikey_hash` is unchanged, so the wildcard only spans projects owned by the caller.
-- For `project="*"`, every returned `ChunkEntry` must include the source `project` value. For single-project searches the field is omitted from the response.
+- Retrieval is physical (`SearchProjects`): an ordinary project searches the physical projects `project` and
+  `@DEFAULT`, including documents the filesystem view hides; `@DEFAULT` and system namespaces search only
+  themselves; `"*"` searches every project of the caller.
+- Whenever the search spans more than one physical project (an ordinary project or `"*"`), every returned
+  `ChunkEntry` must include the physical `project` that stores it. A search of `@DEFAULT` or a system namespace
+  omits the field.
 
 Execution outline:
 
 1. validate project/query/path_prefix/limit. Search-specific validator additionally accepts the `"*"` wildcard.
 2. embed query text.
-3. fetch semantic candidates (`top_n_semantic`). When `project="*"`, drop the `c.project = ?` predicate while keeping `apikey_hash` filtering.
-4. fetch lexical candidates (`top_n_lexical`). Same wildcard handling.
+3. fetch semantic candidates (`top_n_semantic`), restricted to the scope's physical projects with
+   `c.project IN (...)`; for `project="*"` drop the project predicate while keeping `apikey_hash` filtering.
+4. fetch lexical candidates (`top_n_lexical`). Same project scope.
 5. merge and dedupe candidates.
 6. rerank merged set via external rerank API.
 7. on rerank failure, apply fused fallback score.
 8. trim to `limit`, update `last_served_at` for returned chunk IDs only.
-9. return `ChunkEntry[]`. Populate the per-chunk `project` field only when the caller requested the wildcard.
+9. return `ChunkEntry[]`. Populate the per-chunk `project` field whenever the scope spans more than one physical project.
 
 ## 10. Concurrency and Consistency Design
 
 ### 10.1 Required Guarantee
 
-Sequential consistency for mutations within `(apikey_hash, project)`, across all instances.
+All FileIO mutations for one `apikey_hash` are serialized across replicas, including
+physical and overlay paths, restores, and moves across projects. Separate tenants
+use independent locks.
 
-### 10.2 Advisory Lock
+### 10.2 Mutation Admission
 
-Each mutating transaction (`file_write`, `file_delete`, `file_rename`) must:
+Begin a READ COMMITTED PostgreSQL transaction and attempt one namespaced
+`pg_try_advisory_xact_lock` keyed by the API-key hash before any namespace or
+precondition reads. A failed admission rolls back immediately with retryable
+`RESOURCE_BUSY`. The same lock covers validation, writes, snapshots and outbox
+changes until commit or rollback. SQLite takes database write intent before any
+mutation reads; admission contention likewise returns retryable `RESOURCE_BUSY`.
 
-1. compute lock key from `apikey_hash + ":" + project`
-2. acquire transaction-scoped advisory lock (`pg_advisory_xact_lock` equivalent behavior)
-3. fail with `RESOURCE_BUSY` when timeout exceeds `settings.mcp.files.lock_timeout_ms`; a cross-project rename
-   takes both project locks within that one budget
+Clients may retry definite admission rejections with short randomized backoff and
+unchanged preconditions. A `VERSION_CONFLICT` requires another read and recomputing
+the mutation. A connection loss during mutation or commit is not retryable busy.
 
-Implementation detail:
-
-- use `pg_try_advisory_xact_lock` polling loop with bounded timeout.
+Deployment: stop and drain all older FileIO writers before starting this revision.
+Do not overlap project-locked and tenant-locked writers. The switch needs no schema
+migration and the old FileIO lock timeout setting is no longer used.
 
 ### 10.3 Read Visibility
 
 - `file_read` and `file_list` see committed writes only.
 - `file_search` is eventual due to async indexing.
 - PRD freshness SLO: `P95 <= 30s` mutation-commit to searchable visibility.
+
+### 10.4 Default Layer (`@DEFAULT`)
+
+Contract: [`docs/proposals/fileio_default_project.md`](../proposals/fileio_default_project.md).
+
+- `@DEFAULT` is a physical project per `apikey_hash`. Every other user project is overlaid: stat, read, list and
+  the resolution of an existing file operand use its filesystem view, where a directory is the recursive union of
+  both layers and only a conflicting name (file/file, file/directory, directory/file) is replaced by the project's
+  entry. `@DEFAULT`, the search wildcard, system namespaces and contexts marked with `files.WithPhysicalProjects`
+  (the memory engine) stay physical (`overlayApplies`).
+- The name-conflict rule lives only in the FileIO namespace resolver, `internal/mcp/files/overlay.go`:
+  `resolveFile` resolves one path in a single statement; `visibleDescendants` reads both layers below a path in a
+  single statement and merges them with `upperShadow`; `withReadSnapshot` runs a multi-statement stat or list in
+  one read-only transaction (`REPEATABLE READ` on PostgreSQL). Retrieval code never applies the rule.
+- History is the resolved file's own physical history, never a union of the layers. `fileNamespaceQ` resolves
+  the path with `resolveActiveFile` and returns the visible file's physical project, or the addressed project when
+  no file is visible (a deleted path or a directory) or the address is physical. `ListVersions`, `ReadVersion` and
+  `ListVersionPage` resolve and query in one `withReadSnapshot`, with `project = ?` on that physical project;
+  `FileVersion.Project` names it. `RestoreVersion` checks the condition, resolves the target with
+  `resolveWriteLayerTx` (the same `fileNamespaceQ`) and selects the snapshot from that project inside its
+  `runUserMutation` transaction, so another layer's ID is `NOT_FOUND` before any change. Two-step restores (MCP,
+  GraphQL, HTTP editor) pass the write's conditions to the history read (`tools.RestoreHistoryContext`, or the HTTP
+  restore context), and `ReadVersion` checks them against the file it resolved, so the later conditional write
+  cannot land the snapshot in another layer. Retention (`pruneVersionsTx`) stays per physical project and path.
+- Mutations (`runUserMutation`): acquire the tenant lock once and evaluate
+  `overlayApplies` once; resolve the appropriate physical files inside that
+  transaction. Same-project destinations use the view (`checkOverlayDestinationTx`).
+  A directory relocates only to a vacant destination in the view and in every
+  physical project (`planRenameMoveTx`). Plan every physical group before applying any.
+- Retrieval (`SearchProjects`): RAG filters `project IN (P, '@DEFAULT')` and labels each hit with its physical
+  project. Indexing and summaries are physical, and `WriteResult.ResolvedProject` names the project a write
+  stored. PageIndex is disabled, so no plugin catalog, state hook or replay takes part in the layer; every
+  mutation runs once, through the FileIO service.
 
 ## 11. Indexing Pipeline (Outbox + Worker)
 
@@ -830,7 +891,6 @@ Core FileIO:
 - `settings.mcp.files.max_project_bytes`
 - `settings.mcp.files.list_limit_default` (default `256`)
 - `settings.mcp.files.list_limit_max`
-- `settings.mcp.files.lock_timeout_ms`
 - `settings.mcp.files.delete_retention_days`
 
 Search/index:
@@ -911,7 +971,7 @@ Use `github.com/stretchr/testify/require` throughout.
 - directory conflict rules
 - error-code mapping
 - redaction helpers
-- lock timeout behavior (sqlmock)
+- nonblocking admission and ambiguous-commit behavior (sqlmock)
 
 ### 17.2 Service-Level Tests
 
@@ -967,7 +1027,7 @@ Expose at least:
 
 - indexing lag P95 > configured SLO
 - repeated rerank backend errors
-- lock timeout surge (`RESOURCE_BUSY`)
+- mutation contention surge (`RESOURCE_BUSY`)
 
 ## 19. Confirmed Decisions
 
@@ -1015,7 +1075,7 @@ The implementation is done only when all are true:
 
 1. All seven tools are available and PRD behavior matches exactly.
 2. Tenant isolation is enforced by `apikey_hash` in every read/write/search/index path.
-3. Mutation paths use project-level advisory transaction locks with timeout -> `RESOURCE_BUSY`.
+3. Mutation paths use one nonblocking tenant-level advisory transaction lock -> `RESOURCE_BUSY`.
 4. Outbox worker indexing is operational with retries and dedupe.
 5. `file_search` never returns deleted files and supports rerank fallback.
 6. Error codes are machine-stable and used consistently.

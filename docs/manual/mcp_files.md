@@ -33,6 +33,12 @@ This manual is for end users and integrators who want to call `file_stat`, `file
   - [6. Common error codes](#6-common-error-codes)
   - [7. Minimal end-to-end flow](#7-minimal-end-to-end-flow)
   - [8. Integration best practices](#8-integration-best-practices)
+  - [9. Shared defaults: the `@DEFAULT` project](#9-shared-defaults-the-default-project)
+    - [9.1 How a project sees `@DEFAULT`](#91-how-a-project-sees-default)
+    - [9.2 What changes are global](#92-what-changes-are-global)
+    - [9.3 Recipes](#93-recipes)
+    - [9.4 Search](#94-search)
+    - [9.5 History and isolation](#95-history-and-isolation)
 
 ## 1. What FileIO is for
 
@@ -129,6 +135,9 @@ Tool output is typically in `result.content[0].text` (as JSON string). Error pay
 
 - Required, length `1..128`
 - Allowed characters: `a-z A-Z 0-9 _ - .`
+- The reserved name `@DEFAULT` (exact case) is also accepted. It holds files
+  shared by every project of your API key; see [section 9](#9-shared-defaults-the-default-project).
+  Any other name containing `@` is rejected.
 
 ### 4.2 `path`
 
@@ -331,8 +340,8 @@ Search indexed chunks inside a project.
 - Required: `project`, `query`
   - Set `project` to `"*"` to search across every project owned by the caller. The wildcard is accepted only by `file_search`; all other file tools still require an explicit project.
 - Optional:
-  - `path_prefix`: prefix filter, for example `/docs`; a missing leading `/`
-    is added automatically
+  - `path_prefix`: literal, case-sensitive prefix filter, for example `/docs`;
+    a missing leading `/` is added automatically
   - `limit`: default `5`, max `20`
 
 ```bash
@@ -358,6 +367,7 @@ Response example:
 {
   "chunks": [
     {
+      "project": "demo",
       "file_path": "/docs/readme.txt",
       "file_seek_start_bytes": 0,
       "file_seek_end_bytes": 120,
@@ -373,7 +383,7 @@ Response example:
 - `is_full_file=true` means this returned chunk byte range covers the whole file.
 - `is_full_file=false` means this is only part of the file; call `file_read` if full content is needed.
 - `file_summary` is a concise, English, file-level overview (at most 300 words / 2,048 bytes) describing the whole source file the chunk came from. Use it to understand a match without a second `file_read`. It is generated during indexing, so a just-written file may briefly return without it; a slow or unavailable summarizer yields a short deterministic fallback rather than an empty field. The summary never changes ranking.
-- When `project="*"`, each chunk also includes a `project` field naming the source project. The field is omitted for single-project searches.
+- `project` names the project that stores the chunk's file. A search of an ordinary project also covers your `@DEFAULT` files, so its hits name either that project or `"@DEFAULT"` ([section 9.4](#94-search)). With `project="*"`, hits name any of your projects. Only a search of `@DEFAULT` itself omits the field.
 
 Cross-project example:
 
@@ -477,6 +487,8 @@ Rename one file, optionally into another project. The Web FileIO Rename form def
     `to_path`, the collision and overwrite rules, `expected_destination_version` and `destination_must_not_exist`
     all apply in `target_project`, and the moved bytes count against its storage quota. The file keeps its identity
     and version history; its revision advances, so re-read before editing it again. `"*"` is rejected.
+    A `@DEFAULT` file at `to_path` is not a collision: the moved file overrides it in `target_project`. A file that
+    `project` inherits from `@DEFAULT` is moved out of `@DEFAULT`, not copied ([section 9.2](#92-what-changes-are-global)).
 
 The public `file_rename` tool, GraphQL `FileRename`, and Web FileIO editor move one file: they require its `expected_version`, and a
 file token never authorizes a directory-wide mutation (see [FileIO versioning](fileio_versioning.md)). Directory
@@ -534,6 +546,9 @@ mcp_call '{
 }'
 ```
 
+If `demo` inherits `/docs/guide.txt` from `@DEFAULT`, this call moves the file out of `@DEFAULT`, so no other
+project inherits it afterwards.
+
 Success response example:
 
 ```json
@@ -552,7 +567,7 @@ Success response example:
 - `PERMISSION_DENIED`: missing permission or forbidden operation (for example root delete)
 - `PAYLOAD_TOO_LARGE`: write payload exceeds limit
 - `QUOTA_EXCEEDED`: project storage quota exceeded
-- `RESOURCE_BUSY`: lock timeout under concurrent mutations; retry later
+- `RESOURCE_BUSY`: the mutation was rejected before changing any files. Retry with short randomized backoff and the same preconditions. A version conflict requires a fresh read; do not assume an interrupted or ambiguous write can be replayed.
 - `SEARCH_BACKEND_ERROR`: search backend unavailable or disabled
 
 ## 7. Minimal end-to-end flow
@@ -567,10 +582,10 @@ mcp_call '{"jsonrpc":"2.0","id":202,"method":"tools/call","params":{"name":"file
 # 3) List
 mcp_call '{"jsonrpc":"2.0","id":203,"method":"tools/call","params":{"name":"file_list","arguments":{"project":"demo","path":"/quick","depth":1,"limit":20}}}'
 
-# 4) Search
+# 4) Rename
 mcp_call '{"jsonrpc":"2.0","id":204,"method":"tools/call","params":{"name":"file_rename","arguments":{"project":"demo","from_path":"/quick/start.txt","to_path":"/quick/start-renamed.txt","overwrite":false}}}'
 
-# 5) Delete
+# 5) Search
 mcp_call '{"jsonrpc":"2.0","id":205,"method":"tools/call","params":{"name":"file_search","arguments":{"project":"demo","query":"hello","limit":5}}}'
 
 # 6) Delete
@@ -584,4 +599,167 @@ mcp_call '{"jsonrpc":"2.0","id":206,"method":"tools/call","params":{"name":"file
 - For write retries, use an idempotent pattern (for example `file_stat` + conditional write).
 - For `file_search`, allow a short delay after writes for indexing visibility.
 
-If you want, I can also add a compact ~30-line Bash wrapper that handles session bootstrap and unified error parsing automatically.
+## 9. Shared defaults: the `@DEFAULT` project
+
+Every API key has a built-in project named `@DEFAULT`. Files you put there show
+up in **all** of your other projects, like the lower layer of an overlay
+filesystem. Use it for context every agent should share, such as user
+preferences or coding conventions, instead of copying the same file into every
+project. Exact rules: [`docs/proposals/fileio_default_project.md`](../proposals/fileio_default_project.md).
+
+### 9.1 How a project sees `@DEFAULT`
+
+- If the project has its own file at a path, you see the project's file.
+  Otherwise, if `@DEFAULT` has a file there, you see the default.
+- Directories merge: a directory shows the files of both. Only a name that
+  conflicts is replaced by the project's entry:
+  - A project file `/notes` hides the default file `/notes` and every default
+    file below `/notes/`.
+  - A project directory `/notes` (any project file below it) hides a default
+    *file* `/notes`. Default files below `/notes/` still show.
+- Example: with the default `/notes/a.md` and the project file `/notes/b.md`,
+  `file_list` of `/notes` shows both files.
+- Names are case-sensitive: `/Notes` and `/notes` are different paths.
+
+`file_read`, `file_stat`, `file_list` and the history tools treat inherited files
+exactly like the project's own files. They return no extra field, and `file_list`
+shows each name once. The history tools show the history of the file you see at
+the path (section 9.5). `@DEFAULT` itself is an ordinary project: addressing it
+shows only its own files.
+
+### 9.2 What changes are global
+
+| You do this in a project | Result |
+| --- | --- |
+| Edit (any write mode) or restore a file that comes from `@DEFAULT` | The default changes for **every** project. |
+| Create a new file | The file is created in that project only. |
+| Delete a file that comes from `@DEFAULT` | The default is deleted for **every** project. Its history is kept in `@DEFAULT`. |
+| Delete the project's own override of a default | The default becomes visible again. |
+| Rename a file that comes from `@DEFAULT` within the project | It is renamed for every project. |
+| Rename a project file onto a default's path with `overwrite=true` | The project file overrides the default in that project only. |
+| Move a file that comes from `@DEFAULT` to another project (`target_project`) | The file **leaves** `@DEFAULT`. It is moved, not copied, and no project inherits it afterwards. |
+| Move a file to a path where `target_project` only inherits a default | The moved file overrides that default in `target_project`. The default stays. |
+| Move a project file with `target_project="@DEFAULT"` | It becomes a default for every project. |
+
+All the usual version rules apply. A version from `file_read`/`file_stat` names
+the exact file you saw, so an edit fails with `VERSION_CONFLICT` if another
+project changed the default in the meantime. An overwriting rename replaces only
+files you can see: if a default your project hides also occupies the
+destination, the rename fails with `ALREADY_EXISTS`.
+
+A directory move (section 5.7) relocates the directory only to a vacant path, never
+merging it into an existing one. Within a project, the path must be vacant in what
+you see, so a default shown below the destination occupies it. A move to another
+project checks only that project's own files, so a default it merely inherits there
+does not block the move. An `APPEND` or any other write runs exactly once, on the
+file you see.
+
+### 9.3 Recipes
+
+Seed a default (once, from anywhere):
+
+```bash
+mcp_call '{"jsonrpc":"2.0","id":301,"method":"tools/call","params":{"name":"file_write","arguments":{
+  "project":"@DEFAULT","path":"/users.md","content":"Prefers concise English answers.\n","create_only":true}}}'
+```
+
+Every project now inherits it:
+
+```bash
+mcp_call '{"jsonrpc":"2.0","id":302,"method":"tools/call","params":{"name":"file_read","arguments":{
+  "project":"graphql","path":"/users.md"}}}'
+# {"content":"Prefers concise English answers.\n","content_encoding":"utf-8","version":"<V_DEFAULT>"}
+```
+
+Editing it through a project edits the shared default:
+
+```bash
+mcp_call '{"jsonrpc":"2.0","id":303,"method":"tools/call","params":{"name":"file_write","arguments":{
+  "project":"graphql","path":"/users.md","mode":"APPEND","content":"Uses tabs.\n",
+  "expected_version":"<V_DEFAULT>"}}}'
+```
+
+Override the default in one project only. Write the project version under a
+temporary name, then move it onto the default's path:
+
+```bash
+mcp_call '{"jsonrpc":"2.0","id":304,"method":"tools/call","params":{"name":"file_write","arguments":{
+  "project":"web","path":"/users.md.web","content":"Uses two spaces.\n","create_only":true}}}'
+# -> {"version":"<V_DRAFT>", ...}
+mcp_call '{"jsonrpc":"2.0","id":305,"method":"tools/call","params":{"name":"file_rename","arguments":{
+  "project":"web","from_path":"/users.md.web","to_path":"/users.md","overwrite":true,
+  "expected_version":"<V_DRAFT>","expected_destination_version":"<V_DEFAULT_LATEST>"}}}'
+```
+
+Writing straight to `/users.md` in `web` would edit the shared default instead.
+
+Reset the override. Delete the project's file with its current version (from
+`file_stat` in `web`); the default appears again:
+
+```bash
+mcp_call '{"jsonrpc":"2.0","id":306,"method":"tools/call","params":{"name":"file_delete","arguments":{
+  "project":"web","path":"/users.md","expected_version":"<V_OVERRIDE>"}}}'
+```
+
+Moving an inherited file to another project takes it out of `@DEFAULT` for
+everyone. After this call, `archive` owns `/users.md`, `@DEFAULT` no longer has
+it, and only projects with their own `/users.md` still show one:
+
+```bash
+mcp_call '{"jsonrpc":"2.0","id":307,"method":"tools/call","params":{"name":"file_rename","arguments":{
+  "project":"graphql","from_path":"/users.md","target_project":"archive","to_path":"/users.md",
+  "expected_version":"<V_DEFAULT_LATEST>"}}}'
+```
+
+To give one project its own copy while every other project keeps the default,
+use the override recipe instead. To share a project file with every project,
+move it with `"target_project":"@DEFAULT"`.
+
+### 9.4 Search
+
+`file_search` in a project searches two projects: the project's own files and
+**all** `@DEFAULT` files, including defaults the project overrides. A project file
+and a default at the same path are two separate hits. Every hit names the
+project that stores it. For example, a search in `web` while it overrides
+`/users.md` (other chunk fields as in [section 5.5](#55-file_search)):
+
+```json
+{
+  "chunks": [
+    { "project": "web", "file_path": "/users.md", "chunk_content": "Uses two spaces.\n", "score": 0.91 },
+    { "project": "@DEFAULT", "file_path": "/users.md", "chunk_content": "Prefers concise English answers.\nUses tabs.\n", "score": 0.88 }
+  ]
+}
+```
+
+- To open a hit, call `file_read` with the hit's `project` and `file_path`.
+  `project="@DEFAULT"` returns the default even where your project overrides it.
+- Creating or deleting an override does not change search results.
+- A search of `@DEFAULT` itself returns only defaults and omits `project`.
+  `project="*"` is unchanged: it searches every project and labels every hit.
+
+### 9.5 History and isolation
+
+- History belongs to the file you see at a path, never to both layers at once:
+  - If the project has its own file at the path (an override), the history tools
+    show only the project file's history.
+  - If the path shows a default, they show only the default's history.
+  - Deleting an override shows the default again, with the default's history.
+    The override's history is kept but no longer shown at that path.
+  - `project="@DEFAULT"` always shows the default's own history.
+- A `history_id` of the other layer is refused with `NOT_FOUND` by
+  `file_read_version` and `file_restore_version`, and nothing changes. Use IDs
+  from `file_list_versions` of the same `project` and `path`.
+- `file_restore_version` writes into the file the history belongs to: the
+  project's file, or the default for every project.
+- Deleted files: when no file is visible at the path, the history tools show the
+  history of the project you name. Restore a deleted project file through that
+  project with `create_only=true`. Restore a deleted default through
+  `project="@DEFAULT"`, which brings it back for every project. A project that
+  never had its own file at the path shows no history there.
+- The console's project picker lists `@DEFAULT` once it holds files. You can also
+  type it manually.
+- "Global" always means one API key. Defaults of one key are invisible to every
+  other key.
+- The memory tools' default project name `default` is unrelated to `@DEFAULT`.
+  Memory maintenance changes only the project's own files, never a shared default.
