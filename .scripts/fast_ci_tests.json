@@ -578,7 +578,7 @@
       "TestRenameExtensionChangesFollowFilesystemRules",
       "TestTenantLockAttemptsOnceAndReturnsBusy",
       "TestTenantLockDoesNotClassifyCommitFailureAsBusy",
-      "TestDefaultCreateNeverUsesStaleNamespace"
+      "TestDefaultCreateNeverUsesStaleNamespaceSQLite"
     ]
   },
   {
