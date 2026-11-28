@@ -8,8 +8,9 @@ import (
 )
 
 // reactivateSummaryRefreshJobs moves waiting refresh jobs back to the runnable
-// state after a fresh credential envelope is stored. The updated timestamp is
-// replaced as well, so the worker loads the credential that was just written.
+// state after a fresh credential envelope is stored, attaching its exact ID.
+// An already claimed job keeps its claim but records the fresh ID. A worker
+// holding the old ID cannot park that job after fresh authorization wins.
 // Only jobs whose content and generation still match the active file are
 // reactivated; superseded jobs remain terminally stale.
 func (s *Service) reactivateSummaryRefreshJobs(ctx context.Context, q sqlQueryExecutor, ref CredentialReference) error {
@@ -29,21 +30,15 @@ func (s *Service) reactivateSummaryRefreshJobs(ctx context.Context, q sqlQueryEx
 	}
 	now := s.clock()
 	_, err = q.ExecContext(ctx,
-		rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, available_at = ?, updated_at = ?, file_updated_at = ?, last_error_code = ?
-		WHERE apikey_hash = ? AND project = ? AND file_path = ? AND operation = ? AND system_owner = ? AND status = ? AND content_hash = ? AND summary_generation_key = ?`, s.isPostgres),
-		indexStatusPending,
-		now,
-		now,
-		ref.UpdatedAt,
-		"",
-		ref.APIKeyHash,
-		ref.Project,
-		ref.Path,
-		"SUMMARY_REFRESH",
-		"",
-		"waiting_auth",
-		contentHash,
-		generationKey,
+		rebindSQL(`UPDATE mcp_file_index_jobs
+		SET status = CASE WHEN status = 'waiting_auth' THEN ? ELSE status END,
+		    available_at = CASE WHEN status = 'waiting_auth' THEN ? ELSE available_at END,
+		    last_error_code = CASE WHEN status = 'waiting_auth' THEN '' ELSE last_error_code END,
+		    updated_at = ?, credential_id = ?
+		WHERE apikey_hash = ? AND project = ? AND file_path = ? AND operation = ? AND system_owner = ?
+		      AND status IN ('waiting_auth', 'processing') AND content_hash = ? AND summary_generation_key = ?`, s.isPostgres),
+		indexStatusPending, now, now, ref.ID, ref.APIKeyHash, ref.Project, ref.Path,
+		"SUMMARY_REFRESH", "", contentHash, generationKey,
 	)
 	return err
 }

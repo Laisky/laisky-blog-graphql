@@ -1,5 +1,5 @@
 import { ArrowRightLeft, ChevronDown, ChevronRight, FileText, Folder, FolderOpen, History, RefreshCw, Save, Search, Trash2, UploadCloud } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -108,23 +108,27 @@ function FileIOAccountScope({ apiKey }: { apiKey: string }) {
   const [project, setProject] = useState(defaults.project ?? '');
   const [dirty, setDirty] = useState(false);
   const [restoreDefaults, setRestoreDefaults] = useState(true);
+  const [openPath, setOpenPath] = useState('');
+  function switchProject(next: string, path = '') {
+    if (next === project) return true;
+    if (dirty && !window.confirm('Switch projects and discard the open drafts? Copy them first to keep your changes.')) return false;
+    setDirty(false);
+    setRestoreDefaults(false);
+    setOpenPath(path);
+    setProject(next);
+    return true;
+  }
   return <>
     <Field id="file-io-project" label="Project *"><ProjectPicker id="file-io-project" apiKey={apiKey}
-      disabled={!apiKey} value={project} onChange={(next) => {
-        if (next === project) return true;
-        if (dirty && !window.confirm('Switch projects and discard the open drafts? Copy them first to keep your changes.')) return false;
-        setDirty(false);
-        setRestoreDefaults(false);
-        setProject(next);
-        return true;
-      }} /></Field>
-    <FileIOWorkspace key={project} apiKey={apiKey} project={project}
+      disabled={!apiKey} value={project} onChange={switchProject} /></Field>
+    <FileIOWorkspace key={project} apiKey={apiKey} project={project} openPath={openPath} onOpenProject={switchProject}
       defaults={restoreDefaults && defaults.project === project ? defaults : {}} onDirtyChange={setDirty} />
   </>;
 }
 
-function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
-  apiKey: string; project: string; defaults: Partial<FileIOPersistedInputs>; onDirtyChange: (dirty: boolean) => void;
+function FileIOWorkspace({ apiKey, project, defaults, openPath, onOpenProject, onDirtyChange }: {
+  apiKey: string; project: string; defaults: Partial<FileIOPersistedInputs>; openPath: string;
+  onOpenProject: (project: string, path: string) => boolean; onDirtyChange: (dirty: boolean) => void;
 }) {
   const [currentPath, setCurrentPath] = useState(defaults.currentPath ?? '');
   const [depth, setDepth] = useState(defaults.depth ?? 1);
@@ -170,10 +174,13 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteInfo, setDeleteInfo] = useState<string | null>(null);
   const [renameFromPath, setRenameFromPath] = useState(defaults.renameFromPath ?? '');
+  const [renameTargetProject, setRenameTargetProject] = useState(project);
+  const [movedDestination, setMovedDestination] = useState<{ project: string; path: string } | null>(null);
+  const targetProject = renameTargetProject.trim() || project;
   const [renameToPath, setRenameToPath] = useState(defaults.renameToPath ?? '');
   const [renameOverwrite, setRenameOverwrite] = useState(defaults.renameOverwrite ?? false);
   const sourceReview = useFileSnapshot(apiKey, project, renameFromPath);
-  const targetReview = useFileSnapshot(apiKey, project, renameToPath);
+  const targetReview = useFileSnapshot(apiKey, targetProject, renameToPath);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renameInfo, setRenameInfo] = useState<string | null>(null);
 
@@ -265,6 +272,12 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
     } catch (err) { if (current()) setReadError(fileIOErrorMessage(err)); }
     finally { if (current()) setReading(false); }
   }
+  const openNavigatedDestination = useEffectEvent((path: string) => {
+    void loadPreview(path);
+    void loadList();
+  });
+  useEffect(() => { if (openPath) openNavigatedDestination(openPath); }, [openPath]);
+
   async function loadHistory(id: string) {
     if (!base || busy) return;
     if (draft !== loadedContent && !window.confirm('Discard this unsaved draft to preview a historical version?')) return;
@@ -334,15 +347,25 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
     }, setDeleteError);
   }
   async function submitRename() {
-    setRenameError(null); setRenameInfo(null);
+    setRenameError(null); setRenameInfo(null); setMovedDestination(null);
     await mutate(async (current) => {
+      const from = canonicalFilePath(renameFromPath);
+      const to = canonicalFilePath(renameToPath);
       const payload = await callFileTool<{ moved_count: number }>(apiKey, 'file_rename', {
-        project, from_path: canonicalFilePath(renameFromPath), to_path: canonicalFilePath(renameToPath),
-        ...renameCondition(sourceReview.snapshot, renameFromPath, renameToPath, renameOverwrite, targetReview.snapshot),
+        project, from_path: from, to_path: to,
+        ...(targetProject !== project ? { target_project: targetProject } : {}),
+        ...renameCondition(sourceReview.snapshot, from, to, renameOverwrite, targetReview.snapshot, project, targetProject),
       });
       if (!current()) return;
-      sourceReview.clear(); targetReview.clear(); setRenameInfo(`Moved ${payload.moved_count} file(s). Read the destination to obtain its new version.`);
-      if (canonicalFilePath(renameFromPath) === previewPath || canonicalFilePath(renameToPath) === previewPath) setReadError('This path was changed by the rename. Copy your draft before reloading the live file.');
+      sourceReview.clear(); targetReview.clear();
+      setMovedDestination({ project: targetProject, path: to });
+      setRenameInfo(`Moved ${payload.moved_count} file(s) from ${project}:${from} to ${targetProject}:${to}.`);
+      if (from === previewPath || (targetProject === project && to === previewPath)) {
+        previewLane.cancel(); historyLane.cancel();
+        setBase(null); setPreviewStat(null);
+        setReading(false); setLoadingVersions(false);
+        setReadError('This path was changed by the move. Your draft is kept. Copy it before opening the destination.');
+      }
       void loadList();
     }, setRenameError);
   }
@@ -408,11 +431,17 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
           <CardContent className="space-y-4">
             <Field id="file-io-rename-from" label="Source Path"><Input id="file-io-rename-from" value={renameFromPath} onChange={(event) => { sourceReview.clear(); setRenameFromPath(event.target.value); }} /></Field>
             <VersionReview title="source" review={sourceReview} disabled={unavailable || !renameFromPath} />
+            <Field id="file-io-rename-target-project" label="Destination Project"><Input id="file-io-rename-target-project" value={renameTargetProject}
+              onChange={(event) => { targetReview.clear(); setRenameTargetProject(event.target.value); }} placeholder={project} /></Field>
             <Field id="file-io-rename-to" label="Destination Path"><Input id="file-io-rename-to" value={renameToPath} onChange={(event) => { targetReview.clear(); setRenameToPath(event.target.value); }} /></Field>
             <label htmlFor="file-io-rename-overwrite" className="flex items-center gap-2 text-sm"><input id="file-io-rename-overwrite" type="checkbox" checked={renameOverwrite} onChange={(event) => { targetReview.clear(); setRenameOverwrite(event.target.checked); }} />Replace an existing destination using its version</label>
-            {renameOverwrite ? <VersionReview title="destination" review={targetReview} disabled={unavailable || !renameToPath} /> : <p className="text-xs text-muted-foreground">The destination must not exist. Directory moves are not supported.</p>}
+            {renameOverwrite ? <VersionReview title="destination" review={targetReview} disabled={unavailable || !renameToPath} /> : <p className="text-xs text-muted-foreground">The destination must not exist. This editor moves files only. Directory relocation, where supported, requires a vacant subtree and never merges directories.</p>}
             <Button onClick={() => void submitRename()} disabled={unavailable || !renameToPath || !sourceReview.snapshot || sourceReview.pending || (renameOverwrite && (!targetReview.snapshot || targetReview.pending))}><ArrowRightLeft className="mr-2 h-4 w-4" />Rename</Button>
             <Feedback error={renameError} info={renameInfo} />
+            {movedDestination && <Button variant="outline" onClick={() => {
+              if (movedDestination.project === project) void loadPreview(movedDestination.path);
+              else onOpenProject(movedDestination.project, movedDestination.path);
+            }}>Open destination</Button>}
           </CardContent>
         </Card>
         <Card><CardHeader><CardTitle className="text-xl">Delete</CardTitle><CardDescription>Read and review the exact file before deleting it.</CardDescription></CardHeader>

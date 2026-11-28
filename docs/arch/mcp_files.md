@@ -373,6 +373,7 @@ CREATE TABLE IF NOT EXISTS mcp_file_index_jobs (
     file_path       VARCHAR(1024) NOT NULL,
     operation       VARCHAR(16)   NOT NULL, -- UPSERT / DELETE
     file_updated_at TIMESTAMPTZ,
+    credential_id VARCHAR(64) NOT NULL DEFAULT '',
     status          VARCHAR(16)   NOT NULL DEFAULT 'pending',
     retry_count     INT           NOT NULL DEFAULT 0,
     available_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
@@ -754,7 +755,7 @@ Workers run continuously:
 1. claim pending jobs in batches via `FOR UPDATE SKIP LOCKED`
 2. deduplicate by latest file state for `(apikey_hash, project, file_path)`
 3. process each job:
-   - `UPSERT`: load the encrypted credential envelope from the `kv` table, decrypt in memory, re-read active file, chunk content, regenerate embeddings/tokens, upsert index rows, and delete envelope immediately after external calls complete
+   - `UPSERT`: load the encrypted credential envelope from the `kv` table, decrypt in memory, re-read active file, chunk content, regenerate embeddings/tokens, upsert index rows, and retain the encrypted envelope until its bounded TTL for dependent jobs
    - `DELETE`: delete chunk rows by `(apikey_hash, project, file_path)` cascade removes embeddings/BM25
 4. mark job done or reschedule with backoff on failure
 
@@ -985,7 +986,7 @@ Use `github.com/stretchr/testify/require` throughout.
 
 - outbox enqueue on write/delete/rename
 - worker dedupe and retry/backoff
-- credential envelope encrypt/decrypt round-trip and immediate delete after use
+- credential envelope encrypt/decrypt round-trip, durable UUIDv7 binding, TTL-only cleanup
 - missing/expired envelope degrades to lexical indexing and never platform-key fallback
 - envelope rows roll back with a failed mutation, stay tenant-bound through the AAD and survive a service restart
 - index freshness checks (commit-to-search delay)
@@ -1033,20 +1034,22 @@ Expose at least:
 1. Billing: FileIO tools are zero-cost in v1.
 2. Frontend: do not build one page per tool; use one FileIO entry with project-based tree browsing and file-content view.
 3. Credential source: remove `MCP_FILES_MODEL_KEY_SOURCE`; all external model/rerank calls use user API key.
-4. Lexical retrieval: v1 may use `tsvector` transitional implementation, but final ranking must remain semantic + lexical fused results.
+4. Only indexed chunks with a non-empty file generation matching an active, RAG-eligible file enter lexical/semantic ranking. The raw fallback also excludes RAG opt-outs. Lexical retrieval: v1 may use `tsvector` transitional implementation, but final ranking must remain semantic + lexical fused results.
 
 ## 20. Async Credential Handoff Rule
 
 For async index workers:
 
 - never persist user raw API keys in plaintext storage.
-- store a credential envelope in the FileIO database's `kv` table (`library/db/sql/kv`) with short TTL (for
-  example 300s), keyed by `mcp_files_credential_` plus the unpadded base64url of the job reference AAD
-  (`apikey_hash|project|path|file_updated_at_unix_nano`). The encoding fits any project and path into the key
-  alphabet; it hides nothing and holds no secret. FileIO and RAG need no Redis.
-- write the envelope on the mutation's transaction, after its index job, so it commits or rolls back with the file
-  rows and the outbox. A write or rename that opted out of RAG indexing stores none.
-- envelope must contain encrypted data only (`kek_id`, `dek_id`, `ciphertext`); `expire_at` is a column. The
+- generate an opaque UUIDv7 for each credential handoff. The FileIO database's `kv` table keys the encrypted
+  envelope by `mcp_files_credential_` plus that complete ID. AAD binds the ID and length-delimited tenant,
+  project, and path. The mutation persists the ID in its outbox job and stores the envelope in the same
+  transaction. Legacy jobs without an ID safely degrade or wait for authorization. There is no time-derived
+  fallback, Redis, or platform credential.
+- UPSERT and dependent summary jobs share the persisted ID. A fresh authenticated operation can attach a new
+  ID to a waiting eligible refresh. The envelope is retained for its short configured TTL; retries do not
+  renew it, and the worker's bounded expiry sweep removes expired rows. RAG opt-out stores no envelope.
+- the envelope stores encrypted data (`kek_id`, `dek_id`, `ciphertext`) only. Workers authenticate the scope during decryption; `expire_at` is a column. The
   encryption keys stay in configuration.
 - schema step 2 of the FileIO migration ledger creates the `kv` table and its `expire_at` index; services open it
   without DDL.

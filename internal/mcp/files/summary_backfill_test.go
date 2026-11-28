@@ -11,7 +11,7 @@ import (
 // backfill contract: each page is durable, the cursor is exclusive, and a
 // repeated run does not create duplicate work.
 func TestBackfillRAGSummariesIsBoundedAndResumable(t *testing.T) {
-	stub := &stubFileSummarizer{result: "A model summary after deterministic backfill."}
+	stub := &stubFileSummarizer{result: "The backfill should not invent credentials."}
 	svc, _ := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 	ctx := context.Background()
@@ -20,6 +20,7 @@ func TestBackfillRAGSummariesIsBoundedAndResumable(t *testing.T) {
 		_, err := svc.Write(ctx, auth, "proj", path, "alpha content for "+path, "utf-8", 0, WriteModeTruncate)
 		require.NoError(t, err)
 	}
+	// Simulate legacy rows without a surviving authorized job ID.
 	_, err := svc.db.ExecContext(ctx,
 		`DELETE FROM mcp_file_index_jobs WHERE apikey_hash = ? AND project = ? AND system_owner = ''`,
 		"hash", "proj")
@@ -58,8 +59,8 @@ func TestBackfillRAGSummariesIsBoundedAndResumable(t *testing.T) {
 	require.NoError(t, svc.NewIndexWorker().RunOnce(ctx))
 	for _, path := range []string{"/a.txt", "/b.txt"} {
 		_, status, contentHash, summaryHash, source := summaryRow(t, svc, "hash", "proj", path)
-		require.Equal(t, string(SummaryStatusReady), status)
+		require.Equal(t, string(SummaryStatusDegraded), status)
 		require.Equal(t, contentHash, summaryHash)
-		require.Equal(t, string(SummarySourceModel), source)
+		require.Equal(t, string(SummarySourceDeterministicFallback), source)
 	}
 }

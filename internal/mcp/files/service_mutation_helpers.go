@@ -86,11 +86,11 @@ func (s *Service) ensureProjectQuota(ctx context.Context, tx *sql.Tx, apiKeyHash
 func (s *Service) insertIndexJobTx(ctx context.Context, tx *sql.Tx, job FileIndexJob) error {
 	owner := systemOwnerFromContext(ctx)
 	_, err := tx.ExecContext(ctx,
-		rebindSQL(`INSERT INTO mcp_file_index_jobs (apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, system_owner, content_hash, last_error_code, summary_generation_key)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres),
+		rebindSQL(`INSERT INTO mcp_file_index_jobs (apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, system_owner, content_hash, last_error_code, summary_generation_key, credential_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres),
 		job.APIKeyHash, job.Project, job.FilePath, job.Operation, job.FileUpdatedAt,
 		job.Status, job.RetryCount, job.AvailableAt, job.CreatedAt, job.UpdatedAt,
-		owner, job.ContentHash, job.LastErrorCode, job.SummaryGenerationKey,
+		owner, job.ContentHash, job.LastErrorCode, job.SummaryGenerationKey, job.CredentialID,
 	)
 	if err != nil {
 		return errors.Wrap(err, "insert index job")

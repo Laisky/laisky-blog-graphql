@@ -113,18 +113,21 @@ func TestManagerResolveUnknownPlugin(t *testing.T) {
 
 // TestManagerRefusesDisabledPageIndex verifies that PageIndex is never routed
 // to: an explicit or context selection fails with the shared disabled
-// message, even when a plugin of that name was registered, and a stale
-// pageindex default is refused instead of silently activating it.
+// message, including mixed-case registration attempts.
 func TestManagerRefusesDisabledPageIndex(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ragPlugin := &testPlugin{name: DefaultPluginRAG, statResult: files.StatResult{Exists: true}}
-	stale := &renameRecordingPlugin{testPlugin: testPlugin{name: DefaultPluginPageIndex}}
+	for _, name := range []string{DefaultPluginPageIndex, " PageIndex "} {
+		disabled := &testPlugin{name: name}
+		rejected, err := NewManager(DefaultPluginRAG, ragPlugin, disabled)
+		require.ErrorContains(t, err, PageIndexDisabledMessage)
+		require.Nil(t, rejected, "a rejected registration cannot be advertised or started")
+	}
 
-	for _, mgr := range []*Manager{
-		mustManager(t, DefaultPluginRAG, ragPlugin),
-		mustManager(t, DefaultPluginRAG, ragPlugin, stale),
-	} {
+	mgr := mustManager(t, DefaultPluginRAG, ragPlugin)
+	require.Equal(t, []string{DefaultPluginRAG}, mgr.AvailablePlugins())
+	{
 		requireDisabled := func(err error) {
 			t.Helper()
 			resolveErr, ok := AsResolveError(err)
@@ -149,7 +152,6 @@ func TestManagerRefusesDisabledPageIndex(t *testing.T) {
 		require.NoError(t, err)
 		require.Same(t, ragPlugin, resolved)
 	}
-	require.Empty(t, stale.recorded(), "a registered pageindex plugin is never called")
 
 	_, err := NewManager(" pageindex ", ragPlugin)
 	require.ErrorContains(t, err, PageIndexDisabledMessage)

@@ -2,8 +2,7 @@ package files
 
 import (
 	"context"
-	"fmt"
-	"time"
+	"encoding/binary"
 
 	errors "github.com/Laisky/errors/v2"
 	gkms "github.com/Laisky/go-utils/v6/crypto/kms"
@@ -63,10 +62,15 @@ type CredentialReference struct {
 	APIKeyHash string
 	Project    string
 	Path       string
-	UpdatedAt  time.Time
+	ID         string
 }
 
-// AAD returns additional authenticated data for credential encryption.
+// AAD binds the immutable envelope ID to its tenant, project and path.
 func (c CredentialReference) AAD() []byte {
-	return []byte(fmt.Sprintf("%s|%s|%s|%d", c.APIKeyHash, c.Project, c.Path, c.UpdatedAt.UnixNano()))
+	aad := []byte("mcp-files-credential-v2")
+	for _, part := range []string{c.ID, c.APIKeyHash, c.Project, c.Path} {
+		aad = binary.AppendUvarint(aad, uint64(len(part)))
+		aad = append(aad, part...)
+	}
+	return aad
 }

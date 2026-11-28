@@ -78,14 +78,6 @@ func newSummaryTestService(t *testing.T, stub FileSummarizer) (*Service, func(ti
 	return svc, setClock
 }
 
-func storeCredentialForTest(t *testing.T, svc *Service, auth AuthContext, project, path string, updatedAt time.Time) {
-	t.Helper()
-	tx, err := svc.db.BeginTx(context.Background(), nil)
-	require.NoError(t, err)
-	require.NoError(t, svc.storeCredentialEnvelopeTx(context.Background(), tx, auth, project, path, updatedAt))
-	require.NoError(t, tx.Commit())
-}
-
 func summaryRow(t *testing.T, svc *Service, apiKeyHash, project, path string) (summary, status, contentHash, summaryHash, source string) {
 	t.Helper()
 	err := svc.db.QueryRowContext(context.Background(),
@@ -322,9 +314,6 @@ func TestSummaryRefreshUpgradesDegradedToReady(t *testing.T) {
 	_, status, _, _, _ := summaryRow(t, svc, "hash", "proj", "/a.txt")
 	require.Equal(t, string(SummaryStatusDegraded), status)
 
-	// Re-authenticate: attach a fresh credential envelope keyed by the original write
-	// time (the refresh job carries that file_updated_at), then let the provider succeed.
-	storeCredentialForTest(t, svc, auth, "proj", "/a.txt", base)
 	stub.mu.Lock()
 	stub.err = nil
 	stub.result = "A validated model summary describing the retry queue incident."
@@ -368,13 +357,14 @@ func TestSummaryRefreshWaitsForAuth(t *testing.T) {
 	require.Equal(t, "waiting_auth", jobStatus)
 	require.Equal(t, "credential_unavailable", errCode)
 
-	// A later authenticated operation reactivates the parked job and refreshes
-	// its credential timestamp so the worker can load the new envelope.
+	// An authenticated no-op full replacement retains the generation and
+	// reactivates the parked job with a fresh envelope ID.
 	stub.mu.Lock()
 	stub.err = nil
 	stub.result = "A validated summary after re-authentication."
 	stub.mu.Unlock()
-	storeCredentialForTest(t, svc, auth, "proj", "/a.txt", base)
+	_, err = svc.Write(ctx, auth, "proj", "/a.txt", "alpha beta gamma delta", "utf-8", 0, WriteModeTruncate)
+	require.NoError(t, err)
 	require.NoError(t, worker.RunOnce(ctx))
 
 	summary, status, _, _, source := summaryRow(t, svc, "hash", "proj", "/a.txt")
@@ -467,6 +457,13 @@ func TestSummaryStaleJobDiscardedByContentHash(t *testing.T) {
 // refresh queued for the old path ends without a file, and the destination's
 // index job, which reuses the degraded summary, queues one for the new path.
 func TestSummaryRefreshFollowsARenamedDegradedFile(t *testing.T) {
+	for _, project := range []string{"proj", "archive"} {
+		t.Run(project, func(t *testing.T) { checkSummaryRefreshFollowsARename(t, project) })
+	}
+}
+
+func checkSummaryRefreshFollowsARename(t *testing.T, target string) {
+	t.Helper()
 	stub := &stubFileSummarizer{err: errTestProvider}
 	svc, setClock := newSummaryTestService(t, stub)
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
@@ -480,13 +477,12 @@ func TestSummaryRefreshFollowsARenamedDegradedFile(t *testing.T) {
 	_, status, _, _, _ := summaryRow(t, svc, "hash", "proj", "/a.txt")
 	require.Equal(t, string(SummaryStatusDegraded), status)
 
-	_, err = svc.Rename(ctx, auth, RenameRequest{Project: "proj", FromPath: "/a.txt", ToPath: "/b.txt"})
+	_, err = svc.Rename(ctx, auth, RenameRequest{Project: "proj", FromPath: "/a.txt", TargetProject: target, ToPath: "/b.txt"})
 	require.NoError(t, err)
 	require.NoError(t, worker.RunOnce(ctx))
-	_, status, _, _, _ = summaryRow(t, svc, "hash", "proj", "/b.txt")
+	_, status, _, _, _ = summaryRow(t, svc, "hash", target, "/b.txt")
 	require.Equal(t, string(SummaryStatusDegraded), status, "the move reuses the degraded summary")
 
-	storeCredentialForTest(t, svc, auth, "proj", "/b.txt", base)
 	stub.mu.Lock()
 	stub.err = nil
 	stub.result = "A validated model summary of the moved file."
@@ -494,8 +490,44 @@ func TestSummaryRefreshFollowsARenamedDegradedFile(t *testing.T) {
 	setClock(base.Add(10 * time.Second))
 	require.NoError(t, worker.RunOnce(ctx))
 
-	summary, status, _, _, source := summaryRow(t, svc, "hash", "proj", "/b.txt")
+	summary, status, _, _, source := summaryRow(t, svc, "hash", target, "/b.txt")
 	require.Equal(t, string(SummaryStatusReady), status, "a refresh stays eligible at the new path")
 	require.Equal(t, string(SummarySourceModel), source)
 	require.Equal(t, "A validated model summary of the moved file.", summary)
+}
+
+// TestFreshCredentialReachesClaimedRefresh preserves a new authorization when
+// one worker is holding an expired reference and another supplies fresh auth.
+func TestFreshCredentialReachesClaimedRefresh(t *testing.T) {
+	stub := &stubFileSummarizer{err: errTestProvider}
+	svc, setClock := newSummaryTestService(t, stub)
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+	ctx := context.Background()
+	const content = "The same content is available during fresh reauthorization."
+	_, err := svc.Write(ctx, auth, "proj", "/a.txt", content, "utf-8", 0, WriteModeTruncate)
+	require.NoError(t, err)
+	first := svc.NewIndexWorker()
+	require.NoError(t, first.RunOnce(ctx))
+	setClock(time.Date(2026, 2, 11, 0, 0, 10, 0, time.UTC))
+	claimed, err := first.claimJobs(ctx)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	require.Equal(t, "SUMMARY_REFRESH", claimed[0].Operation)
+	require.NotEmpty(t, claimed[0].CredentialID)
+	dropCredentialEnvelopes(t, svc)
+	_, err = svc.Write(ctx, auth, "proj", "/a.txt", content, "utf-8", 0, WriteModeTruncate)
+	require.NoError(t, err)
+	require.NoError(t, first.processJob(ctx, claimed[0]))
+	var pending, currentID string
+	require.NoError(t, svc.db.QueryRowContext(ctx, "SELECT status, credential_id FROM mcp_file_index_jobs WHERE id = ?", claimed[0].ID).Scan(&pending, &currentID))
+	require.Equal(t, indexStatusPending, pending)
+	require.NotEqual(t, claimed[0].CredentialID, currentID)
+
+	stub.mu.Lock()
+	stub.err = nil
+	stub.result = "A current document summary using fresh caller authorization."
+	stub.mu.Unlock()
+	require.NoError(t, svc.NewIndexWorker().RunOnce(ctx))
+	_, status, _, _, _ := summaryRow(t, svc, "hash", "proj", "/a.txt")
+	require.Equal(t, string(SummaryStatusReady), status)
 }

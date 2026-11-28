@@ -140,6 +140,7 @@ var fileSummaryColumns = []fileSummaryColumnSpec{
 	{tableMcpFileIndexJobs, "content_hash", requiredHashColumn, requiredTextColumn},
 	{tableMcpFileIndexJobs, "last_error_code", requiredHashColumn, requiredTextColumn},
 	{tableMcpFileIndexJobs, "summary_generation_key", requiredHashColumn, requiredTextColumn},
+	{tableMcpFileIndexJobs, "credential_id", requiredHashColumn, requiredTextColumn},
 }
 
 // applyFileSummaryColumns adds the file-summary columns idempotently on Postgres and SQLite.

@@ -117,7 +117,7 @@ func (w *IndexWorker) claimJobs(ctx context.Context) ([]FileIndexJob, error) {
 	// Index workers only process user-namespace jobs. System-owner writes never
 	// enqueue, but we filter defensively so a future bug cannot leak system rows
 	// into the chunking/embedding pipeline.
-	query := "SELECT id, apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, content_hash, last_error_code, summary_generation_key " +
+	query := "SELECT id, apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, content_hash, last_error_code, summary_generation_key, credential_id " +
 		"FROM mcp_file_index_jobs WHERE status = ? AND available_at <= ? AND system_owner = ? ORDER BY id ASC LIMIT ?"
 	args := []any{indexStatusPending, now, "", batch}
 	if svc.isPostgres {
@@ -147,6 +147,7 @@ func (w *IndexWorker) claimJobs(ctx context.Context) ([]FileIndexJob, error) {
 			&job.ContentHash,
 			&job.LastErrorCode,
 			&job.SummaryGenerationKey,
+			&job.CredentialID,
 		); scanErr != nil {
 			_ = rows.Close()
 			_ = tx.Rollback()
@@ -245,16 +246,13 @@ func (w *IndexWorker) runSummaryRefresh(ctx context.Context, job FileIndexJob) e
 		return w.markSummaryRefreshStatus(ctx, job, "waiting_auth", "summarizer_disabled")
 	}
 
-	ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath}
-	if job.FileUpdatedAt != nil {
-		ref.UpdatedAt = *job.FileUpdatedAt
-	}
+	ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath, ID: job.CredentialID}
 	apiKey, credErr := svc.loadCredential(ctx, ref)
 	if credErr != nil || strings.TrimSpace(apiKey) == "" {
 		if credErr != nil && !credentialUnavailable(credErr) {
 			w.logger.Warn("load credential for summary refresh", zap.Error(credErr), zap.Int64("job_id", job.ID))
 		}
-		return w.markSummaryRefreshStatus(ctx, job, "waiting_auth", "credential_unavailable")
+		return w.parkSummaryWithoutCredential(ctx, job)
 	}
 
 	pub := svc.buildSummaryPublication(ctx, apiKey, string(file.Content), fileHash, nil)
@@ -267,9 +265,24 @@ func (w *IndexWorker) runSummaryRefresh(ctx context.Context, job FileIndexJob) e
 	if err := svc.publishSummaryStandalone(ctx, job, file.Version, pub); err != nil {
 		return w.handleJobError(ctx, job, err)
 	}
-	svc.deleteCredential(ctx, ref)
 	svc.summaryRefreshOutcome(ctx, "rag", "done")
 	return w.markSummaryRefreshStatus(ctx, job, "done", "")
+}
+
+// parkSummaryWithoutCredential does not park a claim whose original envelope
+// was replaced while it was being processed. The next claim sees the new ID.
+func (w *IndexWorker) parkSummaryWithoutCredential(ctx context.Context, job FileIndexJob) error {
+	svc := w.svc
+	now := svc.clock()
+	_, err := svc.db.ExecContext(ctx,
+		rebindSQL(`UPDATE mcp_file_index_jobs
+		SET status = CASE WHEN credential_id = ? THEN 'waiting_auth' ELSE 'pending' END,
+		    last_error_code = CASE WHEN credential_id = ? THEN 'credential_unavailable' ELSE '' END,
+		    available_at = ?, updated_at = ?
+		WHERE id = ? AND system_owner = ? AND status = 'processing'`, svc.isPostgres),
+		job.CredentialID, job.CredentialID, now, now, job.ID, "",
+	)
+	return errors.Wrap(err, "park summary refresh")
 }
 
 // handleSummaryRefreshRetry requeues a transient refresh failure with bounded backoff
@@ -405,10 +418,7 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 
 	chunks := s.chunker.Split(string(file.Content))
 	apiKey := ""
-	ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath}
-	if job.FileUpdatedAt != nil {
-		ref.UpdatedAt = *job.FileUpdatedAt
-	}
+	ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath, ID: job.CredentialID}
 	if s.contextualizer != nil || s.embedder != nil || s.summarizer != nil {
 		loadedAPIKey, loadErr := s.loadCredential(ctx, ref)
 		switch {
@@ -446,10 +456,6 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 			zap.Error(plan.err),
 		)
 		return plan.err
-	}
-
-	if s.embedder != nil || s.contextualizer != nil || s.summarizer != nil {
-		s.deleteCredential(ctx, ref)
 	}
 
 	s.LoggerFromContext(ctx).Debug("file index upsert completed",

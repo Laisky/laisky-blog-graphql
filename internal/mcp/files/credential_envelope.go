@@ -3,11 +3,12 @@ package files
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
+	"strings"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
 	"github.com/Laisky/zap"
+	"github.com/google/uuid"
 
 	"github.com/Laisky/laisky-blog-graphql/library/db/sql/kv"
 )
@@ -32,14 +33,9 @@ func openCredentialEnvelopes(db *sql.DB, clock func() time.Time) (*kv.Kv, error)
 	return store, nil
 }
 
-// credentialKey returns the kv key of the envelope: the reference (tenant
-// hash, project, path and generation time) in unpadded base64url, so any bytes
-// they hold fit the key alphabet. It is an encoding, not a digest: these fields
-// are no secrets and the file tables store them in clear. The envelope's AAD
-// binds the same fields, so an envelope copied under another reference never
-// decrypts.
+// credentialKey is the opaque durable envelope identity, not derived from time or scope.
 func (c CredentialReference) credentialKey() string {
-	return envelopeKeyPrefix + base64.RawURLEncoding.EncodeToString(c.AAD())
+	return envelopeKeyPrefix + c.ID
 }
 
 // storeCredentialEnvelopeTx encrypts the caller's key for the index worker and
@@ -47,27 +43,32 @@ func (c CredentialReference) credentialKey() string {
 // rolled-back mutation leaves neither an envelope nor a reactivated job. With
 // search disabled, or without encryption keys, no envelope is written and
 // indexing of the path stays lexical.
-func (s *Service) storeCredentialEnvelopeTx(ctx context.Context, tx *sql.Tx, auth AuthContext, project, path string, updatedAt time.Time) error {
+func (s *Service) storeCredentialEnvelopeTx(ctx context.Context, tx *sql.Tx, auth AuthContext, project, path string) (string, error) {
 	if !s.settings.Search.Enabled || s.credential == nil {
-		return nil
+		return "", nil
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return "", errors.Wrap(err, "generate credential ID")
 	}
 	ref := CredentialReference{
 		APIKeyHash: auth.APIKeyHash,
 		Project:    project,
 		Path:       path,
-		UpdatedAt:  updatedAt,
+		ID:         id.String(),
 	}
-	payload, err := s.credential.EncryptCredential(ctx, auth.APIKey, ref.AAD())
+	aad := ref.AAD()
+	payload, err := s.credential.EncryptCredential(ctx, auth.APIKey, aad)
 	if err != nil {
-		return errors.Wrap(err, "encrypt credential")
+		return "", errors.Wrap(err, "encrypt credential")
 	}
 	if err := s.credentials.WithTx(tx).SetWithTTL(ctx, ref.credentialKey(), payload, s.settings.Security.CredentialCacheTTL); err != nil {
-		return errors.Wrap(err, "store credential envelope")
+		return "", errors.Wrap(err, "store credential envelope")
 	}
 	if err := s.reactivateSummaryRefreshJobs(ctx, tx, ref); err != nil {
-		return errors.Wrap(err, "reactivate summary refresh jobs")
+		return "", errors.Wrap(err, "reactivate summary refresh jobs")
 	}
-	return nil
+	return ref.ID, nil
 }
 
 // loadCredential decrypts the envelope of a job. Callers degrade indexing on
@@ -76,11 +77,26 @@ func (s *Service) loadCredential(ctx context.Context, ref CredentialReference) (
 	if s.credential == nil {
 		return "", errors.WithStack(errCredentialEncryptionOff)
 	}
+	if ref.ID == "" {
+		return "", errors.WithStack(kv.ErrKeyNotFound)
+	}
+	id, err := uuid.Parse(ref.ID)
+	if err != nil || id.Version() != 7 || id.String() != ref.ID {
+		return "", errors.New("invalid credential envelope ID")
+	}
 	item, err := s.credentials.Get(ctx, ref.credentialKey())
 	if err != nil {
 		return "", errors.Wrap(err, "load credential envelope")
 	}
-	apiKey, err := s.credential.DecryptCredential(ctx, item.Value, ref.AAD())
+	aad := ref.AAD()
+	ciphertext := item.Value
+	// The interim PR build prefixed a hex scope marker to the base64 payload.
+	// Read those TTL rows without the redundant marker: AES-GCM checks the
+	// complete authenticated scope (including the UUID) for both formats.
+	if _, payload, ok := strings.Cut(ciphertext, "."); ok {
+		ciphertext = payload
+	}
+	apiKey, err := s.credential.DecryptCredential(ctx, ciphertext, aad)
 	if err != nil {
 		return "", errors.Wrap(err, "decrypt credential")
 	}
@@ -92,14 +108,6 @@ func (s *Service) loadCredential(ctx context.Context, ref CredentialReference) (
 // store failed.
 func credentialUnavailable(err error) bool {
 	return errors.Is(err, kv.ErrKeyNotFound) || errors.Is(err, kv.ErrKeyExpired) || errors.Is(err, errCredentialEncryptionOff)
-}
-
-// deleteCredential removes the envelope after use. A failure is logged, not
-// returned: the envelope still expires with its TTL.
-func (s *Service) deleteCredential(ctx context.Context, ref CredentialReference) {
-	if err := s.credentials.Del(ctx, ref.credentialKey()); err != nil {
-		s.LoggerFromContext(ctx).Warn("delete credential envelope", zap.Error(err))
-	}
 }
 
 // purgeExpiredCredentials deletes one bounded batch of expired envelopes. The

@@ -240,8 +240,10 @@ func (kv *Kv) Get(ctx context.Context, key string) (*KvItem, error) {
 	}
 
 	// Check expiration if expire_at is non-zero.
-	if !doc.ExpireAt.IsZero() && kv.opt.now().After(doc.ExpireAt) {
-		if err := kv.Del(ctx, key); err != nil {
+	cutoff := kv.opt.now()
+	if !doc.ExpireAt.IsZero() && !doc.ExpireAt.After(cutoff) {
+		stmt := `DELETE FROM ` + kv.opt.tableName + ` WHERE key = $1 AND expire_at <= $2` //nolint:gosec // G202: validated table name
+		if _, err := kv.db.ExecContext(ctx, stmt, key, cutoff); err != nil {
 			return nil, errors.Wrapf(err, "delete expired key %s", key)
 		}
 		return nil, errors.Wrapf(ErrKeyExpired, "key %s", key)
@@ -284,8 +286,8 @@ func (kv *Kv) DeleteExpired(ctx context.Context, limit int) (int64, error) {
 		return 0, errors.Errorf("limit must be greater than 0: %d", limit)
 	}
 	//nolint:gosec // G202: table name is not user input, validated by regexpTableName
-	stmt := `DELETE FROM ` + kv.opt.tableName + ` WHERE expire_at < $1 AND key IN (
-  SELECT key FROM ` + kv.opt.tableName + ` WHERE expire_at < $1 ORDER BY expire_at LIMIT $2)`
+	stmt := `DELETE FROM ` + kv.opt.tableName + ` WHERE expire_at <= $1 AND key IN (
+  SELECT key FROM ` + kv.opt.tableName + ` WHERE expire_at <= $1 ORDER BY expire_at LIMIT $2)`
 	result, err := kv.db.ExecContext(ctx, stmt, kv.opt.now(), limit)
 	if err != nil {
 		return 0, errors.Wrap(err, "delete expired kv items")

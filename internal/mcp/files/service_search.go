@@ -227,7 +227,7 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash str
 	labelProjects := scope.labelsProjects()
 	args := []any{apiKeyHash, owner}
 	statement := `SELECT f.path, f.content, f.size, f.project, f.content_hash, f.file_summary, f.summary_content_hash, f.summary_status
-		FROM mcp_files f WHERE f.apikey_hash = ? AND f.system_owner = ? AND f.deleted = FALSE`
+		FROM mcp_files f WHERE f.apikey_hash = ? AND f.system_owner = ? AND f.deleted = FALSE AND f.skip_rag_index = FALSE`
 	predicate, predicateArgs := scope.predicate("f.project")
 	prefix, prefixArgs := pathPrefixPredicate("f.path", pathPrefix)
 	statement += predicate + prefix
@@ -468,6 +468,7 @@ func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHas
 		FROM mcp_file_chunk_embeddings e
 		JOIN mcp_file_chunks c ON c.id = e.chunk_id
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
+			AND f.skip_rag_index = FALSE AND f.content_hash <> '' AND c.file_content_hash = f.content_hash
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	predicate, predicateArgs := scope.predicate("c.project")
 	prefix, prefixArgs := pathPrefixPredicate("c.file_path", pathPrefix)
@@ -583,6 +584,7 @@ func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash
 		ts_rank_cd(to_tsvector('simple', c.chunk_content), plainto_tsquery('simple', ?)) AS score
 		FROM mcp_file_chunks c
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
+			AND f.skip_rag_index = FALSE AND f.content_hash <> '' AND c.file_content_hash = f.content_hash
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	predicate, predicateArgs := scope.predicate("c.project")
 	prefix, prefixArgs := pathPrefixPredicate("c.file_path", pathPrefix)
@@ -781,6 +783,7 @@ func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash string, s
 		FROM mcp_file_chunk_embeddings e
 		JOIN mcp_file_chunks c ON c.id = e.chunk_id
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
+			AND f.skip_rag_index = FALSE AND f.content_hash <> '' AND c.file_content_hash = f.content_hash
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	predicate, predicateArgs := scope.predicate("c.project")
 	prefix, prefixArgs := pathPrefixPredicate("c.file_path", pathPrefix)
@@ -860,6 +863,7 @@ func (s *Service) fetchChunkRows(ctx context.Context, apiKeyHash string, scope s
 	query := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, f.size, c.chunk_content, c.file_content_hash, f.file_summary, f.summary_content_hash, f.summary_status
 		FROM mcp_file_chunks c
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
+			AND f.skip_rag_index = FALSE AND f.content_hash <> '' AND c.file_content_hash = f.content_hash
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	predicate, predicateArgs := scope.predicate("c.project")
 	prefix, prefixArgs := pathPrefixPredicate("c.file_path", pathPrefix)

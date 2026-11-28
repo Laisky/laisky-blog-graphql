@@ -525,15 +525,17 @@ func (s *Service) applyRenameMappingsTx(ctx context.Context, tx *sql.Tx, auth Au
 				}
 				continue
 			}
+			credentialID, err := s.storeCredentialEnvelopeTx(ctx, tx, auth, req.TargetProject, mapping.NewPath)
+			if err != nil {
+				return err
+			}
 			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-				APIKeyHash: auth.APIKeyHash, Project: req.TargetProject, FilePath: mapping.NewPath,
+				CredentialID: credentialID,
+				APIKeyHash:   auth.APIKeyHash, Project: req.TargetProject, FilePath: mapping.NewPath,
 				Operation: indexOperationUpsert, FileUpdatedAt: &now, ContentHash: mapping.ContentHash, Status: indexStatusPending, RetryCount: 0,
 				AvailableAt: now, CreatedAt: now, UpdatedAt: now,
 			}); err != nil {
 				return errors.Wrap(err, "enqueue rename upsert job")
-			}
-			if err := s.storeCredentialEnvelopeTx(ctx, tx, auth, req.TargetProject, mapping.NewPath, now); err != nil {
-				return err
 			}
 		}
 	}

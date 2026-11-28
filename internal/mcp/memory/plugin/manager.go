@@ -31,6 +31,9 @@ func NewManager(defaultPlugin string, plugins ...Plugin) (*Manager, error) {
 		if name == "" {
 			return nil, errors.New("plugin name is empty")
 		}
+		if name == DefaultPluginPageIndex {
+			return nil, errors.New(PageIndexDisabledMessage)
+		}
 		if _, exists := plugs[name]; exists {
 			return nil, errors.Errorf("duplicate plugin %q", name)
 		}
@@ -122,11 +125,11 @@ func (m *Manager) Resolve(ctx context.Context, _ files.AuthContext, _ string, ov
 	return m.lookup(requested)
 }
 
-// lookup returns the registered plugin named name. PageIndex is disabled, so
-// it is never routed to, even when a caller registered a plugin of that name.
+// lookup returns the registered plugin named name. Disabled plugins never enter
+// the registry; ResolveError preserves the documented explicit-selection error.
 func (m *Manager) lookup(name string) (Plugin, error) {
 	item, exists := m.plugins[name]
-	if !exists || name == DefaultPluginPageIndex {
+	if !exists {
 		return nil, &ResolveError{Requested: name, Available: m.AvailablePlugins()}
 	}
 

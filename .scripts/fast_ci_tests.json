@@ -572,10 +572,12 @@
       "TestDefaultHistoryRecoveryAndPagination",
       "TestDefaultHistoryRestoreReadChecksConditions",
       "TestRenameWithPendingAndFailedRAGIndexing",
-      "TestIndexWorkerDeletesCredentialAfterSuccess",
+      "TestIndexWorkerRetainsCredentialUntilExpiry",
       "TestPurgeExpiredCredentialsIsBoundedAndThrottled",
       "TestFileToolMutationsExecuteOnce",
       "TestRenameExtensionChangesFollowFilesystemRules",
+      "TestVacantDirectoryRelocation",
+      "TestFreshCredentialReachesClaimedRefresh",
       "TestTenantLockAttemptsOnceAndReturnsBusy",
       "TestTenantLockDoesNotClassifyCommitFailureAsBusy",
       "TestDefaultCreateNeverUsesStaleNamespaceSQLite"
@@ -593,7 +595,8 @@
       "TestKeyExpiration",
       "TestWithTxCommitsAndRollsBackWithTheTransaction",
       "TestDeleteExpiredIsBounded",
-      "TestOpenRunsNoDDL"
+      "TestOpenRunsNoDDL",
+      "TestLazyExpiryPreservesRenewalSQLite"
     ]
   },
   {
