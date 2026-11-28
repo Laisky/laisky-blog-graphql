@@ -43,6 +43,33 @@ function mockApiKeyState(status: 'none' | 'error' | 'validating' | 'valid' | 'in
   });
 }
 
+const memoryInputStorageKey = 'mcp.memory.inputs.v1';
+
+/**
+ * persistMemoryPlugin seeds the persisted memory console inputs with the given plugin value.
+ * It accepts the raw stored plugin string and returns nothing.
+ */
+function persistMemoryPlugin(memoryPlugin: string) {
+  window.localStorage.setItem(
+    memoryInputStorageKey,
+    JSON.stringify({
+      memoryPlugin,
+      project: 'demo-project',
+      sessionId: 'session-1',
+      userId: 'user-1',
+      turnId: 'turn-1',
+      maxInputTok: 120000,
+      baseInstructions: '',
+      currentInputText: '[]',
+      inputItemsText: '[]',
+      outputItemsText: '[]',
+      listPath: '',
+      listDepth: 8,
+      listLimit: 200,
+    })
+  );
+}
+
 describe('MemoryPage tool console gating', () => {
   it.each(['none', 'error', 'validating'] as const)('disables memory controls when status is %s', (status) => {
     mockApiKeyState(status);
@@ -74,29 +101,45 @@ describe('MemoryPage tool console gating', () => {
   });
 
   it('restores the persisted memory plugin selection from localStorage', () => {
-    window.localStorage.setItem(
-      'mcp.memory.inputs.v1',
-      JSON.stringify({
-        memoryPlugin: 'pageindex',
-        project: 'demo-project',
-        sessionId: 'session-1',
-        userId: 'user-1',
-        turnId: 'turn-1',
-        maxInputTok: 120000,
-        baseInstructions: '',
-        currentInputText: '[]',
-        inputItemsText: '[]',
-        outputItemsText: '[]',
-        listPath: '',
-        listDepth: 8,
-        listLimit: 200,
-      })
-    );
+    persistMemoryPlugin('auto');
     mockApiKeyState('valid');
 
     render(<MemoryPage />);
 
-    expect(screen.getByLabelText(/^Memory plugin$/i)).toHaveTextContent(/^pageindex$/);
+    expect(screen.getByLabelText(/^Memory plugin$/i)).toHaveTextContent(/^auto \(server default\)$/);
+  });
+
+  it('loads a stored disabled pageindex selection as auto and never sends pageindex', async () => {
+    persistMemoryPlugin('pageindex');
+    mockApiKeyState('valid');
+    vi.mocked(callMcpTool).mockResolvedValue({ content: [{ type: 'text', text: JSON.stringify({ input_items: [], context_token_count: 0 }) }] });
+
+    render(<MemoryPage />);
+
+    expect(screen.getByLabelText(/^Memory plugin$/i)).toHaveTextContent(/^auto \(server default\)$/);
+    expect(JSON.parse(window.localStorage.getItem(memoryInputStorageKey) ?? '{}').memoryPlugin).toBe('auto');
+
+    fireEvent.click(screen.getByRole('button', { name: /run memory_before_turn/i }));
+    await screen.findByText('context_token_count: 0');
+    expect(callMcpTool).toHaveBeenCalledExactlyOnceWith('saved-key', 'memory_before_turn', expect.objectContaining({ plugin: 'auto' }));
+  });
+
+  it('offers only rag and auto memory plugin options', () => {
+    mockApiKeyState('valid');
+    // jsdom lacks scrollIntoView, which the Radix Select listbox calls on its selected item when opened.
+    const scrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = vi.fn();
+
+    try {
+      render(<MemoryPage />);
+      fireEvent.keyDown(screen.getByLabelText(/^Memory plugin$/i), { key: 'ArrowDown' });
+
+      const options = screen.getAllByRole('option').map((option) => option.textContent);
+      expect(options).toEqual(['RAG', 'auto (server default)']);
+      expect(screen.queryByRole('option', { name: /pageindex/i })).toBeNull();
+    } finally {
+      Element.prototype.scrollIntoView = scrollIntoView;
+    }
   });
 });
 

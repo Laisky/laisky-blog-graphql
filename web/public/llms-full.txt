@@ -41,7 +41,7 @@ FileIO tools provide a remote project-scoped filesystem for durable agent contex
 
 Use `project=graphql` for this repository. This is a namespace value, not the GraphQL transport. File paths are logical workspace paths inside the MCP storage service, not arbitrary host filesystem paths.
 
-For edits, obtain `content` and opaque `version` together from `file_read`, then send `expected_version` with the edit. All write modes, including APPEND, require this token or `create_only=true` for a new file. Delete and rename require a source token; replacing a rename destination also requires its own reviewed token. Directory-wide mutations are not supported by file tokens.
+For edits, obtain `content` and opaque `version` together from `file_read`, then send `expected_version` with the edit. All write modes, including APPEND, require this token or `create_only=true` for a new file. Delete and rename require a source token; replacing a rename destination also requires its own reviewed token. `file_rename` accepts an optional `target_project` to move a file into another project of the same caller; destination conditions then apply in that project. Directory-wide mutations are not supported by file tokens.
 
 A missing mutation condition returns `PRECONDITION_REQUIRED`. A stale condition returns `VERSION_CONFLICT`; re-read, compare and recompute rather than replacing only the token or retrying unchanged. Versions are strings, not numbers or history IDs. Web editor saves and restores use a strong quoted `If-Match` header and report missing/stale conditions as HTTP 428/412. `tools/list` is the runtime schema authority.
 

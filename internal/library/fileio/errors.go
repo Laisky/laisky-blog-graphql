@@ -24,11 +24,7 @@ func graphQLError(err error, action string) error {
 		return nil
 	}
 	if resolveErr, ok := mcpplugin.AsResolveError(err); ok {
-		message := resolveErr.Error()
-		if resolveErr.Requested == mcpplugin.DefaultPluginPageIndex && !containsString(resolveErr.Available, mcpplugin.DefaultPluginPageIndex) {
-			message += "; settings.mcp.tools.memory.plugins.pageindex.llm.api_key is required"
-		}
-		return withExtensions(message, map[string]any{
+		return withExtensions(resolveErr.Error(), map[string]any{
 			fieldCode: string(files.ErrCodeInvalidArgument), fieldRetryable: false,
 			"available_plugins": resolveErr.Available,
 		})
@@ -72,14 +68,4 @@ func unavailable(name string) error {
 func permissionDenied() error {
 	return graphQLError(files.NewError(files.ErrCodePermissionDenied,
 		"missing or invalid authorization", false), "authorize request")
-}
-
-// containsString reports whether target appears in values.
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }

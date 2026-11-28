@@ -98,7 +98,10 @@
       "TestValidateStartupConfigImageLifecycleMode",
       "TestSizeImageMemoryAtStartup",
       "TestValidateStartupConfigRefusesUnsafeValidationBounds",
-      "TestValidateStartupConfigChecksAuthorityURLsAndGateways"
+      "TestValidateStartupConfigChecksAuthorityURLsAndGateways",
+      "TestStaleShadowSettingsNeitherWrapNorReplay",
+      "TestNewMCPFileManagerIsSilentForOrdinaryConfig",
+      "TestNewMCPFileManagerIgnoresStalePageIndexConfig"
     ]
   },
   {
@@ -145,7 +148,9 @@
       "TestProductionWiringRefusesDisabledValidationOutsideDebug",
       "TestRequestBodyPolicyCountsUnarmedDeadlines",
       "TestRequestBodySettingsLoadMCPInflightBudget",
-      "TestBalanceProxyBoundsTheKeyBeforeNormalizing"
+      "TestBalanceProxyBoundsTheKeyBeforeNormalizing",
+      "TestGraphQLFileRenameTargetProject",
+      "TestGraphQLPageIndexSelectionIsDisabled"
     ]
   },
   {
@@ -410,7 +415,8 @@
   {
     "package": "./internal/library/fileio",
     "tests": [
-      "TestGraphQLSharedToolRejectsUnissuedBearer"
+      "TestGraphQLSharedToolRejectsUnissuedBearer",
+      "TestGraphQLRenameTargetValidatedBeforeDispatch"
     ]
   },
   {
@@ -493,7 +499,11 @@
       "TestFileMutationSchemasExposeCompleteUnionArguments",
       "TestFileMutationSchemasKeepPreconditions",
       "TestFileMutationAlternativesDeclareOnlyAcceptedArguments",
-      "TestFileAuthFromContextRefusesUnverifiedIdentity"
+      "TestFileAuthFromContextRefusesUnverifiedIdentity",
+      "TestFileRenameDefinitionAdvertisesOptionalTargetProject",
+      "TestFileRenameTargetProjectRouting",
+      "TestFileToolsRefuseDisabledPageIndex",
+      "TestMemoryToolRefusesDisabledPageIndex"
     ]
   },
   {
@@ -537,6 +547,38 @@
       "TestIndexMarkdownEmptyHeadingKeepsTreeValid",
       "TestGoldmarkWorkBoundsRouteBeforeParsing",
       "TestExtractHeadersMatchesFullGoldmarkParse"
+    ]
+  },
+  {
+    "package": "./internal/mcp/files",
+    "tests": [
+      "TestRenameOverwritePreservesReplacementSearch",
+      "TestRenameOptOutNeverPublishesRAG",
+      "TestRenameWithPendingAndFailedRAGIndexing",
+      "TestIndexWorkerRetainsCredentialUntilExpiry",
+      "TestPurgeExpiredCredentialsIsBoundedAndThrottled",
+      "TestFileToolMutationsExecuteOnce",
+      "TestRenameExtensionChangesFollowFilesystemRules",
+      "TestVacantDirectoryRelocation",
+      "TestFreshCredentialReachesClaimedRefresh",
+      "TestFreshCredentialReachesPendingRefresh",
+      "TestSummaryRefreshSurvivesRenameRoundTrip"
+    ]
+  },
+  {
+    "package": "./library/db/sql/kv",
+    "tests": [
+      "TestKeyExpiration",
+      "TestWithTxCommitsAndRollsBackWithTheTransaction",
+      "TestDeleteExpiredIsBounded",
+      "TestOpenRunsNoDDL",
+      "TestLazyExpiryPreservesRenewalSQLite"
+    ]
+  },
+  {
+    "package": "./internal/mcp/memory/plugin",
+    "tests": [
+      "TestManagerRefusesDisabledPageIndex"
     ]
   }
 ]

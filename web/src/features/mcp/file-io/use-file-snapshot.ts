@@ -22,10 +22,10 @@ export function useFileRequestLane() {
   };
 }
 
-/** The caller clears this observation immediately when its path input changes. */
+/** The caller clears this observation when its scope changes; scope is also checked when consuming it. */
 export function useFileSnapshot(apiKey: string, project: string, path: string) {
   const lane = useFileRequestLane();
-  const [snapshot, setSnapshot] = useState<FileSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<(FileSnapshot & { project: string }) | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   function clear() {
@@ -43,12 +43,12 @@ export function useFileSnapshot(apiKey: string, project: string, path: string) {
       const payload = await callFileTool<ReadPayload>(apiKey, 'file_read', {
         project, path: canonicalFilePath(path), offset: 0, length: -1,
       });
-      if (current()) setSnapshot(fileSnapshot(path, payload));
+      if (current()) setSnapshot({ ...fileSnapshot(path, payload), project });
     } catch (err) {
       if (current()) setError(fileIOErrorMessage(err));
     } finally {
       if (current()) setPending(false);
     }
   }
-  return { snapshot: snapshot?.path === canonicalFilePath(path) ? snapshot : null, pending, error, clear, load };
+  return { snapshot: snapshot?.project === project && snapshot.path === canonicalFilePath(path) ? snapshot : null, pending, error, clear, load };
 }

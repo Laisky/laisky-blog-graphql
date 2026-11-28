@@ -182,7 +182,6 @@ func TestValidateStartupConfigWithGetterValidConfig(t *testing.T) {
 							"1": "this-key-is-longer-than-16",
 							"3": "this-is-also-a-long-encryption-key",
 						},
-						"credential_cache_prefix":      "mcp:files:cred",
 						"credential_cache_ttl_seconds": 300,
 					},
 				},
@@ -234,7 +233,6 @@ func TestValidateStartupConfigWithGetterValidNewRAGPluginConfig(t *testing.T) {
 									"limit_max":     10,
 								},
 								"security": map[string]any{
-									"credential_cache_prefix":      "mcp:files:cred",
 									"credential_cache_ttl_seconds": 300,
 								},
 							},

@@ -44,7 +44,7 @@ func newRaceFixture(t *testing.T, backend string, configure func(*files.Settings
 	f := &raceFixture{ctx: ctx, postgres: backend == "postgres"}
 	f.setTenant(t, "sk-fileio-race-fixture")
 	f.settings = files.LoadSettingsFromConfig()
-	f.settings.Search.Enabled = false // No real credentials, Redis, LLMs, or index workers.
+	f.settings.Search.Enabled = false // No real credentials, LLMs, or index workers.
 	f.settings.Index.FileSummary.Enabled = false
 	f.settings.Security.EncryptionKEKs = map[uint16]string{1: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="}
 	f.settings.MaxPayloadBytes = 1 << 20
@@ -115,7 +115,7 @@ func (f *raceFixture) openPostgres(t *testing.T) {
 
 func (f *raceFixture) service(t *testing.T, client int, lock files.LockProvider) *files.Service {
 	t.Helper()
-	svc, err := files.NewService(f.db[client], f.settings, nil, nil, nil, nil, nil, lock, func() time.Time {
+	svc, err := files.NewService(f.db[client], f.settings, nil, nil, nil, nil, lock, func() time.Time {
 		// Deliberately equal timestamps: neither wall clock nor snapshot count is a CAS token.
 		return time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC)
 	})

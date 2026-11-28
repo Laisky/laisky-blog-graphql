@@ -187,19 +187,19 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 		}
 	}
 
-	// Only user-namespace writes that did not opt out enqueue RAG work.
+	// Only user-namespace writes that did not opt out enqueue RAG work and
+	// hand the caller's key to the index worker.
 	if owner == "" && !opts.SkipRAGIndex {
+		credentialID, err := s.storeCredentialEnvelopeTx(ctx, tx, auth, project, path)
+		if err != nil {
+			return 0, err
+		}
 		if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
 			APIKeyHash: auth.APIKeyHash, Project: project, FilePath: path,
 			Operation: indexOperationUpsert, FileUpdatedAt: &now, Status: indexStatusPending, RetryCount: 0,
-			AvailableAt: now, CreatedAt: now, UpdatedAt: now, ContentHash: contentHash,
+			AvailableAt: now, CreatedAt: now, UpdatedAt: now, ContentHash: contentHash, CredentialID: credentialID,
 		}); err != nil {
 			return 0, errors.Wrap(err, "enqueue index job")
-		}
-	}
-	if owner == "" {
-		if err := s.storeCredentialEnvelopeTx(ctx, tx, auth, project, path, now); err != nil {
-			return 0, err
 		}
 	}
 	return bytesWritten, nil
@@ -235,38 +235,8 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 		if len(paths) == 0 {
 			return errors.WithStack(NewError(ErrCodeNotFound, "path not found", false))
 		}
-		snapshots, err := s.loadFilesForSnapshotTx(ctx, tx, auth.APIKeyHash, project, paths)
-		if err != nil {
+		if err := s.softDeletePathsTx(ctx, tx, auth, project, paths, now, owner == ""); err != nil {
 			return err
-		}
-		for _, snap := range snapshots {
-			if err := s.snapshotFileVersionTx(ctx, tx, auth.APIKeyHash, project, snap.Path, snap.Content, snap.Size, snap.ID, now); err != nil {
-				return err
-			}
-		}
-		query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
-		inClause, inArgs := buildInClause(paths, s.isPostgres, 6)
-		args := make([]any, 0, 5+len(inArgs))
-		args = append(args, now, now, auth.APIKeyHash, project, owner)
-		args = append(args, inArgs...)
-		if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
-			return errors.Wrap(err, "soft delete files")
-		}
-		for _, snap := range snapshots {
-			if err := s.pruneVersionsTx(ctx, tx, auth.APIKeyHash, project, snap.Path, now); err != nil {
-				return err
-			}
-		}
-		if owner == "" {
-			for _, p := range paths {
-				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-					APIKeyHash: auth.APIKeyHash, Project: project, FilePath: p,
-					Operation: indexOperationDelete, FileUpdatedAt: &now, Status: indexStatusPending, RetryCount: 0,
-					AvailableAt: now, CreatedAt: now, UpdatedAt: now,
-				}); err != nil {
-					return errors.Wrap(err, "enqueue delete job")
-				}
-			}
 		}
 		deletedCount = len(paths)
 		return nil
@@ -275,6 +245,53 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 		return DeleteResult{}, errors.WithStack(err)
 	}
 	return DeleteResult{DeletedCount: deletedCount}, nil
+}
+
+// softDeletePathsTx deletes live files of one project inside the caller's
+// mutation transaction: it snapshots their content into each path's history,
+// soft-deletes the rows, prunes history, and optionally enqueues RAG delete
+// jobs. Delete and an overwriting rename share it, so replaced bytes stay
+// restorable either way.
+func (s *Service) softDeletePathsTx(ctx context.Context, tx *sql.Tx, auth AuthContext, project string, paths []string, now time.Time, enqueueIndex bool) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	owner := systemOwnerFromContext(ctx)
+	snapshots, err := s.loadFilesForSnapshotTx(ctx, tx, auth.APIKeyHash, project, paths)
+	if err != nil {
+		return err
+	}
+	for _, snap := range snapshots {
+		if err := s.snapshotFileVersionTx(ctx, tx, auth.APIKeyHash, project, snap.Path, snap.Content, snap.Size, snap.ID, now); err != nil {
+			return err
+		}
+	}
+	query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
+	inClause, inArgs := buildInClause(paths, s.isPostgres, 6)
+	args := make([]any, 0, 5+len(inArgs))
+	args = append(args, now, now, auth.APIKeyHash, project, owner)
+	args = append(args, inArgs...)
+	if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
+		return errors.Wrap(err, "soft delete files")
+	}
+	for _, snap := range snapshots {
+		if err := s.pruneVersionsTx(ctx, tx, auth.APIKeyHash, project, snap.Path, now); err != nil {
+			return err
+		}
+	}
+	if !enqueueIndex {
+		return nil
+	}
+	for _, p := range paths {
+		if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
+			APIKeyHash: auth.APIKeyHash, Project: project, FilePath: p,
+			Operation: indexOperationDelete, FileUpdatedAt: &now, Status: indexStatusPending, RetryCount: 0,
+			AvailableAt: now, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			return errors.Wrap(err, "enqueue delete job")
+		}
+	}
+	return nil
 }
 
 // applyWriteModeBytes merges complete UTF-8 units and rejects corrupt results.

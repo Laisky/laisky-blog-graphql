@@ -11,7 +11,7 @@ import (
 )
 
 // These stubs exercise transport/error mapping with nominal valid requests.
-// Real precondition enforcement is tested against RAG and PageIndex services.
+// Real precondition enforcement is tested against the RAG service.
 func (stubFileService) SupportsFileVersionPreconditions() bool      { return true }
 func (*behaviorFileService) SupportsFileVersionPreconditions() bool { return true }
 

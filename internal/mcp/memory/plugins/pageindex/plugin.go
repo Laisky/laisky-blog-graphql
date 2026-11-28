@@ -204,10 +204,7 @@ func (p *Plugin) indexAndPublish(ctx context.Context, auth files.AuthContext, pr
 		return errors.New("pageindex indexer is unavailable")
 	}
 
-	kind := KindPDF
-	if strings.HasSuffix(strings.ToLower(path), ".md") {
-		kind = KindMarkdown
-	}
+	kind := pageIndexDocKind(path)
 	docID := docIDFromAuth(auth, project, path)
 	tree, stats, indexErr := p.indexDocument(ctx, kind, fullBytes, IndexOptions{DocID: docID, Tenant: pageIndexTenant(auth)})
 	if indexErr != nil {
@@ -245,17 +242,6 @@ func (p *Plugin) indexAndPublish(ctx context.Context, auth files.AuthContext, pr
 	}
 	p.markRefresh(&entry, tree.Degraded, refreshes)
 	summary := pageIndexSummaryInput(desc, source, sourceHash, tree.Degraded)
-
-	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
-		published, err := atomicFS.PublishPluginSummaryAndState(ctx, auth, project, storageProject, path, summary, pageIndexWriteState(docID, path, tree, entry))
-		if err != nil {
-			return err
-		}
-		if !published && p.log != nil {
-			p.log.Debug("pageindex.write skipped stale tree publish", glog.String("path", path))
-		}
-		return nil
-	}
 
 	// Publish the user-row summary first, guarded by the content hash. A false result
 	// means a newer generation is already active, so this stale writer must not
@@ -313,9 +299,6 @@ func (p *Plugin) publishUserRowSummary(ctx context.Context, auth files.AuthConte
 // Delete removes matching PageIndex trees and catalog entries before deleting
 // user files, so failures remain fail-closed and the same request can be retried.
 func (p *Plugin) Delete(ctx context.Context, auth files.AuthContext, project, path string, recursive bool) (files.DeleteResult, error) {
-	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
-		return atomicFS.DeleteWithState(ctx, auth, project, PageIndexStorageProject(auth, project), path, recursive, pageIndexDeleteState(path, recursive))
-	}
 	storageProject := PageIndexStorageProject(auth, project)
 	entries, err := p.indexEntriesForPath(ctx, storageProject, path, recursive)
 	if err != nil {
@@ -340,34 +323,10 @@ func (p *Plugin) Delete(ctx context.Context, auth files.AuthContext, project, pa
 	return res, nil
 }
 
-// Rename persists the PageIndex path mapping before moving the user file. If
-// the user-file rename fails, the catalog move is rolled back when possible.
-func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, project, src, dst string, overwrite bool) (files.RenameResult, error) {
-	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
-		return atomicFS.RenameWithState(ctx, auth, project, PageIndexStorageProject(auth, project), src, dst, overwrite, pageIndexRenameState(src, dst, overwrite))
-	}
-	storageProject := PageIndexStorageProject(auth, project)
-	index, err := p.store.GetIndex(ctx, storageProject)
-	if err != nil {
-		return files.RenameResult{}, errors.Wrap(err, "read pageindex catalog for rename")
-	}
-	_, indexed := index[src]
-	if indexed {
-		if err := p.store.RenameIndexEntry(ctx, storageProject, src, dst); err != nil {
-			return files.RenameResult{}, errors.Wrap(err, "rename pageindex catalog entry")
-		}
-	}
-
-	res, err := p.userFS.Rename(ctx, auth, project, src, dst, overwrite)
-	if err != nil {
-		if indexed {
-			if rollbackErr := p.store.RenameIndexEntry(ctx, storageProject, dst, src); rollbackErr != nil {
-				return res, errors.Wrapf(err, "rename user file; rollback pageindex catalog failed: %v", rollbackErr)
-			}
-		}
-		return res, err
-	}
-	return res, nil
+// Rename forwards to the FileIO rename unchanged. The dormant plugin does not
+// move its catalog or trees; their entries keep the old paths.
+func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, req files.RenameRequest) (files.RenameResult, error) {
+	return p.userFS.Rename(ctx, auth, req)
 }
 
 // List forwards to userFS unchanged.
@@ -441,6 +400,14 @@ func PageIndexStorageProject(auth files.AuthContext, project string) string {
 func isLongDocPath(path string) bool {
 	p := strings.ToLower(strings.TrimSpace(path))
 	return strings.HasSuffix(p, ".pdf") || strings.HasSuffix(p, ".md")
+}
+
+// pageIndexDocKind selects the parser for an indexable path.
+func pageIndexDocKind(path string) DocKind {
+	if strings.HasSuffix(strings.ToLower(path), ".md") {
+		return KindMarkdown
+	}
+	return KindPDF
 }
 
 func docIDFromAuth(auth files.AuthContext, project, path string) string {

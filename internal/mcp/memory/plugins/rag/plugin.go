@@ -74,8 +74,8 @@ func (p *Plugin) Delete(ctx context.Context, auth files.AuthContext, project, pa
 }
 
 // Rename delegates file_rename to the wrapped file service.
-func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, project, fromPath, toPath string, overwrite bool) (files.RenameResult, error) {
-	return p.inner.Rename(ctx, auth, project, fromPath, toPath, overwrite)
+func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, req files.RenameRequest) (files.RenameResult, error) {
+	return p.inner.Rename(ctx, auth, req)
 }
 
 // List delegates file_list to the wrapped file service.

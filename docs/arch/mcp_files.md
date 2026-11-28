@@ -135,10 +135,11 @@ chunk. Key architecture points (full contract:
   `SUMMARY_REFRESH` job (states `pending|processing|waiting_auth|done|failed`) that
   upgrades the summary once an authenticated operation supplies a credential. A
   platform key is never substituted.
-- PageIndex maps `Tree.DocDescription` (bounded to the shared limits, derived for
-  Markdown, deterministic fallback otherwise) into every returned chunk and publishes
-  the same catalog metadata onto the user row through a content-hash-guarded publisher.
-  `Tree.SourceContentHash` and `IndexEntry.SourceContentHash` reject stale writers.
+- PageIndex is disabled (2026-11-27; see
+  [../manual/mcp_memory_plugins.md §6](../manual/mcp_memory_plugins.md#6-pageindex-phase-2)),
+  so the server runs no PageIndex summary producer and the transactional
+  `PublishPluginSummaryAndState` publisher was removed. The `pageindex` value of
+  `summary_source` remains for rows written by earlier releases.
 - Summary text is response metadata only: it is excluded from embeddings, lexical
   tokens, rerank input, and scoring, and is redacted from logs and call audits.
 
@@ -372,6 +373,7 @@ CREATE TABLE IF NOT EXISTS mcp_file_index_jobs (
     file_path       VARCHAR(1024) NOT NULL,
     operation       VARCHAR(16)   NOT NULL, -- UPSERT / DELETE
     file_updated_at TIMESTAMPTZ,
+    credential_id VARCHAR(64) NOT NULL DEFAULT '',
     status          VARCHAR(16)   NOT NULL DEFAULT 'pending',
     retry_count     INT           NOT NULL DEFAULT 0,
     available_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
@@ -529,7 +531,7 @@ Execution outline:
 6. enqueue `DELETE` outbox jobs for affected paths.
 7. commit and return deleted count.
 
-### 9.5 `file_rename(project, from_path, to_path, overwrite=false)`
+### 9.5 `file_rename(project, from_path, to_path, overwrite=false, target_project="")`
 
 Rename/move semantics:
 
@@ -542,10 +544,41 @@ Rename/move semantics:
 - destination parent segments must not resolve to active files (`NOT_DIRECTORY`).
 - directory move must not target its own subtree (`INVALID_PATH`), for example:
   - `from_path=/docs`, `to_path=/docs/sub/new`
-- destination conflicts:
-  - `overwrite=false`: any active destination collision => `ALREADY_EXISTS`
-  - `overwrite=true`: only single-file source may replace an existing file at exact destination path
-  - directory move with destination collisions is rejected (`ALREADY_EXISTS`)
+- single-file destination (`checkFileDestinationTx`):
+  - an active descendant of `to_path` (the destination is a directory) => `ALREADY_EXISTS`, even with `overwrite=true`
+  - an active file at `to_path`: `overwrite=false` => `ALREADY_EXISTS`; `overwrite=true` replaces it
+- directory destination (`checkVacantDestinationTx`): relocation only, never merge or replacement:
+  - `overwrite=true` => `INVALID_ARGUMENT`
+  - an active file at `to_path`, or any active file below it (directories are implicit, so every existing directory
+    has one, whatever its children are called) => `ALREADY_EXISTS`. A move into its own parent or another ancestor is
+    therefore rejected too.
+  - descendants are matched by a literal, case-sensitive path prefix (escaped `LIKE` plus `substr`), so `_`, `%` and
+    ASCII case never widen the match; the source subtree is selected the same way
+- every generated destination path must pass `ValidatePath`, including the 512-byte limit (`INVALID_PATH`)
+- every check runs under the project locks before the first row, history or outbox change.
+
+Cross-project move (`target_project` set and different from `project`):
+
+- `target_project` is validated like `project` and is scoped to the caller's `apikey_hash`; `"*"` is rejected.
+- the source is resolved in `project`; `to_path`, parent-file checks, collisions, overwrite and the
+  destination conditions (`expected_destination_version`, `destination_must_not_exist`) apply in `target_project`.
+- `from_path == to_path` is a real move, not a no-op, and the own-subtree rule does not apply.
+- moved bytes must fit `target_project`'s quota after overwritten destinations are released (`QUOTA_EXCEEDED`).
+- rows keep their id and incarnation, `mcp_file_versions` history moves with them, and the revision trigger advances
+  each moved file's revision.
+- the transaction holds both project advisory locks, taken in ascending `(lock key, project)` order by
+  `MultiProjectLockProvider.WithProjectsLock`; a lock provider without it refuses the move.
+
+One rename implementation (`files.Service.Rename(ctx, auth, files.RenameRequest)`) serves same-project and
+cross-project moves; every memory plugin's `Rename` receives the same `RenameRequest`.
+
+- `rag` delegates to the service above.
+- A rename never depends on a search index. No derived-state hook runs in the rename transaction, and no
+  PageIndex catalog, tree, model or state work happens; the `AtomicSystemFS`/`RenameWithState`/`RenameStateHook`
+  APIs were removed when PageIndex was disabled (2026-11-27). Any extension change the path rules allow
+  (for example `.txt -> .md`, `.md -> .pdf`, `.md -> .txt`) is accepted, and the bytes are never converted.
+  RAG index jobs follow step 9 below. Stored `system_owner='pageindex'` rows are left in place.
+- The dormant `pageindex` package, kept for offline tooling only, forwards `Rename` to the same service call.
 
 Path remap rule:
 
@@ -556,17 +589,19 @@ Execution outline:
 
 1. validate `project`, `from_path`, `to_path`, and `overwrite`.
 2. reject root source or root destination.
-3. if `from_path == to_path`, return `moved_count=0`.
-4. start transaction and acquire project advisory lock.
+3. if `from_path == to_path` within one project, return `moved_count=0`.
+4. start transaction and acquire the project advisory lock (both projects' locks for a cross-project move).
 5. resolve source file set:
    - exact file match at `from_path`, or
-   - descendant files under `from_path + "/%"`, else `NOT_FOUND`.
-6. validate destination constraints and collision policy.
-7. apply transactional path remap update on `mcp_files` with `updated_at=now`.
-8. if overwrite-replace applies, soft-delete the replaced destination file first.
-9. enqueue outbox jobs per moved file:
-   - `DELETE` for `old_path`
-   - `UPSERT` for `new_path`
+   - descendant files strictly below `from_path` (literal prefix `from_path + "/"`), else `NOT_FOUND`.
+6. validate the destination (`planRenameMoveTx`): the single-file rules, or for a directory a vacant `to_path`,
+   then compute and validate every new path. Because a directory destination is vacant, no new path can equal
+   another moved file's old path, so the remap order does not matter.
+7. if overwrite-replace applies, soft-delete the replaced destination file first.
+8. apply transactional path remap update on `mcp_files` with `updated_at=now`.
+9. enqueue a `DELETE` for `old_path`. For a RAG-indexed destination, queue one `UPSERT` that replaces
+   old chunks. For an opted-out destination, clear obsolete RAG chunks in the move transaction without
+   queueing model work. A delayed cleanup never removes chunks from an active RAG generation.
 10. commit and return `moved_count`.
 
 ### 9.6 `file_list(project, path="", depth=1, limit=256)`
@@ -626,7 +661,8 @@ Each mutating transaction (`file_write`, `file_delete`, `file_rename`) must:
 
 1. compute lock key from `apikey_hash + ":" + project`
 2. acquire transaction-scoped advisory lock (`pg_advisory_xact_lock` equivalent behavior)
-3. fail with `RESOURCE_BUSY` when timeout exceeds `settings.mcp.files.lock_timeout_ms`
+3. fail with `RESOURCE_BUSY` when timeout exceeds `settings.mcp.files.lock_timeout_ms`; a cross-project rename
+   takes both project locks within that one budget
 
 Implementation detail:
 
@@ -658,7 +694,7 @@ Workers run continuously:
 1. claim pending jobs in batches via `FOR UPDATE SKIP LOCKED`
 2. deduplicate by latest file state for `(apikey_hash, project, file_path)`
 3. process each job:
-   - `UPSERT`: load encrypted credential envelope from Redis, decrypt in memory, re-read active file, chunk content, regenerate embeddings/tokens, upsert index rows, and delete envelope immediately after external calls complete
+   - `UPSERT`: load the encrypted credential envelope from the `kv` table, decrypt in memory, re-read active file, chunk content, regenerate embeddings/tokens, upsert index rows, and retain the encrypted envelope until its bounded TTL for dependent jobs
    - `DELETE`: delete chunk rows by `(apikey_hash, project, file_path)` cascade removes embeddings/BM25
 4. mark job done or reschedule with backoff on failure
 
@@ -670,8 +706,12 @@ Retry behavior uses:
 Credential behavior:
 
 - worker must never persist or log plaintext API keys.
-- if credential envelope is missing/expired, worker must retry later.
+- if the credential envelope is missing, expired or does not decrypt, the worker indexes lexically and summary
+  refresh moves to `waiting_auth`; the next authenticated mutation of the path stores a new envelope and
+  reactivates the refresh.
 - worker must not fall back to platform credentials.
+- each worker pass first sweeps expired envelopes when due: at most one sweep per credential TTL per service,
+  at most 500 rows per statement, and another sweep on the next pass while full batches remain.
 
 Job status lifecycle:
 
@@ -813,9 +853,9 @@ Search/index:
 
 Async credential handoff:
 
-- `settings.mcp.files.security.encryption_keks` (required; map of `kek_id -> secret`, longest ID used for new encryption)
-- `settings.mcp.files.security.credential_cache_prefix` (default `mcp:files:cred`)
+- `settings.mcp.files.security.encryption_keks` (required for semantic indexing; map of `kek_id -> secret`, longest ID used for new encryption; without it no envelope is stored and indexing stays lexical)
 - `settings.mcp.files.security.credential_cache_ttl_seconds` (default `300`)
+- the former Redis namespace key `credential_cache_prefix` is no longer read
 
 Credential-source rule (v1 confirmed):
 
@@ -841,7 +881,7 @@ Credential-source rule (v1 confirmed):
 ### Phase 3: Search and Worker
 
 1. Implement outbox producer in write/delete/rename code paths.
-2. Implement credential-envelope service (Redis TTL cache + KMS encrypt/decrypt).
+2. Implement credential-envelope service (expiring `kv` table rows + KMS encrypt/decrypt).
 3. Implement index workers, retry/backoff, dedupe, and retention purge.
 4. Implement chunker with stable byte offsets.
 5. Implement semantic + lexical retrieval and rerank + fallback.
@@ -886,8 +926,9 @@ Use `github.com/stretchr/testify/require` throughout.
 
 - outbox enqueue on write/delete/rename
 - worker dedupe and retry/backoff
-- credential envelope encrypt/decrypt round-trip and immediate delete after use
-- missing/expired envelope triggers retry and never platform-key fallback
+- credential envelope encrypt/decrypt round-trip, durable UUIDv7 binding, TTL-only cleanup
+- missing/expired envelope degrades to lexical indexing and never platform-key fallback
+- envelope rows roll back with a failed mutation, stay tenant-bound through the AAD and survive a service restart
 - index freshness checks (commit-to-search delay)
 - rerank success/failure fallback correctness
 - guarantee that deleted files never appear in search
@@ -933,28 +974,39 @@ Expose at least:
 1. Billing: FileIO tools are zero-cost in v1.
 2. Frontend: do not build one page per tool; use one FileIO entry with project-based tree browsing and file-content view.
 3. Credential source: remove `MCP_FILES_MODEL_KEY_SOURCE`; all external model/rerank calls use user API key.
-4. Lexical retrieval: v1 may use `tsvector` transitional implementation, but final ranking must remain semantic + lexical fused results.
+4. Only indexed chunks with a non-empty file generation matching an active, RAG-eligible file enter lexical/semantic ranking. The raw fallback also excludes RAG opt-outs. Lexical retrieval: v1 may use `tsvector` transitional implementation, but final ranking must remain semantic + lexical fused results.
 
 ## 20. Async Credential Handoff Rule
 
 For async index workers:
 
 - never persist user raw API keys in plaintext storage.
-- store a credential envelope in Redis with short TTL (for example 300s), keyed by job-scoped reference.
-- envelope must contain encrypted data only (`kek_id`, `dek_id`, `ciphertext`, `aad`, `expires_at`).
+- generate an opaque UUIDv7 for each credential handoff. The FileIO database's `kv` table keys the encrypted
+  envelope by `mcp_files_credential_` plus that complete ID. AAD binds the ID and length-delimited tenant,
+  project, and path. The mutation persists the ID in its outbox job and stores the envelope in the same
+  transaction. Legacy jobs without an ID safely degrade or wait for authorization. There is no time-derived
+  fallback, Redis, or platform credential.
+- UPSERT and dependent summary jobs share the persisted ID. A fresh authenticated operation can attach a new
+  ID to a waiting eligible refresh. The envelope is retained for its short configured TTL; retries do not
+  renew it, and the worker's bounded expiry sweep removes expired rows. RAG opt-out stores no envelope.
+- the envelope stores encrypted data (`kek_id`, `dek_id`, `ciphertext`) only. Workers authenticate the scope during decryption; `expire_at` is a column. The
+  encryption keys stay in configuration.
+- schema step 2 of the FileIO migration ledger creates the `kv` table and its `expire_at` index; services open it
+  without DDL. Schema step 3 adds the credential ID on outbox rows, including on existing installations.
 - initialize KMS with `github.com/Laisky/go-utils/v6/crypto/kms/mem` using all entries in `settings.mcp.files.security.encryption_keks`.
 - construct KMS by hashing each configured KEK secret and passing `map[uint16][]byte` into `mem.New(...)`.
 - producer encryption call sequence:
   - `encryptedData, err := kmsClient.Encrypt(ctx, []byte(apiKey), aad)`
   - `payload, err := encryptedData.MarshalToString()`
-  - write payload to Redis with TTL
+  - upsert payload into `kv` with `expire_at = now + TTL`
 - each envelope uses a unique `dek_id` generated by KMS; DEK is derived from `(kek_id, dek_id)` internally.
 - worker decryption call sequence:
   - `var encryptedData kms.EncryptedData`
   - `encryptedData.UnmarshalFromString(payload)`
   - `plaintext, err := kmsClient.Decrypt(ctx, &encryptedData, aad)`
-- worker decrypts in memory, uses caller API key for external requests, and deletes Redis envelope immediately after use.
-- if transient credentials are unavailable, the worker must retry later without falling back to platform credentials.
+- worker decrypts in memory and uses the caller API key for external requests. The expiry sweep removes the envelope after its TTL.
+- if transient credentials are unavailable, the worker degrades to lexical indexing (summary refresh waits for
+  authentication) without falling back to platform credentials.
 - all decrypt/encrypt failures must be logged without sensitive payload fields.
 
 ## 21. Definition of Done Checklist

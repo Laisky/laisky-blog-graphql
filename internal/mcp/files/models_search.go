@@ -73,11 +73,13 @@ type FileIndexJob struct {
 	FilePath      string
 	Operation     string
 	FileUpdatedAt *time.Time
-	Status        string
-	RetryCount    int
-	AvailableAt   time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// CredentialID is the persisted identity of a scoped, expiring SQL envelope.
+	CredentialID string
+	Status       string
+	RetryCount   int
+	AvailableAt  time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 	// ContentHash is the whole-file content generation the job expects. A job whose
 	// expected hash no longer matches the active file is skipped before any model
 	// call so rapid successive writes coalesce (§4.1, §4.2).

@@ -1,8 +1,10 @@
 # File Summary Backfill Runbook
 
 `Service.BackfillRAGSummaries` is the bounded operator API for legacy RAG rows. It
-does not route PageIndex-owned files through RAG; those files must be reindexed by
-the PageIndex plugin so their tree and source hash remain authoritative.
+skips files that PageIndex wrote in earlier releases (`skip_rag_index`). PageIndex is
+disabled ([memory plugins §6](mcp_memory_plugins.md#6-pageindex-phase-2)) and nothing
+rebuilds those files automatically; one gets RAG chunks and a summary when it is next
+written through RAG.
 
 ## Before starting
 

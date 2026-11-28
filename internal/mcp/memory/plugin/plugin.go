@@ -13,10 +13,15 @@ import (
 const (
 	// DefaultPluginAuto lets callers defer to the configured manager default.
 	DefaultPluginAuto = "auto"
-	// DefaultPluginRAG is the Phase-1 default plugin name.
+	// DefaultPluginRAG is the default and only supported memory backend.
 	DefaultPluginRAG = "rag"
-	// DefaultPluginPageIndex reserves the future long-doc engine name in schemas.
+	// DefaultPluginPageIndex names the disabled long-document engine. It stays in
+	// the MCP and GraphQL enums for wire compatibility only: the server never
+	// registers it, and selecting it fails with PageIndexDisabledMessage.
 	DefaultPluginPageIndex = "pageindex"
+	// PageIndexDisabledMessage is the user-facing error for an explicit
+	// pageindex selection.
+	PageIndexDisabledMessage = "pageindex plugin is disabled; rag is the supported memory backend"
 )
 
 // SearchMode describes the retrieval mode exposed by a plugin.
@@ -53,7 +58,9 @@ type Plugin interface {
 	Read(context.Context, files.AuthContext, string, string, int64, int64) (files.ReadResult, error)
 	Write(context.Context, files.AuthContext, string, string, string, string, int64, files.WriteMode) (files.WriteResult, error)
 	Delete(context.Context, files.AuthContext, string, string, bool) (files.DeleteResult, error)
-	Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error)
+	// Rename moves a file or directory subtree within a project or, when
+	// RenameRequest.TargetProject names another project, across projects.
+	Rename(context.Context, files.AuthContext, files.RenameRequest) (files.RenameResult, error)
 	List(context.Context, files.AuthContext, string, string, int, int) (files.ListResult, error)
 	Search(context.Context, files.AuthContext, string, string, string, int) (files.SearchResult, error)
 	Start(context.Context) error
@@ -105,6 +112,9 @@ func (e *ResolveError) Error() string {
 
 	if e.Requested == "" {
 		return "plugin resolution failed"
+	}
+	if e.Requested == DefaultPluginPageIndex {
+		return PageIndexDisabledMessage
 	}
 
 	if len(e.Available) == 0 {

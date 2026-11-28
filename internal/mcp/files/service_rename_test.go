@@ -15,13 +15,13 @@ func TestRenameFileSuccess(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/docs/a.txt", "hello", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
 
-	result, err := svc.Rename(context.Background(), auth, "proj", "/docs/a.txt", "/docs/b.txt", false)
+	result, err := svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/docs/a.txt", ToPath: "/docs/b.txt"})
 	require.NoError(t, err)
 	require.Equal(t, 1, result.MovedCount)
 
@@ -41,7 +41,7 @@ func TestRenameDirectorySuccess(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/docs/a.txt", "a", "utf-8", 0, WriteModeAppend)
@@ -49,7 +49,7 @@ func TestRenameDirectorySuccess(t *testing.T) {
 	_, err = svc.Write(context.Background(), auth, "proj", "/docs/sub/b.txt", "b", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
 
-	result, err := svc.Rename(context.Background(), auth, "proj", "/docs", "/archive", false)
+	result, err := svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/docs", ToPath: "/archive"})
 	require.NoError(t, err)
 	require.Equal(t, 2, result.MovedCount)
 
@@ -73,7 +73,7 @@ func TestRenameDestinationExistsWithoutOverwrite(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "source", "utf-8", 0, WriteModeAppend)
@@ -81,7 +81,7 @@ func TestRenameDestinationExistsWithoutOverwrite(t *testing.T) {
 	_, err = svc.Write(context.Background(), auth, "proj", "/b.txt", "target", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
 
-	_, err = svc.Rename(context.Background(), auth, "proj", "/a.txt", "/b.txt", false)
+	_, err = svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/a.txt", ToPath: "/b.txt"})
 	require.Error(t, err)
 	require.True(t, IsCode(err, ErrCodeAlreadyExists))
 }
@@ -93,7 +93,7 @@ func TestRenameFileOverwrite(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "source", "utf-8", 0, WriteModeAppend)
@@ -101,7 +101,7 @@ func TestRenameFileOverwrite(t *testing.T) {
 	_, err = svc.Write(context.Background(), auth, "proj", "/b.txt", "target", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
 
-	result, err := svc.Rename(context.Background(), auth, "proj", "/a.txt", "/b.txt", true)
+	result, err := svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/a.txt", ToPath: "/b.txt", Overwrite: true})
 	require.NoError(t, err)
 	require.Equal(t, 1, result.MovedCount)
 
@@ -117,13 +117,13 @@ func TestRenameDirectoryToOwnSubtreeRejected(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/docs/a.txt", "a", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
 
-	_, err = svc.Rename(context.Background(), auth, "proj", "/docs", "/docs/sub/new", false)
+	_, err = svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/docs", ToPath: "/docs/sub/new"})
 	require.Error(t, err)
 	require.True(t, IsCode(err, ErrCodeInvalidPath))
 }
@@ -135,13 +135,13 @@ func TestRenameNoop(t *testing.T) {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/docs/a.txt", "a", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
 
-	result, err := svc.Rename(context.Background(), auth, "proj", "/docs/a.txt", "/docs/a.txt", false)
+	result, err := svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/docs/a.txt", ToPath: "/docs/a.txt"})
 	require.NoError(t, err)
 	require.Equal(t, 0, result.MovedCount)
 }

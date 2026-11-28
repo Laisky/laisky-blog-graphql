@@ -50,7 +50,7 @@ old content with a newer version.
 | `file_write` | **Required:** exactly one of `expected_version` for an existing file or `create_only=true` for an absent file. Every mode, including APPEND, follows this rule. The tool schema expresses the alternatives with `oneOf`. |
 | `file_read` | Optional `expected_version`. Subsequent ranges use the first range's version. Changed, missing, or recreated files fail, including empty/EOF reads. |
 | `file_delete` | **Required:** `expected_version` for an exact file. A child-file token never authorizes recursive directory deletion. |
-| `file_rename` | **Required:** source `expected_version`. A non-overwriting move requires an absent destination. For `overwrite=true`, additionally supply `expected_destination_version` or `destination_must_not_exist=true`. |
+| `file_rename` | **Required:** source `expected_version`. A non-overwriting move requires an absent destination. For `overwrite=true`, additionally supply `expected_destination_version` or `destination_must_not_exist=true`. With `target_project`, the source token is checked in `project` and every destination condition in `target_project`. |
 | Historical restore | Condition on the live file's current version; the historical numeric snapshot ID chooses the bytes to restore, not the edit base. |
 
 Rename destination conditions require a source condition and are mutually
@@ -63,7 +63,8 @@ is not an atomic directory transaction and does not cover new descendants.
 Malformed or empty version strings, numeric/null versions, invalid booleans,
 unsupported conditional backends, and contradictory conditions fail with
 `INVALID_ARGUMENT`; they never silently become blind writes. The native RAG
-adapter and PageIndex with its transactional SystemFS support conditions. The
+adapter supports conditions; PageIndex is disabled
+([memory plugins §6](mcp_memory_plugins.md#6-pageindex-phase-2)). The
 MCP plugin manager resolves a supporting adapter before calling it. Third-party
 adapters must explicitly advertise and actually enforce the version-precondition
 capability. Missing mutation intent is `PRECONDITION_REQUIRED` with
@@ -154,8 +155,8 @@ needed after deploying a changed tool schema.
 The production Web HTTP save and restore routes resolve the same version-aware
 project plugin as MCP. Historical bytes come from the immutable tenant-scoped
 history store; restoration keeps the original live token and validates it in the
-plugin's atomic write, without fetching a newer token. PageIndex side effects
-therefore run for editor saves/restores as well as MCP writes. Plugin resolution
+plugin's atomic write, without fetching a newer token. Plugin side effects, such
+as RAG index jobs, therefore run for editor saves/restores as well as MCP writes. Plugin resolution
 errors never fall back to raw storage. A standalone storage-only handler remains
 available for explicitly constructed storage tests; it still requires CAS.
 
@@ -175,8 +176,8 @@ Go callers can pass `WriteOpts{ExpectedVersion: read.Version}` or
 context produced by `WithFilePreconditions(ctx, auth, project, canonicalPath,
 operation, conditions)`. Always check its error. The context is scoped to the
 operation, authenticated tenant, project, canonical path, and system owner; use
-it only for that operation. Internal indexing reads and system-state mutations
-do not inherit a user-write precondition. The internal Service methods are
+it only for that operation. Internal indexing reads and system-namespace
+(`SystemFS`) writes do not inherit a user-write precondition. The internal Service methods are
 imperative storage primitives, not an external legacy-client compatibility path.
 Public MCP and HTTP adapters always require conditions for mutations. Internal
 writes continue to advance revisions so stale external tokens are invalidated.
@@ -186,7 +187,8 @@ writes continue to advance revisions so stale external tokens are invalidated.
 A token is currently `incarnation_id:revision`: a randomly generated 128-bit hex
 identity plus a positive signed 64-bit counter. Each file incarnation starts at
 1. Delete/recreate assigns a new identity. Rename preserves identity and advances
-revision; moving away and back cannot revive an old token. Restoring old bytes
+revision, including a move into another project; moving away and back cannot
+revive an old token. Restoring old bytes
 creates a new revision, not an old live token. Accepted same-content writes also
 advance revision. Counter exhaustion fails with `REVISION_EXHAUSTED`, not wrap.
 
@@ -236,7 +238,10 @@ Initial schema privileges must permit table alteration, index/trigger/function
 creation and backfill updates. Startup does not grant privileges. Permission or
 connection errors do not masquerade as an absent checkpoint. An unknown newer
 schema version fails closed. Future schema changes must add an ordered numbered
-step, not repurpose a completed one or replay the whole baseline. Manual schema
+step, not repurpose a completed one or replay the whole baseline. Step 1 is the
+file baseline. Step 2 creates the `kv` table (`library/db/sql/kv`) and its
+`expire_at` index, which hold the index worker's encrypted credential envelopes;
+a database at step 1 runs only step 2. Manual schema
 drift with a retained marker is not automatically repaired by scanning all
 objects on every startup. No new service, scheduler, or CI is required.
 

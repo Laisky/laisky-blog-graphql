@@ -61,38 +61,21 @@ func (t testContextualizer) GenerateChunkContexts(_ context.Context, _ string, _
 	return t.contexts, nil
 }
 
-// memoryCredentialStore keeps credential envelopes in memory.
-type memoryCredentialStore struct {
-	data map[string]string
+// credentialEnvelopeCount returns how many credential envelopes the service's
+// database holds.
+func credentialEnvelopeCount(t *testing.T, svc *Service) int {
+	t.Helper()
+	var count int
+	require.NoError(t, svc.db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM kv").Scan(&count))
+	return count
 }
 
-// Store writes a payload in memory.
-func (s *memoryCredentialStore) Store(_ context.Context, key, payload string, _ time.Duration) error {
-	if s.data == nil {
-		s.data = make(map[string]string)
-	}
-	s.data[key] = payload
-	return nil
-}
-
-// Load retrieves a payload from memory.
-func (s *memoryCredentialStore) Load(_ context.Context, key string) (string, error) {
-	if s.data == nil {
-		return "", sql.ErrNoRows
-	}
-	value, ok := s.data[key]
-	if !ok {
-		return "", sql.ErrNoRows
-	}
-	return value, nil
-}
-
-// Delete removes a payload from memory.
-func (s *memoryCredentialStore) Delete(_ context.Context, key string) error {
-	if s.data != nil {
-		delete(s.data, key)
-	}
-	return nil
+// dropCredentialEnvelopes deletes every stored credential envelope, as if each
+// had expired and been swept.
+func dropCredentialEnvelopes(t *testing.T, svc *Service) {
+	t.Helper()
+	_, err := svc.db.ExecContext(context.Background(), "DELETE FROM kv")
+	require.NoError(t, err)
 }
 
 // testEncryptionKey returns a stable base64-encoded 32-byte key for tests.
@@ -110,10 +93,10 @@ func newTestDB(t *testing.T) *sql.DB {
 }
 
 // newTestService constructs a service with deterministic dependencies.
-func newTestService(t *testing.T, settings Settings, embedder Embedder, store CredentialStore) *Service {
+func newTestService(t *testing.T, settings Settings, embedder Embedder) *Service {
 	credential, err := NewCredentialProtector(settings.Security)
 	require.NoError(t, err)
-	svc, err := NewService(newTestDB(t), settings, embedder, nil, credential, store, nil, nil, func() time.Time {
+	svc, err := NewService(newTestDB(t), settings, embedder, nil, credential, nil, nil, func() time.Time {
 		return time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC)
 	})
 	require.NoError(t, err)

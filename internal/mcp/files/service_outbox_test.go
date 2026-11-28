@@ -64,7 +64,7 @@ func TestWriteDeleteAndRenamePersistExpectedIndexJobs(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/docs/a.txt", "aaa", "utf-8", 0, WriteModeAppend)
@@ -73,7 +73,7 @@ func TestWriteDeleteAndRenamePersistExpectedIndexJobs(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.Delete(context.Background(), auth, "proj", "/docs/sub", true)
 	require.NoError(t, err)
-	_, err = svc.Rename(context.Background(), auth, "proj", "/docs/a.txt", "/archive/a.txt", false)
+	_, err = svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/docs/a.txt", ToPath: "/archive/a.txt"})
 	require.NoError(t, err)
 
 	jobs := listIndexJobs(t, svc)
@@ -103,14 +103,14 @@ func TestRenameDirectoryEnqueuesPerFileJobs(t *testing.T) {
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
 
-	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
 
 	_, err := svc.Write(context.Background(), auth, "proj", "/docs/a.txt", "aaa", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
 	_, err = svc.Write(context.Background(), auth, "proj", "/docs/sub/b.txt", "bbb", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
-	_, err = svc.Rename(context.Background(), auth, "proj", "/docs", "/archive", false)
+	_, err = svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/docs", ToPath: "/archive"})
 	require.NoError(t, err)
 
 	jobs := summarizeJobs(listIndexJobs(t, svc))

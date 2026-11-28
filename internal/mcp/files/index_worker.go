@@ -79,8 +79,10 @@ func (w *IndexWorker) Start(ctx context.Context) error {
 	}
 }
 
-// RunOnce processes a batch of pending jobs.
+// RunOnce sweeps expired credential envelopes when due and processes a batch
+// of pending jobs.
 func (w *IndexWorker) RunOnce(ctx context.Context) error {
+	w.svc.purgeExpiredCredentials(ctx)
 	jobs, err := w.claimJobs(ctx)
 	if err != nil {
 		return err
@@ -115,7 +117,7 @@ func (w *IndexWorker) claimJobs(ctx context.Context) ([]FileIndexJob, error) {
 	// Index workers only process user-namespace jobs. System-owner writes never
 	// enqueue, but we filter defensively so a future bug cannot leak system rows
 	// into the chunking/embedding pipeline.
-	query := "SELECT id, apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, content_hash, last_error_code, summary_generation_key " +
+	query := "SELECT id, apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, content_hash, last_error_code, summary_generation_key, credential_id " +
 		"FROM mcp_file_index_jobs WHERE status = ? AND available_at <= ? AND system_owner = ? ORDER BY id ASC LIMIT ?"
 	args := []any{indexStatusPending, now, "", batch}
 	if svc.isPostgres {
@@ -145,6 +147,7 @@ func (w *IndexWorker) claimJobs(ctx context.Context) ([]FileIndexJob, error) {
 			&job.ContentHash,
 			&job.LastErrorCode,
 			&job.SummaryGenerationKey,
+			&job.CredentialID,
 		); scanErr != nil {
 			_ = rows.Close()
 			_ = tx.Rollback()
@@ -225,6 +228,9 @@ func (w *IndexWorker) runSummaryRefresh(ctx context.Context, job FileIndexJob) e
 		}
 		return w.handleJobError(ctx, job, errors.Wrap(err, "load file for summary refresh"))
 	}
+	if file.SkipRAGIndex {
+		return w.markSummaryRefreshStatus(ctx, job, "done", "")
+	}
 	fileHash := file.ContentHash
 	if fileHash == "" {
 		fileHash = HashFileContent(file.Content)
@@ -240,13 +246,13 @@ func (w *IndexWorker) runSummaryRefresh(ctx context.Context, job FileIndexJob) e
 		return w.markSummaryRefreshStatus(ctx, job, "waiting_auth", "summarizer_disabled")
 	}
 
-	ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath}
-	if job.FileUpdatedAt != nil {
-		ref.UpdatedAt = *job.FileUpdatedAt
-	}
+	ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath, ID: job.CredentialID}
 	apiKey, credErr := svc.loadCredential(ctx, ref)
 	if credErr != nil || strings.TrimSpace(apiKey) == "" {
-		return w.markSummaryRefreshStatus(ctx, job, "waiting_auth", "credential_unavailable")
+		if credErr != nil && !credentialUnavailable(credErr) {
+			w.logger.Warn("load credential for summary refresh", zap.Error(credErr), zap.Int64("job_id", job.ID))
+		}
+		return w.parkSummaryWithoutCredential(ctx, job)
 	}
 
 	pub := svc.buildSummaryPublication(ctx, apiKey, string(file.Content), fileHash, nil)
@@ -256,12 +262,31 @@ func (w *IndexWorker) runSummaryRefresh(ctx context.Context, job FileIndexJob) e
 		return w.handleSummaryRefreshRetry(ctx, job, pub.errorCode)
 	}
 
-	if err := svc.publishSummaryStandalone(ctx, job, pub); err != nil {
+	retry, err := svc.publishSummaryStandalone(ctx, job, file.Version, file.SummaryGenerationKey, pub)
+	if err != nil {
 		return w.handleJobError(ctx, job, err)
 	}
-	_ = svc.deleteCredential(ctx, ref)
+	if retry {
+		return w.handleSummaryRefreshRetry(ctx, job, "revision_changed")
+	}
 	svc.summaryRefreshOutcome(ctx, "rag", "done")
 	return w.markSummaryRefreshStatus(ctx, job, "done", "")
+}
+
+// parkSummaryWithoutCredential does not park a claim whose original envelope
+// was replaced while it was being processed. The next claim sees the new ID.
+func (w *IndexWorker) parkSummaryWithoutCredential(ctx context.Context, job FileIndexJob) error {
+	svc := w.svc
+	now := svc.clock()
+	_, err := svc.db.ExecContext(ctx,
+		rebindSQL(`UPDATE mcp_file_index_jobs
+		SET status = CASE WHEN credential_id = ? THEN 'waiting_auth' ELSE 'pending' END,
+		    last_error_code = CASE WHEN credential_id = ? THEN 'credential_unavailable' ELSE '' END,
+		    available_at = ?, updated_at = ?
+		WHERE id = ? AND system_owner = ? AND status = 'processing'`, svc.isPostgres),
+		job.CredentialID, job.CredentialID, now, now, job.ID, "",
+	)
+	return errors.Wrap(err, "park summary refresh")
 }
 
 // handleSummaryRefreshRetry requeues a transient refresh failure with bounded backoff
@@ -364,7 +389,7 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 	file, err := s.findActiveFile(ctx, job.APIKeyHash, job.Project, job.FilePath)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return s.deleteIndexRows(ctx, job.APIKeyHash, job.Project, job.FilePath)
+			return s.processDeleteJob(ctx, job)
 		}
 		return errors.Wrap(err, "load file for indexing")
 	}
@@ -375,6 +400,10 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 			zap.Time("file_updated_at", file.UpdatedAt),
 			zap.Time("job_file_updated_at", *job.FileUpdatedAt),
 		)
+		return nil
+	}
+
+	if file.SkipRAGIndex {
 		return nil
 	}
 
@@ -393,19 +422,23 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 
 	chunks := s.chunker.Split(string(file.Content))
 	apiKey := ""
-	ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath}
-	if job.FileUpdatedAt != nil {
-		ref.UpdatedAt = *job.FileUpdatedAt
-	}
+	ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath, ID: job.CredentialID}
 	if s.contextualizer != nil || s.embedder != nil || s.summarizer != nil {
 		loadedAPIKey, loadErr := s.loadCredential(ctx, ref)
-		if loadErr != nil {
-			s.LoggerFromContext(ctx).Debug("load credential failed before indexing",
+		switch {
+		case loadErr != nil && credentialUnavailable(loadErr):
+			s.LoggerFromContext(ctx).Debug("credential unavailable, indexing lexically",
 				zap.String("project", job.Project),
 				zap.String("file_path", job.FilePath),
 				zap.Error(loadErr),
 			)
-		} else {
+		case loadErr != nil:
+			s.LoggerFromContext(ctx).Warn("load credential failed, indexing lexically",
+				zap.String("project", job.Project),
+				zap.String("file_path", job.FilePath),
+				zap.Error(loadErr),
+			)
+		default:
 			apiKey = loadedAPIKey
 		}
 	}
@@ -416,7 +449,7 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 
 	indexContents := s.buildContextualizedChunkInputs(ctx, apiKey, string(file.Content), job.FilePath, chunks)
 	plan := s.buildEmbeddingPlan(ctx, job, apiKey, indexContents)
-	if err := s.replaceIndexRows(ctx, job, chunks, indexContents, plan.vectors, pub); err != nil {
+	if err := s.replaceIndexRows(ctx, job, file.Version, chunks, indexContents, plan.vectors, pub); err != nil {
 		return err
 	}
 	if plan.err != nil {
@@ -427,12 +460,6 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 			zap.Error(plan.err),
 		)
 		return plan.err
-	}
-
-	if s.embedder != nil || s.contextualizer != nil || s.summarizer != nil {
-		if err := s.deleteCredential(ctx, ref); err != nil {
-			return err
-		}
 	}
 
 	s.LoggerFromContext(ctx).Debug("file index upsert completed",
@@ -474,16 +501,18 @@ func (s *Service) buildEmbeddingPlan(ctx context.Context, job FileIndexJob, apiK
 
 // processDeleteJob removes index rows for a file path.
 func (s *Service) processDeleteJob(ctx context.Context, job FileIndexJob) error {
-	file, err := s.findActiveFile(ctx, job.APIKeyHash, job.Project, job.FilePath)
-	if err == nil {
-		if job.FileUpdatedAt != nil && file.UpdatedAt.After(*job.FileUpdatedAt) {
+	return s.withProjectLocks(ctx, job.APIKeyHash, []string{job.Project}, func(tx *sql.Tx) error {
+		active, err := s.checkActiveRAGFileTx(ctx, tx, job)
+		if err == nil && !active.skipRAGIndex {
+			// An active RAG generation owns the path regardless of clock
+			// equality. Its upsert is responsible for replacing old rows.
 			return nil
 		}
-	}
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return errors.Wrap(err, "check file for delete")
-	}
-	return s.deleteIndexRows(ctx, job.APIKeyHash, job.Project, job.FilePath)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return errors.Wrap(err, "check file for delete")
+		}
+		return s.deleteIndexRowsTx(ctx, tx, job.APIKeyHash, job.Project, job.FilePath)
+	})
 }
 
 // replaceIndexRows rebuilds all chunk rows and lexical metadata for a file, writes
@@ -491,28 +520,27 @@ func (s *Service) processDeleteJob(ctx context.Context, job FileIndexJob) error 
 // the same content generation. It first rechecks the active content hash: if a newer
 // write arrived while the summary/embeddings were being produced, the stale generation
 // is discarded rather than overwriting the newer state (§4.1, §4.2).
-func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks []Chunk, indexContents []string, vectors []pgvector.Vector, pub summaryPublication) error {
+func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, version string, chunks []Chunk, indexContents []string, vectors []pgvector.Vector, pub summaryPublication) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return errors.Wrap(err, "begin replace index rows transaction")
 	}
 
-	curHash, hashErr := s.checkActiveContentHashTx(ctx, tx, job)
-	switch {
-	case errors.Is(hashErr, sql.ErrNoRows):
-		// File was deleted concurrently: drop any leftover index rows and stop.
-		if delErr := s.deleteIndexRowsTx(ctx, tx, job.APIKeyHash, job.Project, job.FilePath); delErr != nil {
-			_ = tx.Rollback()
-			return delErr
-		}
-		if commitErr := tx.Commit(); commitErr != nil {
-			return errors.Wrap(commitErr, "commit deleted-file index cleanup")
-		}
-		return nil
-	case hashErr != nil:
+	active, hashErr := s.checkActiveRAGFileTx(ctx, tx, job)
+	if hashErr != nil {
 		_ = tx.Rollback()
-		return errors.Wrap(hashErr, "recheck active content hash")
+		if errors.Is(hashErr, sql.ErrNoRows) {
+			// Recheck the path under the same project lock as creates and
+			// renames; an old worker cannot erase a replacement generation.
+			return s.processDeleteJob(ctx, job)
+		}
+		return errors.Wrap(hashErr, "recheck active index generation")
 	}
+	if active.skipRAGIndex || active.version != version {
+		_ = tx.Rollback()
+		return nil
+	}
+	curHash := active.contentHash
 	if curHash != "" && pub.contentHash != "" && curHash != pub.contentHash {
 		// A newer generation is already active; discard this stale worker output.
 		_ = tx.Rollback()
@@ -663,22 +691,6 @@ func (s *Service) insertBM25(ctx context.Context, tx *sql.Tx, chunkID int64, con
 	return execErr
 }
 
-// deleteIndexRows deletes all index rows for a file path.
-func (s *Service) deleteIndexRows(ctx context.Context, apiKeyHash, project, path string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return errors.Wrap(err, "begin delete index rows transaction")
-	}
-	if err = s.deleteIndexRowsTx(ctx, tx, apiKeyHash, project, path); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	if err = tx.Commit(); err != nil {
-		return errors.Wrap(err, "commit delete index rows transaction")
-	}
-	return nil
-}
-
 // deleteIndexRowsTx deletes index rows for a file within a transaction. The index
 // worker only operates against user-namespace rows (system_owner=”), so the
 // scoped deletes below are explicit about that.
@@ -702,35 +714,6 @@ func (s *Service) deleteIndexRowsTx(ctx context.Context, tx *sql.Tx, apiKeyHash,
 	// system_owner-checked: orphan cleanup; mcp_file_chunks already filtered by system_owner above
 	if _, err := tx.ExecContext(ctx, "DELETE FROM mcp_file_chunk_bm25 WHERE chunk_id NOT IN (SELECT id FROM mcp_file_chunks)"); err != nil {
 		return errors.Wrap(err, "cleanup bm25")
-	}
-	return nil
-}
-
-// loadCredential decrypts the cached credential envelope for a job.
-func (s *Service) loadCredential(ctx context.Context, ref CredentialReference) (string, error) {
-	if s.credential == nil || s.credStore == nil {
-		return "", errors.New("credential store not configured")
-	}
-	key := ref.CacheKey(s.settings.Security.CredentialCachePrefix)
-	payload, err := s.credStore.Load(ctx, key)
-	if err != nil {
-		return "", errors.Wrap(err, "load credential envelope")
-	}
-	apiKey, err := s.credential.DecryptCredential(ctx, payload, ref.AAD())
-	if err != nil {
-		return "", errors.Wrap(err, "decrypt credential")
-	}
-	return apiKey, nil
-}
-
-// deleteCredential removes the cached credential envelope after use.
-func (s *Service) deleteCredential(ctx context.Context, ref CredentialReference) error {
-	if s.credStore == nil {
-		return nil
-	}
-	key := ref.CacheKey(s.settings.Security.CredentialCachePrefix)
-	if err := s.credStore.Delete(ctx, key); err != nil {
-		s.LoggerFromContext(ctx).Warn("delete credential envelope", zap.Error(err), zap.String("key", key))
 	}
 	return nil
 }

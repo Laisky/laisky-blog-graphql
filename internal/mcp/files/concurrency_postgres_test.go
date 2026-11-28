@@ -303,7 +303,7 @@ func TestFileIOPostgresNamespaceAndQuota(t *testing.T) {
 			f.write(t, i, path, path, files.WriteModeTruncate, 0)
 		}
 		errs := parallelRaceCalls(t, f.ctx, 2, func(i int) error {
-			_, err := f.svc[i].Rename(f.ctx, f.auth, "race", paths[i], "/destination.txt", false)
+			_, err := f.svc[i].Rename(f.ctx, f.auth, files.RenameRequest{Project: "race", FromPath: paths[i], ToPath: "/destination.txt"})
 			return err
 		})
 		require.NotEqual(t, errs[0] == nil, errs[1] == nil)

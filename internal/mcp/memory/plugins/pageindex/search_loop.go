@@ -105,8 +105,8 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 		if in.OnCandidate != nil {
 			in.OnCandidate(cand.userPath, cand.entry)
 		}
-		tree, err := s.store.GetTree(ctx, in.Project, cand.entry.DocID)
-		if err != nil {
+		tree, current := s.currentCandidateTree(ctx, in.Project, cand.entry)
+		if !current {
 			continue
 		}
 		// Tree.DocDescription is the authoritative public summary for this document.
@@ -154,6 +154,15 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 		allChunks = allChunks[:in.Limit]
 	}
 	return files.SearchResult{Chunks: allChunks}, nil
+}
+
+// currentCandidateTree only returns a tree for the catalog's content generation.
+func (s *Searcher) currentCandidateTree(ctx context.Context, project string, entry IndexEntry) (*Tree, bool) {
+	tree, err := s.store.GetTree(ctx, project, entry.DocID)
+	if err != nil || tree.SourceContentHash != entry.SourceContentHash {
+		return nil, false
+	}
+	return tree, true
 }
 
 // weightedChunk is a fallback chunk with the share of the lowest planned score

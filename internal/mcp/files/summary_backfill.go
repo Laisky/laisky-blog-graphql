@@ -30,8 +30,9 @@ type SummaryBackfillResult struct {
 // BackfillRAGSummaries computes whole-file hashes and deterministic degraded
 // summaries for legacy RAG rows, then schedules normal UPSERT processing to
 // replay the current chunk plan. It is bounded, idempotent, and safe to resume
-// with NextPath. PageIndex-owned rows are excluded because their trees require
-// the plugin's own reindex lifecycle.
+// with NextPath. Rows marked skip_rag_index (written by the now disabled
+// PageIndex plugin) are left as they are; rewriting such a file through RAG
+// clears the flag and indexes it.
 func (s *Service) BackfillRAGSummaries(ctx context.Context, opts SummaryBackfillOptions) (SummaryBackfillResult, error) {
 	if opts.APIKeyHash == "" {
 		return SummaryBackfillResult{}, errors.WithStack(NewError(ErrCodePermissionDenied, "missing api key hash", false))

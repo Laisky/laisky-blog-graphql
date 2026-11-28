@@ -10,12 +10,11 @@ import (
 
 // ensureNoDescendantFile validates that the target path has no child files.
 func (s *Service) ensureNoDescendantFile(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) error {
-	owner := systemOwnerFromContext(ctx)
-	prefix := buildPathPrefix(path)
+	below, belowArgs := belowPathSQL("path", path)
 	var count int64
 	if err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash, project, prefix, owner,
+		rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND `+below, s.isPostgres),
+		append([]any{apiKeyHash, project, systemOwnerFromContext(ctx)}, belowArgs...)...,
 	).Scan(&count); err != nil {
 		return errors.Wrap(err, "check descendant files")
 	}
@@ -85,8 +84,8 @@ func (s *Service) ensureProjectQuota(ctx context.Context, tx *sql.Tx, apiKeyHash
 
 // resolveDeleteTargets determines which file paths should be deleted.
 func (s *Service) resolveDeleteTargets(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string, recursive bool) ([]string, error) {
-	// Shared by ordinary Delete and PageIndex DeleteWithSystemState. Check before
-	// either path snapshots content, deletes rows, or changes the plugin catalog.
+	// Check the caller's version condition before Delete snapshots content or
+	// deletes rows.
 	auth := AuthContext{APIKeyHash: apiKeyHash}
 	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationDelete)
 	if err := s.checkPathVersionTx(ctx, tx, auth, project, path, conditions.ExpectedVersion, false); err != nil {
@@ -122,11 +121,10 @@ func (s *Service) resolveDeleteTargets(ctx context.Context, tx *sql.Tx, apiKeyHa
 
 // listDescendantPaths returns all active descendant file paths for a directory.
 func (s *Service) listDescendantPaths(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) ([]string, error) {
-	owner := systemOwnerFromContext(ctx)
-	prefix := buildPathPrefix(path)
+	below, belowArgs := belowPathSQL("path", path)
 	rows, err := tx.QueryContext(ctx,
-		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash, project, prefix, owner,
+		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND `+below, s.isPostgres),
+		append([]any{apiKeyHash, project, systemOwnerFromContext(ctx)}, belowArgs...)...,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "query descendant paths")
@@ -175,11 +173,11 @@ func (s *Service) listAllFilePaths(ctx context.Context, tx *sql.Tx, apiKeyHash, 
 func (s *Service) insertIndexJobTx(ctx context.Context, tx *sql.Tx, job FileIndexJob) error {
 	owner := systemOwnerFromContext(ctx)
 	_, err := tx.ExecContext(ctx,
-		rebindSQL(`INSERT INTO mcp_file_index_jobs (apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, system_owner, content_hash, last_error_code, summary_generation_key)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres),
+		rebindSQL(`INSERT INTO mcp_file_index_jobs (apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, system_owner, content_hash, last_error_code, summary_generation_key, credential_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres),
 		job.APIKeyHash, job.Project, job.FilePath, job.Operation, job.FileUpdatedAt,
 		job.Status, job.RetryCount, job.AvailableAt, job.CreatedAt, job.UpdatedAt,
-		owner, job.ContentHash, job.LastErrorCode, job.SummaryGenerationKey,
+		owner, job.ContentHash, job.LastErrorCode, job.SummaryGenerationKey, job.CredentialID,
 	)
 	if err != nil {
 		return errors.Wrap(err, "insert index job")

@@ -112,7 +112,7 @@ func (p *memPlugin) Write(_ context.Context, _ files.AuthContext, project, path,
 func (p *memPlugin) Delete(context.Context, files.AuthContext, string, string, bool) (files.DeleteResult, error) {
 	return files.DeleteResult{}, nil
 }
-func (p *memPlugin) Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error) {
+func (p *memPlugin) Rename(context.Context, files.AuthContext, files.RenameRequest) (files.RenameResult, error) {
 	return files.RenameResult{}, nil
 }
 func (p *memPlugin) List(context.Context, files.AuthContext, string, string, int, int) (files.ListResult, error) {
@@ -171,13 +171,12 @@ func (f *crossPluginFixture) NewProject(t *testing.T) string {
 }
 
 // TestCrossPluginSuite exercises C23, C24, C26, and R09 in isolation against
-// the in-memory cross-plugin fixture. The single-plugin no-storage fixtures
-// in the rag and pageindex packages skip these scenarios via
-// Options.SkipCrossPlugin.
+// the in-memory cross-plugin fixture. The single-plugin no-storage fixture in
+// the rag package skips these scenarios via Options.SkipCrossPlugin.
 func TestCrossPluginSuite(t *testing.T) {
 	t.Parallel()
 
-	fx := newCrossPluginFixture(t, mcpplugin.DefaultPluginRAG, mcpplugin.DefaultPluginRAG, mcpplugin.DefaultPluginPageIndex)
+	fx := newCrossPluginFixture(t, mcpplugin.DefaultPluginRAG, mcpplugin.DefaultPluginRAG, "secondary")
 
 	t.Run("C23", func(t *testing.T) { runC23(t, fx, Options{}) })
 	t.Run("C24", func(t *testing.T) { runC24(t, fx, Options{}) })

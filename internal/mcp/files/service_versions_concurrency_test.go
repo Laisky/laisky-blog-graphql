@@ -230,7 +230,7 @@ func TestVersions_ConcurrentRenameAndWrite(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := svc.Rename(context.Background(), auth, "proj", "/old.txt", "/new.txt", false)
+		_, err := svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/old.txt", ToPath: "/new.txt"})
 		renameDone.Store(true)
 		errCh <- err
 	}()

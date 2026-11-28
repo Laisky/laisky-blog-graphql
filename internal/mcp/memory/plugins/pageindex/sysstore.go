@@ -234,23 +234,3 @@ func (s *SysStore) RemoveIndexEntry(ctx context.Context, project, userPath strin
 	}
 	return entry, true, nil
 }
-
-// RenameIndexEntry replaces the source path with the destination path.
-func (s *SysStore) RenameIndexEntry(ctx context.Context, project, src, dst string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ix, err := s.getIndexLocked(ctx, project)
-	if err != nil {
-		return err
-	}
-	entry, ok := ix[src]
-	if !ok {
-		return nil
-	}
-	delete(ix, src)
-	ix[dst] = entry
-	if err := s.putIndexLocked(ctx, project, ix); err != nil {
-		return err
-	}
-	return s.putMetaLocked(ctx, project, Meta{UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Count: len(ix)})
-}

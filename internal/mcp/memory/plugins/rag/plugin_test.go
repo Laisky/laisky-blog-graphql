@@ -130,7 +130,7 @@ func (p *noStoragePlugin) Delete(context.Context, files.AuthContext, string, str
 }
 
 // Rename is a no-op for the stand-in.
-func (p *noStoragePlugin) Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error) {
+func (p *noStoragePlugin) Rename(context.Context, files.AuthContext, files.RenameRequest) (files.RenameResult, error) {
 	return files.RenameResult{}, nil
 }
 

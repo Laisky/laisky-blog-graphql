@@ -21,7 +21,7 @@ func versionsTestSettings() Settings {
 // newVersionsTestService constructs a service for version tests.
 func newVersionsTestService(t *testing.T) *Service {
 	t.Helper()
-	return newTestService(t, versionsTestSettings(), testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	return newTestService(t, versionsTestSettings(), testEmbedder{vector: pgvector.NewVector([]float32{1, 0})})
 }
 
 // versionsTestAuth returns the canonical auth context for version tests.
@@ -274,7 +274,7 @@ func TestVersions_RenameMovesHistory(t *testing.T) {
 	_, err = svc.Write(context.Background(), auth, "proj", "/old.txt", "B", "utf-8", 0, WriteModeTruncate)
 	require.NoError(t, err)
 
-	_, err = svc.Rename(context.Background(), auth, "proj", "/old.txt", "/new.txt", false)
+	_, err = svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/old.txt", ToPath: "/new.txt"})
 	require.NoError(t, err)
 
 	oldVersions, err := svc.ListVersions(context.Background(), auth, "proj", "/old.txt")
@@ -299,7 +299,7 @@ func TestVersions_RenameDirectoryMovesHistory(t *testing.T) {
 	_, err = svc.Write(context.Background(), auth, "proj", "/dir/a.txt", "A2", "utf-8", 0, WriteModeTruncate)
 	require.NoError(t, err)
 
-	_, err = svc.Rename(context.Background(), auth, "proj", "/dir", "/dir2", false)
+	_, err = svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/dir", ToPath: "/dir2"})
 	require.NoError(t, err)
 
 	oldVersions, err := svc.ListVersions(context.Background(), auth, "proj", "/dir/a.txt")
@@ -420,7 +420,7 @@ func TestVersions_RestoreOnPathThatNoLongerHasVersion_AfterRename(t *testing.T) 
 	require.Len(t, versionsBefore, 1)
 	versionID := versionsBefore[0].ID
 
-	_, err = svc.Rename(context.Background(), auth, "proj", "/old.txt", "/new.txt", false)
+	_, err = svc.Rename(context.Background(), auth, RenameRequest{Project: "proj", FromPath: "/old.txt", ToPath: "/new.txt"})
 	require.NoError(t, err)
 
 	_, err = svc.RestoreVersion(context.Background(), auth, "proj", "/old.txt", versionID)

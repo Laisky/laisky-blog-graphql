@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
-	pageindex "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/pageindex"
 )
 
 // TestFileIOConditionalLifecycle guards destructive operations and token ABA
@@ -47,13 +46,13 @@ func TestFileIOConditionalLifecycle(t *testing.T) {
 				p := files.FilePreconditions{ExpectedVersion: source.Version, DestinationPath: "/target", ExpectedDestinationVersion: target.Version}
 				f.write(t, 1, "/target", "new target", files.WriteModeTruncate, 0)
 				ctx := conditionRace(t, f, "/source", files.FileOperationRename, p)
-				_, err := f.svc[0].Rename(ctx, f.auth, "race", "/source", "/target", true)
+				_, err := f.svc[0].Rename(ctx, f.auth, files.RenameRequest{Project: "race", FromPath: "/source", ToPath: "/target", Overwrite: true})
 				requireVersionConflict(t, err)
 				require.Equal(t, source, readRaceVersion(t, f, "/source"))
 				f.assertStored(t, "/target", "new target")
 				p.ExpectedDestinationVersion = readRaceVersion(t, f, "/target").Version
 				ctx = conditionRace(t, f, "/source", files.FileOperationRename, p)
-				moved, err := f.svc[0].Rename(ctx, f.auth, "race", "/source", "/target", true)
+				moved, err := f.svc[0].Rename(ctx, f.auth, files.RenameRequest{Project: "race", FromPath: "/source", ToPath: "/target", Overwrite: true})
 				require.NoError(t, err)
 				require.Equal(t, 1, moved.MovedCount)
 				after := readRaceVersion(t, f, "/target")
@@ -62,20 +61,20 @@ func TestFileIOConditionalLifecycle(t *testing.T) {
 				// Moving away and back must not revive the source's old token.
 				p = files.FilePreconditions{ExpectedVersion: after.Version, DestinationPath: "/source", DestinationMustNotExist: true}
 				ctx = conditionRace(t, f, "/target", files.FileOperationRename, p)
-				_, err = f.svc[0].Rename(ctx, f.auth, "race", "/target", "/source", false)
+				_, err = f.svc[0].Rename(ctx, f.auth, files.RenameRequest{Project: "race", FromPath: "/target", ToPath: "/source"})
 				require.NoError(t, err)
 				back := readRaceVersion(t, f, "/source")
 				require.NotEqual(t, source.Version, back.Version)
 				ctx = conditionRace(t, f, "/source", files.FileOperationRename, files.FilePreconditions{ExpectedVersion: source.Version})
-				_, err = f.svc[0].Rename(ctx, f.auth, "race", "/source", "/source", false)
+				_, err = f.svc[0].Rename(ctx, f.auth, files.RenameRequest{Project: "race", FromPath: "/source", ToPath: "/source"})
 				requireVersionConflict(t, err)
 				ctx = conditionRace(t, f, "/source", files.FileOperationRename, files.FilePreconditions{ExpectedVersion: back.Version})
-				noop, err := f.svc[0].Rename(ctx, f.auth, "race", "/source", "/source", false)
+				noop, err := f.svc[0].Rename(ctx, f.auth, files.RenameRequest{Project: "race", FromPath: "/source", ToPath: "/source"})
 				require.NoError(t, err)
 				require.Zero(t, noop.MovedCount)
 				require.Equal(t, back, readRaceVersion(t, f, "/source"))
 				// A protected source must never silently overwrite an unprotected target.
-				_, err = f.svc[0].Rename(ctx, f.auth, "race", "/source", "/other", true)
+				_, err = f.svc[0].Rename(ctx, f.auth, files.RenameRequest{Project: "race", FromPath: "/source", ToPath: "/other", Overwrite: true})
 				require.True(t, files.IsCode(err, files.ErrCodeInvalidArgument), "%v", err)
 			})
 
@@ -112,7 +111,7 @@ func TestFileIOConditionalLifecycle(t *testing.T) {
 				_, err = f.svc[0].Delete(ctx, f.auth, "race", "/dir", true)
 				requireVersionConflict(t, err)
 				ctx = conditionRace(t, f, "/dir", files.FileOperationRename, files.FilePreconditions{ExpectedVersion: child.Version})
-				_, err = f.svc[0].Rename(ctx, f.auth, "race", "/dir", "/new", false)
+				_, err = f.svc[0].Rename(ctx, f.auth, files.RenameRequest{Project: "race", FromPath: "/dir", ToPath: "/new"})
 				requireVersionConflict(t, err)
 				f.assertStored(t, "/dir/a", "A")
 			})
@@ -136,25 +135,6 @@ func TestFileIOConditionalLifecycle(t *testing.T) {
 					requireVersionConflict(t, err)
 				}
 				f.assertStored(t, "/a", "user")
-			})
-
-			t.Run("pageindex_adapter_preserves_conditional_write", func(t *testing.T) {
-				f := newRaceFixture(t, backend, nil)
-				fs, err := f.svc[0].SystemNamespace("pageindex")
-				require.NoError(t, err)
-				plugin, err := pageindex.New(pageindex.PluginDeps{UserFS: f.svc[0], SystemFS: fs})
-				require.NoError(t, err)
-				require.True(t, plugin.SupportsFileVersionPreconditions())
-				f.write(t, 0, "/plain.txt", "before", files.WriteModeTruncate, 0)
-				base := readRaceVersion(t, f, "/plain.txt")
-				ctx := conditionRace(t, f, "/plain.txt", files.FileOperationWrite, files.FilePreconditions{ExpectedVersion: base.Version})
-				// Non-long-document path uses deterministic summary publication, no LLM.
-				written, err := plugin.Write(ctx, f.auth, "race", "/plain.txt", "after", "utf-8", 0, files.WriteModeTruncate)
-				require.NoError(t, err)
-				require.Equal(t, written.Version, readRaceVersion(t, f, "/plain.txt").Version)
-				_, err = plugin.Write(ctx, f.auth, "race", "/plain.txt", "stale", "utf-8", 0, files.WriteModeTruncate)
-				requireVersionConflict(t, err)
-				f.assertStored(t, "/plain.txt", "after")
 			})
 		})
 	}

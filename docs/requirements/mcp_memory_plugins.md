@@ -55,7 +55,8 @@ Each `FR-*` lists its mapped acceptance criterion from
   `*files.Service` without behavior change. _Acceptance:_ A1.
 - **FR-4 — Optional `plugin` argument.** Every `file_*` tool input gains an optional
   `plugin` field (enum `["rag", "pageindex", "auto"]`, default `"auto"`). Other input
-  fields are byte-identical to the prior schema. _Acceptance:_ A2.
+  fields are byte-identical to the prior schema. `pageindex` stays in the enum for wire
+  compatibility only; selecting it is rejected (FR-17). _Acceptance:_ A2.
 - **FR-5 — Routing rules.** Resolution order is per-call argument → `default_plugin` →
   `"rag"`. No per-project / per-API-key / per-tenant override map. _Acceptance:_ A3.
 - **FR-6 — Unknown plugin name.** Returns `INVALID_ARGUMENT` with
@@ -70,7 +71,9 @@ Each `FR-*` lists its mapped acceptance criterion from
   plugin name. Per-plugin metrics use the prefix `mcp.memory.<plugin>.*`. _Acceptance:_
   A9, plus E04 from §5.3.
 - **FR-10 — Default routing knob.** `settings.mcp.tools.memory.default_plugin` selects the
-  default plugin (Phase 1: only `"rag"` accepted at runtime). _Acceptance:_ A3.
+  default plugin. Only `"rag"` is supported. A stale `"pageindex"` passes config
+  validation, does not fail startup, and resolves to `rag` with one startup WARN (FR-17).
+  _Acceptance:_ A3.
 - **FR-11 — Legacy-config shim.** `settings.mcp.files.*` is translated into
   `settings.mcp.tools.memory.plugins.rag.*` at config load time, with exactly one WARN line
   per process. The shim is removed in the next minor after Phase 3. _Acceptance:_ A5.
@@ -84,14 +87,39 @@ Each `FR-*` lists its mapped acceptance criterion from
   `raw_per_query.jsonl`, and `run_metadata.yml` land in the same PR as the Phase 1 code
   and are not overwritten without a `CHANGELOG.md` entry. _Acceptance:_ A9; gates Q1–Q12.
 - **FR-15 — Uniform file-level summary.** Every successful `file_search` hit — under
-  `rag`, `pageindex`, or `auto` — includes a non-empty `file_summary`: a concise,
+  `rag` or `auto` — includes a non-empty `file_summary`: a concise,
   English, file-level overview (≤ 300 Unicode word segments / 2,048 UTF-8 bytes) bound
   to the same content generation as the chunk. RAG publishes it through its async index
-  worker; PageIndex maps `Tree.DocDescription` (bounded, Markdown-derived, or
-  deterministic fallback) into every returned chunk. Summary text is response metadata
+  worker. Summary text is response metadata
   only and never affects ranking. Full contract:
   [`docs/proposals/file_search_file_summaries.md`](../proposals/file_search_file_summaries.md).
   _Acceptance:_ the file-summaries proposal §9 (A1–A12).
+- **FR-16 — Single execution.** Each `file_write` (including `APPEND`), `file_delete`
+  and `file_rename` runs exactly once, on the plugin the call resolves to, and produces
+  only that operation's file revision, history rows and RAG outbox jobs. No mutation is
+  replayed through another plugin and no background replay is started; the removed
+  shadow replay is not reintroduced in another form. `settings.mcp.tools.memory.shadow.*`
+  is ignored and cannot fail startup; `enabled=true` logs one startup WARN.
+  _Acceptance:_ proposal §7.8; `TestFileToolMutationsExecuteOnce`,
+  `TestStaleShadowSettingsNeitherWrapNorReplay`.
+- **FR-17 — PageIndex disabled (maintainer decision, 2026-11-27).** RAG is the default
+  and only supported backend. The API server never constructs, registers or starts
+  `pageindex_plugin`, even when `settings.mcp.tools.memory.plugins.pageindex.*`
+  (including `llm.api_key`) is set; a stale block is ignored with one startup WARN that
+  never logs the key. An explicit `pageindex` selection (the `plugin` argument of the
+  `file_*` and `memory_*` tools, GraphQL `MemoryPlugin.PAGEINDEX`) returns
+  `INVALID_ARGUMENT` with the message
+  `pageindex plugin is disabled; rag is the supported memory backend` and
+  `available_plugins` (e.g. `["rag"]`). Stored `system_owner='pageindex'` rows are left
+  in place; nothing purges or rebuilds them. The package
+  `internal/mcp/memory/plugins/pageindex` remains for offline tooling only.
+  _Acceptance:_ operator manual §6.
+- **FR-18 — FileIO mutations never depend on a search index.** `file_write`,
+  `file_delete` and `file_rename` (including cross-project `target_project` moves) do no
+  PageIndex catalog, tree, model or state work and run no system-state hook. A rename the
+  path rules allow is never refused for indexing reasons (for example `.txt -> .md`,
+  `.md -> .pdf`, `.md -> .txt`). RAG keeps its index-job (outbox) behavior. `SystemFS`
+  and the `system_owner = ?` predicates remain. _Acceptance:_ operator manual §6.2.
 
 ## 5. Quality requirements
 
@@ -120,7 +148,8 @@ for the life of v1; a new baseline is only adopted on a deliberate scorecard res
 ## 6. Out-of-scope
 
 - `pageindex_plugin` (Phase 2). The Phase 1 binary does not ship the indexer, the
-  Responses-API LLM client, the tree search loop, or the tree-reasoning prompts.
+  Responses-API LLM client, the tree search loop, or the tree-reasoning prompts. Phase 2
+  shipped it; since 2026-11-27 it is disabled and not wired into the server (FR-17).
 - `SystemFS`, the `mcp_files.system_owner` column, and the SQL lint gate (Phase 2).
   Phase 1 does not introduce a system namespace because no Phase 1 plugin needs one.
 - Session-memory `memory_*` tools gaining a `plugin` argument (deferred per the
@@ -144,18 +173,21 @@ Tracked in [../proposals/mcp_memory_plugin_manager.md#3-risks--open-questions](.
 
 ## 7.1 Phase 2 acceptance status
 
-The Phase 2 wave-B drop lands the `pageindex_plugin` runtime, the foundation
-`system_owner` schema, and the shadow-replay scaffolding. The table maps each
+The Phase 2 wave-B drop lands the `pageindex_plugin` runtime and the foundation
+`system_owner` schema. (Its shadow-replay scaffolding was later removed; see the
+proposal §7.8: every file mutation runs once, on the selected plugin.) The table maps each
 in-scope acceptance criterion to its current verification state. "verified" means
 the implementation is present and at least one test or audit asserts the observable
 contract; "pending" means the bar requires a dataset or wiring step that has not
-landed yet (named explicitly).
+landed yet (named explicitly). Since 2026-11-27 PageIndex is disabled (FR-17): A3 and A6
+are superseded, and A4, A7, A11 and A12 hold only for the dormant package as used by
+offline tooling, not for the live server.
 
 | Criterion | Coverage                                                                                                             | Status                                                               |
 | --------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| A3        | Manager resolves `default_plugin` between `rag` and `pageindex` without changing tool-call shape.                    | verified — manager_test.go + integration smoke                       |
+| A3        | Manager resolves `default_plugin` between `rag` and `pageindex` without changing tool-call shape.                    | superseded (2026-11-27) — `pageindex` is not selectable (FR-17)     |
 | A4        | Plugin contract (seven `file_*` ops + `Name`/`Capabilities`/`Start`/`Stop`) implemented for `pageindex_plugin`.      | verified — internal tests P01–P18 + conformance suite                |
-| A6        | Operator can bring `pageindex` up end-to-end from `docs/manual/mcp_memory_plugins.md` §6.1.                          | verified — manual covers config, cache, restart, smoke               |
+| A6        | Operator can bring `pageindex` up end-to-end from `docs/manual/mcp_memory_plugins.md` §6.1.                          | superseded (2026-11-27) — PageIndex cannot be enabled (FR-17)       |
 | A7        | `tokens_in` / `tokens_out` / `llm_calls` / `truncated` emitted on `pageindex` `file_search` `structuredContent`.     | verified — billing fields wired in indexer + search loop             |
 | A8        | Cross-tenant + system-namespace isolation: `system_owner='pageindex'` rows unreachable from any user-side tool call. | verified — `internal/mcp/files/` predicate audit + tests             |
 | A11       | Switching `llm.indexing_model` / `llm.retrieve_model` within the Responses-API contract is invisible to the agent.   | verified — Responses-API client config-only; LLM unit tests          |
