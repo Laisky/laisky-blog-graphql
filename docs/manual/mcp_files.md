@@ -467,7 +467,7 @@ Success response example:
 
 ### 5.7 `file_rename`
 
-Rename or move a file/directory path, optionally into another project.
+Rename one file, optionally into another project. The Web FileIO Rename form defaults to the current project; choose a different destination project to move the file there, even when its path is unchanged. Review any existing destination in its own project, then use **Open destination** to load the moved file and its new version. Project switches ask before discarding any unsaved draft.
 
 - Required: `project`, `from_path`, `to_path`, `expected_version` (the source file's version; see [FileIO versioning](fileio_versioning.md))
 - Optional:
@@ -478,9 +478,9 @@ Rename or move a file/directory path, optionally into another project.
     all apply in `target_project`, and the moved bytes count against its storage quota. The file keeps its identity
     and version history; its revision advances, so re-read before editing it again. `"*"` is rejected.
 
-The public `file_rename` tool and GraphQL `FileRename` move one file: they require its `expected_version`, and a
+The public `file_rename` tool, GraphQL `FileRename`, and Web FileIO editor move one file: they require its `expected_version`, and a
 file token never authorizes a directory-wide mutation (see [FileIO versioning](fileio_versioning.md)). Directory
-moves made by the FileIO service follow these rules.
+moves made by the internal atomic FileIO service follow these rules. No public client emulates one with a loop.
 
 A directory move is a relocation, never a merge or a replacement. `to_path` must be vacant in the destination
 project: no file at `to_path`, no file anywhere below it (an existing directory is occupied even when its children

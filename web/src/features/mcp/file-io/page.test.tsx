@@ -206,6 +206,63 @@ describe('FileIO page mandatory version workflow', () => {
       project: 'p', from_path: '/a.txt', to_path: '/b.txt', overwrite: true, expected_version: v1, expected_destination_version: v1,
     }));
   });
+
+  it('moves an equal textual path across projects and opens the destination with its new version', async () => {
+    const impl = tool.getMockImplementation()!;
+    tool.mockImplementation((key, name, args) => name === 'file_read' && args.project === 'archive'
+      ? Promise.resolve(read('moved content', v2)) : impl(key, name, args));
+    render(<FileIOPage />);
+    expect((screen.getByLabelText('Destination Project') as HTMLInputElement).value).toBe('p');
+    input('Source Path', '/a.txt'); input('Destination Path', '/a.txt'); input('Destination Project', 'archive');
+    click('Read source');
+    await waitFor(() => expect(enabled('Rename')).toBe(true)); click('Rename');
+    await waitFor(() => expect(tool).toHaveBeenCalledWith('test-key', 'file_rename', {
+      project: 'p', target_project: 'archive', from_path: '/a.txt', to_path: '/a.txt',
+      expected_version: v1, overwrite: false, destination_must_not_exist: true,
+    }));
+    await screen.findByText(/Moved 1 file.*p:\/a.txt to archive:\/a.txt/);
+    await waitFor(() => expect(enabled('Open destination')).toBe(true));
+    click('Open destination');
+    await waitFor(() => expect((screen.getByLabelText('File content') as HTMLTextAreaElement).value).toBe('moved content'));
+    expect(tool).toHaveBeenCalledWith('test-key', 'file_read', { project: 'archive', path: '/a.txt', offset: 0, length: -1 });
+    expect(tool).toHaveBeenCalledWith('test-key', 'file_list', expect.objectContaining({ project: 'archive' }));
+    input('File content', 'edited'); click('Save');
+    await waitFor(() => expect(api).toHaveBeenCalledWith('test-key', 'PUT', '/file', {
+      body: { project: 'archive', path: '/a.txt', content: 'edited' }, headers: { 'If-Match': `"${v2}"` },
+    }));
+  });
+  it('discards late target-project observations and only submits the chosen project token', async () => {
+    const old = deferred<ReturnType<typeof read>>();
+    const impl = tool.getMockImplementation()!;
+    tool.mockImplementation((key, name, args) => name === 'file_read' && args.project === 'old'
+      ? old.promise : name === 'file_read' && args.project === 'archive'
+      ? Promise.resolve(read('target', v2)) : impl(key, name, args));
+    render(<FileIOPage />);
+    input('Source Path', '/a.txt'); input('Destination Path', '/b.txt');
+    click('Read source'); await waitFor(() => expect(enabled('Rename')).toBe(true));
+    fireEvent.click(screen.getByLabelText('Replace an existing destination using its version'));
+    input('Destination Project', 'old'); click('Read destination');
+    input('Destination Project', 'archive');
+    await act(async () => { old.resolve(read('stale target', v9)); });
+    expect(enabled('Rename')).toBe(false);
+    click('Read destination'); await waitFor(() => expect(enabled('Rename')).toBe(true)); click('Rename');
+    await waitFor(() => expect(tool).toHaveBeenCalledWith('test-key', 'file_rename', {
+      project: 'p', target_project: 'archive', from_path: '/a.txt', to_path: '/b.txt',
+      expected_version: v1, overwrite: true, expected_destination_version: v2,
+    }));
+  });
+  it('reports rename quota errors without refreshing or discarding drafts', async () => {
+    const impl = tool.getMockImplementation()!;
+    tool.mockImplementation((key, name, args) => name === 'file_rename'
+      ? Promise.reject(new FileIORequestError('quota', 'QUOTA_EXCEEDED')) : impl(key, name, args));
+    render(<FileIOPage />); await openPreview();
+    input('File content', 'unfinished draft');
+    input('Source Path', '/a.txt'); input('Destination Path', '/b.txt'); input('Destination Project', 'archive');
+    click('Read source'); await waitFor(() => expect(enabled('Rename')).toBe(true)); click('Rename');
+    await screen.findByText(/destination project does not have enough storage/);
+    expect((screen.getByLabelText('File content') as HTMLTextAreaElement).value).toBe('unfinished draft');
+    expect(screen.queryByRole('button', { name: 'Open destination' })).toBeNull();
+  });
   it('invalidates reviewed versions immediately when a form path changes', async () => {
     render(<FileIOPage />); input('Target Path', '/a.txt'); click('Read write base');
     await waitFor(() => expect(enabled('Write')).toBe(true));

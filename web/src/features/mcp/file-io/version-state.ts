@@ -62,10 +62,12 @@ export function renameCondition(
   to: string,
   overwrite: boolean,
   destination: FileSnapshot | null,
+  sourceProject = '',
+  targetProject = sourceProject,
 ): Record<string, unknown> {
   const condition = { expected_version: expectedVersion(source, from) };
-  if (!canonicalFilePath(to) || canonicalFilePath(from) === canonicalFilePath(to)) {
-    throw new Error('Choose a different, non-empty destination file path.');
+  if (!canonicalFilePath(to) || (sourceProject === targetProject && canonicalFilePath(from) === canonicalFilePath(to))) {
+    throw new Error('Choose a non-empty destination and a different path or project.');
   }
   return overwrite
     ? { ...condition, overwrite: true, expected_destination_version: expectedVersion(destination, to) }
@@ -100,6 +102,8 @@ export function fileIOErrorMessage(error: unknown): string {
     if (error.code === 'VERSION_CONFLICT' || error.status === 412) {
       return 'Version conflict: another client changed, moved, or deleted this file. Your draft is kept. Copy it before reloading, then review the latest content and recompute your edit. Nothing was retried automatically.';
     }
+    if (error.code === 'ALREADY_EXISTS') return 'The destination is occupied. Choose an unused path or review the existing file before replacing it.';
+    if (error.code === 'QUOTA_EXCEEDED') return 'The destination project does not have enough storage. Free some space or choose another project.';
     if (error.code === 'PRECONDITION_REQUIRED' || error.status === 428) {
       return 'A file version is required. Read the current file first, or explicitly choose Create only for a new file. Your draft is kept.';
     }
