@@ -992,7 +992,7 @@ For async index workers:
 - the envelope stores encrypted data (`kek_id`, `dek_id`, `ciphertext`) only. Workers authenticate the scope during decryption; `expire_at` is a column. The
   encryption keys stay in configuration.
 - schema step 2 of the FileIO migration ledger creates the `kv` table and its `expire_at` index; services open it
-  without DDL.
+  without DDL. Schema step 3 adds the credential ID on outbox rows, including on existing installations.
 - initialize KMS with `github.com/Laisky/go-utils/v6/crypto/kms/mem` using all entries in `settings.mcp.files.security.encryption_keks`.
 - construct KMS by hashing each configured KEK secret and passing `map[uint16][]byte` into `mem.New(...)`.
 - producer encryption call sequence:
@@ -1004,7 +1004,7 @@ For async index workers:
   - `var encryptedData kms.EncryptedData`
   - `encryptedData.UnmarshalFromString(payload)`
   - `plaintext, err := kmsClient.Decrypt(ctx, &encryptedData, aad)`
-- worker decrypts in memory, uses caller API key for external requests, and deletes the envelope immediately after use.
+- worker decrypts in memory and uses the caller API key for external requests. The expiry sweep removes the envelope after its TTL.
 - if transient credentials are unavailable, the worker degrades to lexical indexing (summary refresh waits for
   authentication) without falling back to platform credentials.
 - all decrypt/encrypt failures must be logged without sensitive payload fields.

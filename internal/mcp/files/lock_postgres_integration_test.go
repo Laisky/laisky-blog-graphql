@@ -138,6 +138,7 @@ func TestDefaultLockProviderPostgresProjectsLockShareOneDeadline(t *testing.T) {
 	hold := func(project string) (release func()) {
 		entered, unblock, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
 		go func() {
+			defer close(done)
 			done <- provider.WithProjectLock(ctx, db, true, tenant, project, 2*time.Second, func(*sql.Tx) error {
 				close(entered)
 				<-unblock
