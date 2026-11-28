@@ -43,7 +43,7 @@ Sources: <https://www.postgresql.org/docs/current/explicit-locking.html> §13.3.
 - **Verified on PostgreSQL 18.6:**
   - One transaction can hold several advisory keys at once, and commit or rollback releases all of them.
   - Opposite acquisition orders deadlock (`ERROR: deadlock detected`).
-- **Consequence for us.** Every multi-project FileIO mutation acquires its scopes in `ProjectLockOrder`: ascending advisory key, then name.
+- **Superseded decision.** FileIO now takes one tenant-wide advisory lock; project lock ordering no longer applies. See [the current FileIO architecture](../arch/mcp_files.md#102-mutation-admission).
 
 ## SQL `LIKE` escaping and case
 

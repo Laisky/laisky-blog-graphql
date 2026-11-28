@@ -575,7 +575,10 @@
       "TestIndexWorkerDeletesCredentialAfterSuccess",
       "TestPurgeExpiredCredentialsIsBoundedAndThrottled",
       "TestFileToolMutationsExecuteOnce",
-      "TestRenameExtensionChangesFollowFilesystemRules"
+      "TestRenameExtensionChangesFollowFilesystemRules",
+      "TestTenantLockAttemptsOnceAndReturnsBusy",
+      "TestTenantLockDoesNotClassifyCommitFailureAsBusy",
+      "TestDefaultCreateNeverUsesStaleNamespace"
     ]
   },
   {

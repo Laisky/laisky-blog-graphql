@@ -31,7 +31,6 @@ type Settings struct {
 	MaxProjectBytes  int64
 	ListLimitDefault int
 	ListLimitMax     int
-	LockTimeout      time.Duration
 	DeleteRetention  time.Duration
 	EmbeddingModel   string
 	EmbeddingBaseURL string
@@ -124,7 +123,6 @@ func LoadSettingsFromConfig() Settings {
 		MaxProjectBytes:  int64FromConfig(configKeyWithFallback(ragFilesConfigKey("max_project_bytes"), legacyFilesConfigKey("max_project_bytes")), 100_000_000),
 		ListLimitDefault: intFromConfig(configKeyWithFallback(ragFilesConfigKey("list_limit_default"), legacyFilesConfigKey("list_limit_default")), 256),
 		ListLimitMax:     intFromConfig(configKeyWithFallback(ragFilesConfigKey("list_limit_max"), legacyFilesConfigKey("list_limit_max")), 1024),
-		LockTimeout:      time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("lock_timeout_ms"), legacyFilesConfigKey("lock_timeout_ms")), 3000)) * time.Millisecond,
 		DeleteRetention:  time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("delete_retention_days"), legacyFilesConfigKey("delete_retention_days")), 30)) * 24 * time.Hour,
 		EmbeddingModel:   strings.TrimSpace(gconfig.S.GetString("settings.openai.embedding_model")),
 		EmbeddingBaseURL: strings.TrimSpace(gconfig.S.GetString("settings.openai.base_url")),
@@ -190,9 +188,7 @@ func LoadSettingsFromConfig() Settings {
 	if settings.ListLimitDefault > settings.ListLimitMax {
 		settings.ListLimitDefault = settings.ListLimitMax
 	}
-	if settings.LockTimeout <= 0 {
-		settings.LockTimeout = 3 * time.Second
-	}
+
 	if settings.DeleteRetention <= 0 {
 		settings.DeleteRetention = 30 * 24 * time.Hour
 	}

@@ -69,7 +69,7 @@ func (s *Service) WriteWith(ctx context.Context, auth AuthContext, project, path
 	opts.ExpectedVersion, opts.CreateOnly = conditions.ExpectedVersion, conditions.CreateOnly
 
 	var result WriteResult
-	err := s.runUserMutation(ctx, auth.APIKeyHash, project, []string{project}, []string{path}, func(tx *sql.Tx, overlay bool) error {
+	err := s.runUserMutation(ctx, auth.APIKeyHash, project, func(tx *sql.Tx, overlay bool) error {
 		layer := project
 		if overlay {
 			// Conditions are judged before namespace conflicts, as in physical mode.
@@ -98,7 +98,7 @@ func (s *Service) WriteWith(ctx context.Context, auth AuthContext, project, path
 	return result, nil
 }
 
-// writeWithinTx executes the write pipeline assuming the project lock is held.
+// writeWithinTx executes the write pipeline assuming the tenant lock is held.
 // Preconditions, content, historical preimage, and indexing outbox share this
 // transaction. The database trigger increments the revision on every write path.
 func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple validation and upsert steps
@@ -175,7 +175,7 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 			return 0, err
 		}
 		// Preserve the previous summary until its replacement publishes. The
-		// generation predicate is defense in depth in addition to the project lock.
+		// generation predicate is defense in depth in addition to the tenant lock.
 		updated, err := tx.ExecContext(ctx,
 			rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, updated_at = ?, deleted = FALSE, deleted_at = NULL, skip_rag_index = ?, content_hash = ?
 				WHERE id = ? AND apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND deleted = FALSE

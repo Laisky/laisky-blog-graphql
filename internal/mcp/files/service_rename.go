@@ -75,12 +75,8 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, req RenameReques
 	}
 	// Only the source of a cross-project move resolves through the default
 	// layer; its destination is the explicit physical target project.
-	touched := []string{req.FromPath}
-	if !req.crossProject() {
-		touched = append(touched, req.ToPath)
-	}
 	movedCount := 0
-	err := s.runUserMutation(ctx, auth.APIKeyHash, req.Project, []string{req.Project, req.TargetProject}, touched, func(tx *sql.Tx, overlay bool) error {
+	err := s.runUserMutation(ctx, auth.APIKeyHash, req.Project, func(tx *sql.Tx, overlay bool) error {
 		if err := s.checkRenamePreconditionsTx(ctx, tx, auth, req, conditions, overlay); err != nil {
 			return err
 		}
@@ -337,22 +333,6 @@ func renameSourceBytes(sources []renameSourceFile) int64 {
 	return total
 }
 
-// withProjectLocks runs fn in one transaction holding every distinct project
-// scope. A single scope uses the configured LockProvider; several scopes
-// require a MultiProjectLockProvider, so a provider that cannot hold them all
-// refuses the mutation rather than leaving one project unserialized.
-func (s *Service) withProjectLocks(ctx context.Context, apiKeyHash string, projects []string, fn func(tx *sql.Tx) error) error {
-	ordered := ProjectLockOrder(apiKeyHash, projects...)
-	if len(ordered) == 1 {
-		return s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, apiKeyHash, ordered[0], s.settings.LockTimeout, fn)
-	}
-	multi, ok := s.lockProvider.(MultiProjectLockProvider)
-	if !ok {
-		return errors.WithStack(NewError(ErrCodeSearchBackend, "configured lock provider cannot serialize a cross-project mutation", false))
-	}
-	return multi.WithProjectsLock(ctx, s.db, s.isPostgres, apiKeyHash, ordered, s.settings.LockTimeout, fn)
-}
-
 // checkRenamePreconditionsTx checks both names before any lifecycle side effect.
 // The source and a same-project destination are checked against the files the
 // project shows; a cross-project destination against the physical target row.
@@ -448,7 +428,7 @@ func buildRenameMappings(sourceFiles []renameSourceFile, fromPath, toPath string
 // destination is occupied by a file at toPath, by any file below it (FileIO
 // directories are implicit, so every existing directory has one) or by a file
 // ancestor, and an occupied destination is rejected: directories are relocated,
-// never merged or replaced. It runs under the project locks before any change.
+// never merged or replaced. It runs under the tenant lock before any change.
 func (s *Service) checkVacantDestinationTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, toPath string) error {
 	if err := s.ensureNoParentFile(ctx, tx, apiKeyHash, project, toPath); err != nil {
 		return err

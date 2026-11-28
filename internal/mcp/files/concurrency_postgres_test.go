@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	errors "github.com/Laisky/errors/v2"
@@ -30,7 +29,7 @@ func TestFileIOPostgresAppend(t *testing.T) {
 			for i := range records {
 				records[i] = fmt.Sprintf("{\"client\":%d,\"message\":\"漢🙂\"}\n", i)
 			}
-			for _, err := range parallelRaceCalls(t, f.ctx, n, func(i int) error {
+			for _, err := range parallelMutationCalls(t, f.ctx, n, func(i int) error {
 				result, err := f.svc[i%2].Write(f.ctx, f.auth, "race", path, records[i], "utf-8", 999, files.WriteModeAppend)
 				if err != nil {
 					return err
@@ -82,7 +81,7 @@ func TestFileIOPostgresDisjointOverwrite(t *testing.T) {
 	}
 	width := len(slots[0])
 	f.write(t, 0, "/slots.txt", strings.Repeat(".", n*width), files.WriteModeTruncate, 0)
-	for _, err := range parallelRaceCalls(t, f.ctx, n, func(i int) error {
+	for _, err := range parallelMutationCalls(t, f.ctx, n, func(i int) error {
 		_, err := f.svc[i%2].Write(f.ctx, f.auth, "race", "/slots.txt", slots[i], "utf-8", int64(i*width), files.WriteModeOverwrite)
 		return err
 	}) {
@@ -145,7 +144,7 @@ func TestFileIOPostgresMixedModes(t *testing.T) {
 	for round := range 8 {
 		path := fmt.Sprintf("/mixed-%d.txt", round)
 		f.write(t, 0, path, "abcdef", files.WriteModeTruncate, 0)
-		for _, err := range parallelRaceCalls(t, f.ctx, len(ops), func(i int) error {
+		for _, err := range parallelMutationCalls(t, f.ctx, len(ops), func(i int) error {
 			op := ops[i]
 			_, err := f.svc[i%2].Write(f.ctx, f.auth, "race", path, op.content, "utf-8", int64(op.offset), op.mode)
 			return err
@@ -176,7 +175,9 @@ func TestFileIOPostgresReaders(t *testing.T) {
 	for _, err := range parallelRaceCalls(t, f.ctx, 6, func(i int) error {
 		if i < 2 {
 			for j := range perWriter {
-				_, err := f.svc[i].Write(f.ctx, f.auth, "race", "/large.txt", generations[1+i*perWriter+j], "utf-8", 0, files.WriteModeTruncate)
+				_, err := retryRaceBusy(f.ctx, func() (files.WriteResult, error) {
+					return f.svc[i].Write(f.ctx, f.auth, "race", "/large.txt", generations[1+i*perWriter+j], "utf-8", 0, files.WriteModeTruncate)
+				})
 				if err != nil {
 					return err
 				}
@@ -218,7 +219,6 @@ func TestFileIOPostgresTransactionBoundary(t *testing.T) {
 				gate.abort = errors.New("injected failure after data, history, and outbox writes")
 			}
 			writer := f.service(t, 0, gate)
-			f.settings.LockTimeout = 100 * time.Millisecond
 			contender := f.service(t, 1, nil)
 			done := make(chan error, 1)
 			go func() {
@@ -267,7 +267,7 @@ func TestFileIOPostgresNamespaceAndQuota(t *testing.T) {
 	t.Run("parent_vs_child", func(t *testing.T) {
 		f := newRaceFixture(t, "postgres", nil)
 		paths := []string{"/node", "/node/child.txt"}
-		errs := parallelRaceCalls(t, f.ctx, 2, func(i int) error {
+		errs := parallelMutationCalls(t, f.ctx, 2, func(i int) error {
 			_, err := f.svc[i].Write(f.ctx, f.auth, "race", paths[i], "data", "utf-8", 0, files.WriteModeTruncate)
 			return err
 		})
@@ -282,7 +282,7 @@ func TestFileIOPostgresNamespaceAndQuota(t *testing.T) {
 	})
 	t.Run("quota_across_different_paths", func(t *testing.T) {
 		f := newRaceFixture(t, "postgres", func(s *files.Settings) { s.MaxProjectBytes = 10 })
-		errs := parallelRaceCalls(t, f.ctx, 2, func(i int) error {
+		errs := parallelMutationCalls(t, f.ctx, 2, func(i int) error {
 			_, err := f.svc[i].Write(f.ctx, f.auth, "race", fmt.Sprintf("/quota-%d.txt", i), "123456", "utf-8", 0, files.WriteModeTruncate)
 			return err
 		})
@@ -302,7 +302,7 @@ func TestFileIOPostgresNamespaceAndQuota(t *testing.T) {
 		for i, path := range paths {
 			f.write(t, i, path, path, files.WriteModeTruncate, 0)
 		}
-		errs := parallelRaceCalls(t, f.ctx, 2, func(i int) error {
+		errs := parallelMutationCalls(t, f.ctx, 2, func(i int) error {
 			_, err := f.svc[i].Rename(f.ctx, f.auth, files.RenameRequest{Project: "race", FromPath: paths[i], ToPath: "/destination.txt"})
 			return err
 		})

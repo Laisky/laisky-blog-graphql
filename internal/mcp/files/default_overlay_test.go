@@ -252,7 +252,7 @@ func TestDefaultOverlayWritesThroughToDefaults(t *testing.T) {
 // the overlay, to set up shadowing states that the public API cannot create.
 func (s *Service) mustWritePhysical(t *testing.T, auth AuthContext, project, path, content string) {
 	t.Helper()
-	require.NoError(t, s.lockProvider.WithProjectLock(context.Background(), s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
+	require.NoError(t, s.withTenantLock(context.Background(), auth.APIKeyHash, func(tx *sql.Tx) error {
 		_, err := s.writeWithinTx(context.Background(), tx, auth, project, path, []byte(content), WriteModeTruncate, 0, int64(len(content)), WriteOpts{})
 		return err
 	}))
@@ -562,17 +562,6 @@ func TestDefaultProjectDiscovery(t *testing.T) {
 	after, err := f.svc.ListProjects(f.ctx, f.auth, "", DefaultProject, 10)
 	require.NoError(t, err)
 	require.Equal(t, []string{"alpha"}, after.Projects)
-}
-
-// TestProjectLockOrderIsGlobal pins the deadlock-avoidance order shared by every
-// multi-project mutation.
-func TestProjectLockOrderIsGlobal(t *testing.T) {
-	t.Parallel()
-	forward := ProjectLockOrder("tenant", DefaultProject, "alpha", "", "alpha")
-	backward := ProjectLockOrder("tenant", "alpha", DefaultProject)
-	require.Equal(t, forward, backward)
-	require.Len(t, forward, 2)
-	require.LessOrEqual(t, hashLockKey("tenant", forward[0]), hashLockKey("tenant", forward[1]))
 }
 
 // TestRenameOntoOwnParentIsModeIndependent keeps overlay and physical renames

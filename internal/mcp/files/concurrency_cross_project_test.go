@@ -3,7 +3,6 @@ package files_test
 import (
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -11,11 +10,10 @@ import (
 )
 
 // TestFileIOPostgresOppositeCrossProjectMoves runs moves in opposite
-// directions between two projects at the same time. Each move holds both
-// project locks, so without one global lock order the two transactions would
-// each hold one project and time out waiting for the other.
+// directions between two projects at the same time. A test client retries
+// nonblocking tenant admission; both moves must commit exactly once.
 func TestFileIOPostgresOppositeCrossProjectMoves(t *testing.T) {
-	f := newRaceFixture(t, "postgres", func(s *files.Settings) { s.LockTimeout = 3 * time.Second })
+	f := newRaceFixture(t, "postgres", nil)
 	projects := [2]string{"race", "race-peer"}
 	const rounds = 12
 	for round := range rounds {
@@ -26,7 +24,7 @@ func TestFileIOPostgresOppositeCrossProjectMoves(t *testing.T) {
 	}
 	for round := range rounds {
 		path := fmt.Sprintf("/move-%d.txt", round)
-		errs := parallelRaceCalls(t, f.ctx, 2, func(i int) error {
+		errs := parallelMutationCalls(t, f.ctx, 2, func(i int) error {
 			_, err := f.svc[i].Rename(f.ctx, f.auth, files.RenameRequest{Project: projects[i], FromPath: path, TargetProject: projects[1-i], ToPath: "/in" + path})
 			return err
 		})

@@ -169,9 +169,7 @@ This applies when `target_project` names another project. It is the #106 move.
 - The row keeps its id and incarnation. Its history and index jobs move with it in
   one transaction, with the same locking, version checks, quotas and history as
   every #106 move. No search-index state takes part in the move.
-- **Locks:** `project` and `target_project`, plus `@DEFAULT` when the default layer
-  touches the source path, always acquired in `ProjectLockOrder` (§9). The source
-  is re-resolved and validated under those locks.
+- **Lock:** one tenant mutation lock covers source resolution, project and destination checks, and the move (see Section 9).
 
 ## 6. History
 
@@ -250,20 +248,20 @@ project `default` (lowercase) is an ordinary project unrelated to `@DEFAULT`.
 
 ## 9. Concurrency
 
-- A mutation of an overlaid project first takes the locks it needs without the
-  default layer (`P`, plus `target_project` for a move). Inside that transaction it
-  probes whether `@DEFAULT` holds a live file at, above or below the touched paths.
-  If not, the mutation runs the unchanged single-project path and never reads or
-  changes `@DEFAULT` files. If a default appears concurrently, the result equals
-  running this mutation first. Such a restore reads only `P`'s own history.
-- Otherwise the attempt rolls back before any change and reruns holding
-  `@DEFAULT` too. Every multi-project mutation acquires its scopes in
-  `ProjectLockOrder` (ascending advisory key, then name), so two mutations over the
-  same scopes cannot each hold one and wait for the other.
-- A mutation of several scopes requires a `MultiProjectLockProvider`. A configured
-  `LockProvider` without it refuses the mutation rather than leave one scope
-  unserialized.
-- Reads take no locks (§3).
+- One tenant, one transaction, one admission attempt. PostgreSQL uses a
+  namespaced transaction-scoped advisory lock keyed by the authenticated API-key
+  hash, acquired before resolving the file or checking preconditions. The
+  transaction uses READ COMMITTED and executes the mutation at most once.
+- SQLite acquires database write intent before mutation reads. The service
+  returns retryable `RESOURCE_BUSY` on definite admission contention. Clients
+  may retry this response with jitter and unchanged preconditions; on
+  `VERSION_CONFLICT` reread and recompute. Do not replay a mutation after an
+  ambiguous commit or transport failure.
+- Explicit default paths and physical-only memory maintenance use the same
+  transaction boundary. Read/stat/list/history/search take no advisory locks.
+  Index and model computations happen outside the lock.
+- Stop/drain every project-lock writer before rolling out tenant-lock writers.
+  Do not run mixed lock contracts or add a permanent dual-lock mode.
 
 ## 10. Public usage recipes
 

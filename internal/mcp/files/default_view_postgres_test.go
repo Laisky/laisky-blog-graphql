@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -44,7 +43,6 @@ func newPostgresViewService(t *testing.T) *Service {
 	db.SetMaxOpenConns(8)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	settings := LoadSettingsFromConfig()
-	settings.LockTimeout = 10 * time.Second
 	settings.Search.Enabled = false
 	svc, err := NewService(db, settings, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)

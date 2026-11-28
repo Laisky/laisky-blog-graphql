@@ -180,7 +180,7 @@ func (s *Service) RestoreVersion(ctx context.Context, auth AuthContext, project,
 	owner := systemOwnerFromContext(ctx)
 	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationRestore)
 	var result WriteResult
-	err := s.runUserMutation(ctx, auth.APIKeyHash, project, []string{project}, []string{path}, func(tx *sql.Tx, overlay bool) error {
+	err := s.runUserMutation(ctx, auth.APIKeyHash, project, func(tx *sql.Tx, overlay bool) error {
 		if err := s.checkVersionTx(ctx, tx, auth, project, path, conditions.ExpectedVersion, conditions.CreateOnly, overlay); err != nil {
 			return err
 		}

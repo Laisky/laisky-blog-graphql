@@ -48,7 +48,7 @@ func (s *Service) BackfillRAGSummaries(ctx context.Context, opts SummaryBackfill
 		batchSize = 1000
 	}
 	result := SummaryBackfillResult{}
-	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, opts.APIKeyHash, opts.Project, s.settings.LockTimeout, func(tx *sql.Tx) error {
+	err := s.withTenantLock(ctx, opts.APIKeyHash, func(tx *sql.Tx) error {
 		rowsToProcess, err := s.loadSummaryBackfillPageTx(ctx, tx, opts, batchSize)
 		if err != nil {
 			return err
@@ -93,7 +93,7 @@ func (s *Service) BackfillRAGSummaries(ctx context.Context, opts SummaryBackfill
 	return result, nil
 }
 
-// summaryBackfillRow is the snapshot read under the project transaction.
+// summaryBackfillRow is the snapshot read under the tenant mutation transaction.
 type summaryBackfillRow struct {
 	id                 uint64
 	path               string

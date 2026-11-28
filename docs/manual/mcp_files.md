@@ -567,7 +567,7 @@ Success response example:
 - `PERMISSION_DENIED`: missing permission or forbidden operation (for example root delete)
 - `PAYLOAD_TOO_LARGE`: write payload exceeds limit
 - `QUOTA_EXCEEDED`: project storage quota exceeded
-- `RESOURCE_BUSY`: lock timeout under concurrent mutations; retry later
+- `RESOURCE_BUSY`: the mutation was rejected before changing any files. Retry with short randomized backoff and the same preconditions. A version conflict requires a fresh read; do not assume an interrupted or ambiguous write can be replayed.
 - `SEARCH_BACKEND_ERROR`: search backend unavailable or disabled
 
 ## 7. Minimal end-to-end flow

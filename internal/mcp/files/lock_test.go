@@ -4,62 +4,48 @@ import (
 	"context"
 	"database/sql"
 	"testing"
-	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	errors "github.com/Laisky/errors/v2"
 	"github.com/stretchr/testify/require"
 )
 
-// TestDefaultLockProviderRetriesUntilLockAcquired verifies advisory lock retries succeed before timeout.
-func TestDefaultLockProviderRetriesUntilLockAcquired(t *testing.T) {
-	sqlDB, mock, err := sqlmock.New()
+func TestTenantLockAttemptsOnceAndReturnsBusy(t *testing.T) {
+	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = sqlDB.Close() })
-
-	provider := DefaultLockProvider{}
-	lockKey := hashLockKey("tenant-a", "proj")
-	callbackCalls := 0
-
+	t.Cleanup(func() { _ = db.Close() })
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT pg_try_advisory_xact_lock\(\$1\)`).
-		WithArgs(lockKey).
-		WillReturnRows(sqlmock.NewRows([]string{"pg_try_advisory_xact_lock"}).AddRow(false))
-	mock.ExpectQuery(`SELECT pg_try_advisory_xact_lock\(\$1\)`).
-		WithArgs(lockKey).
-		WillReturnRows(sqlmock.NewRows([]string{"pg_try_advisory_xact_lock"}).AddRow(true))
-	mock.ExpectCommit()
-
-	err = provider.WithProjectLock(context.Background(), sqlDB, true, "tenant-a", "proj", 150*time.Millisecond, func(_ *sql.Tx) error {
-		callbackCalls++
+	mock.ExpectQuery(`SELECT pg_try_advisory_xact_lock\(\$1\)`).WithArgs(tenantLockKey("a")).
+		WillReturnRows(sqlmock.NewRows([]string{"locked"}).AddRow(false))
+	mock.ExpectRollback()
+	calls := 0
+	err = (DefaultLockProvider{}).WithTenantLock(context.Background(), db, true, "a", func(*sql.Tx) error {
+		calls++
 		return nil
 	})
-	require.NoError(t, err)
-	require.Equal(t, 1, callbackCalls)
+	require.True(t, IsCode(err, ErrCodeResourceBusy), "%v", err)
+	typed, ok := AsError(err)
+	require.True(t, ok)
+	require.True(t, typed.Retryable)
+	require.Zero(t, calls)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// TestDefaultLockProviderReturnsResourceBusyOnTimeout verifies lock contention returns RESOURCE_BUSY after timeout.
-func TestDefaultLockProviderReturnsResourceBusyOnTimeout(t *testing.T) {
-	sqlDB, mock, err := sqlmock.New()
+func TestTenantLockDoesNotClassifyCommitFailureAsBusy(t *testing.T) {
+	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = sqlDB.Close() })
-
-	provider := DefaultLockProvider{}
-	lockKey := hashLockKey("tenant-a", "proj")
-
+	t.Cleanup(func() { _ = db.Close() })
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT pg_try_advisory_xact_lock\(\$1\)`).
-		WithArgs(lockKey).
-		WillReturnRows(sqlmock.NewRows([]string{"pg_try_advisory_xact_lock"}).AddRow(false))
-	mock.ExpectQuery(`SELECT pg_try_advisory_xact_lock\(\$1\)`).
-		WithArgs(lockKey).
-		WillReturnRows(sqlmock.NewRows([]string{"pg_try_advisory_xact_lock"}).AddRow(false))
-	mock.ExpectRollback()
-
-	err = provider.WithProjectLock(context.Background(), sqlDB, true, "tenant-a", "proj", 10*time.Millisecond, func(_ *sql.Tx) error {
+	mock.ExpectQuery(`SELECT pg_try_advisory_xact_lock\(\$1\)`).WithArgs(tenantLockKey("a")).
+		WillReturnRows(sqlmock.NewRows([]string{"locked"}).AddRow(true))
+	mock.ExpectCommit().WillReturnError(errors.New("connection lost during commit"))
+	calls := 0
+	err = (DefaultLockProvider{}).WithTenantLock(context.Background(), db, true, "a", func(*sql.Tx) error {
+		calls++
 		return nil
 	})
-	require.Error(t, err)
-	require.True(t, IsCode(err, ErrCodeResourceBusy))
+	require.ErrorContains(t, err, "commit mutation transaction")
+	require.False(t, IsCode(err, ErrCodeResourceBusy))
+	require.Equal(t, 1, calls)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

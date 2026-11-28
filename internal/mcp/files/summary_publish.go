@@ -196,7 +196,7 @@ type PluginSummaryInput struct {
 
 // PublishPluginSummary sets file-summary catalog metadata on an active user row from a
 // non-RAG plugin (e.g. PageIndex), without routing through the RAG index worker. The
-// write runs under the project mutation lock and is conditional on ExpectedContentHash
+// write runs under the tenant mutation lock and is conditional on ExpectedContentHash
 // so stale writers are rejected. It returns whether the summary was published (§4.5).
 func (s *Service) PublishPluginSummary(ctx context.Context, auth AuthContext, project, path string, in PluginSummaryInput) (bool, error) {
 	if err := s.validateAuth(auth); err != nil {
@@ -209,7 +209,7 @@ func (s *Service) PublishPluginSummary(ctx context.Context, auth AuthContext, pr
 		return false, errors.WithStack(err)
 	}
 	published := false
-	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
+	err := s.withTenantLock(ctx, auth.APIKeyHash, func(tx *sql.Tx) error {
 		var curHash string
 		sel := `SELECT content_hash FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND deleted = FALSE LIMIT 1`
 		if s.isPostgres {

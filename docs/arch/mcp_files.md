@@ -126,7 +126,7 @@ chunk. Key architecture points (full contract:
   `last_error_code`, and `summary_generation_key`. All columns are additive and
   migrated idempotently on Postgres and SQLite.
 - The RAG index worker generates one summary per content generation off the
-  transaction path (never under the project lock), then publishes chunks + summary
+  transaction path (never under the tenant lock), then publishes chunks + summary
   atomically after rechecking the active `content_hash`. A stale worker whose hash no
   longer matches is discarded. Search pairs a chunk with a summary only when
   `summary_content_hash == file_content_hash` and the status is ready or degraded.
@@ -191,7 +191,7 @@ Error payload:
 2. MCP transport normalizes authorization into trusted `AuthContext`.
 3. Tool validates input and calls `files.Service`.
 4. For writes/deletes/renames:
-   - acquire advisory transaction lock for `(apikey_hash, project)`
+   - acquire one advisory transaction lock for the API-key hash
    - mutate `mcp_files`
    - enqueue outbox job in same transaction
    - for rename/move, enqueue `DELETE(old_path)` and `UPSERT(new_path)` per moved file
@@ -499,7 +499,7 @@ Creation:
 Execution outline:
 
 1. validate project/path/content/encoding/mode/offset.
-2. start transaction and acquire project advisory lock.
+2. start transaction and acquire the tenant advisory lock.
 3. check path conflicts:
    - descendant exists under target path => `IS_DIRECTORY`
    - any parent segment is an active file => `NOT_DIRECTORY`
@@ -529,7 +529,7 @@ Root handling:
 Execution outline:
 
 1. validate inputs and root-wipe policy.
-2. start transaction and acquire project advisory lock.
+2. start transaction and acquire the tenant advisory lock.
 3. resolve deletion target set:
    - file exact match
    - directory descendants by prefix
@@ -563,7 +563,7 @@ Rename/move semantics:
   - descendants are matched by a literal, case-sensitive path prefix (escaped `LIKE` plus `substr`), so `_`, `%` and
     ASCII case never widen the match; the source subtree is selected the same way
 - every generated destination path must pass `ValidatePath`, including the 512-byte limit (`INVALID_PATH`)
-- every check runs under the project locks before the first row, history or outbox change.
+- every check runs under the tenant lock before the first row, history or outbox change.
 
 Same-project rename of an overlaid project: the source is the file the view shows and is renamed within its own
 physical project (a default for every project). The destination is judged on the view; overwrite replaces only a
@@ -582,9 +582,7 @@ Cross-project move (`target_project` set and different from `project`):
 - moved bytes must fit `target_project`'s quota after overwritten destinations are released (`QUOTA_EXCEEDED`).
 - rows keep their id and incarnation, `mcp_file_versions` history moves with them, and the revision trigger advances
   each moved file's revision.
-- the transaction holds both project advisory locks, plus `@DEFAULT` when the default layer touches the source
-  path, taken in `ProjectLockOrder` (ascending `(lock key, project)`) by `MultiProjectLockProvider.WithProjectsLock`;
-  a lock provider without it refuses the move. The source is re-resolved and validated under those locks.
+- the transaction holds one tenant-wide advisory lock. It resolves the source and validates both paths under that same lock.
 
 One rename implementation (`files.Service.Rename(ctx, auth, files.RenameRequest)`) serves same-project and
 cross-project moves; every memory plugin's `Rename` receives the same `RenameRequest`.
@@ -607,8 +605,7 @@ Execution outline:
 1. validate `project`, `from_path`, `to_path`, and `overwrite`.
 2. reject root source or root destination.
 3. if `from_path == to_path` within one project, return `moved_count=0`.
-4. start transaction and acquire the project advisory lock (both projects' locks for a cross-project move, plus
-   `@DEFAULT` when the default layer touches a moved path; §10.4).
+4. start the transaction and acquire the tenant advisory lock once.
 5. resolve source file set (through the view for an overlaid project):
    - exact file match at `from_path`, or
    - descendant files strictly below `from_path` (literal prefix `from_path + "/"`), else `NOT_FOUND`.
@@ -677,20 +674,26 @@ Execution outline:
 
 ### 10.1 Required Guarantee
 
-Sequential consistency for mutations within `(apikey_hash, project)`, across all instances.
+All FileIO mutations for one `apikey_hash` are serialized across replicas, including
+physical and overlay paths, restores, and moves across projects. Separate tenants
+use independent locks.
 
-### 10.2 Advisory Lock
+### 10.2 Mutation Admission
 
-Each mutating transaction (`file_write`, `file_delete`, `file_rename`) must:
+Begin a READ COMMITTED PostgreSQL transaction and attempt one namespaced
+`pg_try_advisory_xact_lock` keyed by the API-key hash before any namespace or
+precondition reads. A failed admission rolls back immediately with retryable
+`RESOURCE_BUSY`. The same lock covers validation, writes, snapshots and outbox
+changes until commit or rollback. SQLite takes database write intent before any
+mutation reads; admission contention likewise returns retryable `RESOURCE_BUSY`.
 
-1. compute lock key from `apikey_hash + ":" + project`
-2. acquire transaction-scoped advisory lock (`pg_advisory_xact_lock` equivalent behavior)
-3. fail with `RESOURCE_BUSY` when timeout exceeds `settings.mcp.files.lock_timeout_ms`; a cross-project rename
-   takes both project locks within that one budget
+Clients may retry definite admission rejections with short randomized backoff and
+unchanged preconditions. A `VERSION_CONFLICT` requires another read and recomputing
+the mutation. A connection loss during mutation or commit is not retryable busy.
 
-Implementation detail:
-
-- use `pg_try_advisory_xact_lock` polling loop with bounded timeout.
+Deployment: stop and drain all older FileIO writers before starting this revision.
+Do not overlap project-locked and tenant-locked writers. The switch needs no schema
+migration and the old FileIO lock timeout setting is no longer used.
 
 ### 10.3 Read Visibility
 
@@ -721,14 +724,11 @@ Contract: [`docs/proposals/fileio_default_project.md`](../proposals/fileio_defau
   GraphQL, HTTP editor) pass the write's conditions to the history read (`tools.RestoreHistoryContext`, or the HTTP
   restore context), and `ReadVersion` checks them against the file it resolved, so the later conditional write
   cannot land the snapshot in another layer. Retention (`pruneVersionsTx`) stays per physical project and path.
-- Mutations (`runUserMutation`): under the addressed project's locks, `defaultLayerTouches` probes whether
-  `@DEFAULT` has a live file at, above or below the touched paths. If not, the mutation runs the unchanged
-  single-project path. Otherwise it rolls back before any change and reruns holding `@DEFAULT` too, every scope in
-  `ProjectLockOrder`. That run writes through to the resolved physical row, deletes each target in its own
-  project, and moves each rename source with the ordinary move of its own physical project; a same-project
-  destination is first judged on the view (`checkOverlayDestinationTx`). A directory relocates only to a vacant
-  destination, in the view and in every physical project (`planRenameMoveTx`), and `applyRenameTx` plans every
-  physical group before applying any, so no group's check sees files another group of the request moved.
+- Mutations (`runUserMutation`): acquire the tenant lock once and evaluate
+  `overlayApplies` once; resolve the appropriate physical files inside that
+  transaction. Same-project destinations use the view (`checkOverlayDestinationTx`).
+  A directory relocates only to a vacant destination in the view and in every
+  physical project (`planRenameMoveTx`). Plan every physical group before applying any.
 - Retrieval (`SearchProjects`): RAG filters `project IN (P, '@DEFAULT')` and labels each hit with its physical
   project. Indexing and summaries are physical, and `WriteResult.ResolvedProject` names the project a write
   stored. PageIndex is disabled, so no plugin catalog, state hook or replay takes part in the layer; every
@@ -890,7 +890,6 @@ Core FileIO:
 - `settings.mcp.files.max_project_bytes`
 - `settings.mcp.files.list_limit_default` (default `256`)
 - `settings.mcp.files.list_limit_max`
-- `settings.mcp.files.lock_timeout_ms`
 - `settings.mcp.files.delete_retention_days`
 
 Search/index:
@@ -971,7 +970,7 @@ Use `github.com/stretchr/testify/require` throughout.
 - directory conflict rules
 - error-code mapping
 - redaction helpers
-- lock timeout behavior (sqlmock)
+- nonblocking admission and ambiguous-commit behavior (sqlmock)
 
 ### 17.2 Service-Level Tests
 
@@ -1027,7 +1026,7 @@ Expose at least:
 
 - indexing lag P95 > configured SLO
 - repeated rerank backend errors
-- lock timeout surge (`RESOURCE_BUSY`)
+- mutation contention surge (`RESOURCE_BUSY`)
 
 ## 19. Confirmed Decisions
 
@@ -1073,7 +1072,7 @@ The implementation is done only when all are true:
 
 1. All seven tools are available and PRD behavior matches exactly.
 2. Tenant isolation is enforced by `apikey_hash` in every read/write/search/index path.
-3. Mutation paths use project-level advisory transaction locks with timeout -> `RESOURCE_BUSY`.
+3. Mutation paths use one nonblocking tenant-level advisory transaction lock -> `RESOURCE_BUSY`.
 4. Outbox worker indexing is operational with retries and dedupe.
 5. `file_search` never returns deleted files and supports rerank fallback.
 6. Error codes are machine-stable and used consistently.

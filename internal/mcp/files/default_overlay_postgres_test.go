@@ -15,9 +15,8 @@ import (
 
 // TestDefaultOverlayPostgresConcurrentWriteThrough appends to one default
 // through many projects and directly, from two client pools, while unrelated
-// project-local writes run in the same projects. Every append must land exactly
-// once in the default row, no project may gain a copy, and lock ordering must
-// not deadlock or time out.
+// project-local writes run in the same projects. Clients retry only definite
+// admission failures, and every append must land exactly once.
 func TestDefaultOverlayPostgresConcurrentWriteThrough(t *testing.T) {
 	f := newRaceFixture(t, "postgres", nil)
 	const path = "/shared.log"
@@ -29,16 +28,20 @@ func TestDefaultOverlayPostgresConcurrentWriteThrough(t *testing.T) {
 	for _, err := range parallelRaceCalls(t, f.ctx, n, func(i int) error {
 		project := projects[i%len(projects)]
 		record := fmt.Sprintf("record-%02d\n", i)
-		res, err := f.svc[i%2].Write(f.ctx, f.auth, project, path, record, "utf-8", 0, files.WriteModeAppend)
+		res, err := retryRaceBusy(f.ctx, func() (files.WriteResult, error) {
+			return f.svc[i%2].Write(f.ctx, f.auth, project, path, record, "utf-8", 0, files.WriteModeAppend)
+		})
 		if err != nil {
 			return err
 		}
 		if res.ResolvedProject != files.DefaultProject {
 			return errors.Errorf("append through %s stored in %s", project, res.ResolvedProject)
 		}
-		// A project-local write in the same project takes the single-project path.
+		// A separate request retries only itself, never the preceding append.
 		if project != files.DefaultProject {
-			local, err := f.svc[(i+1)%2].Write(f.ctx, f.auth, project, fmt.Sprintf("/local-%02d.txt", i), record, "utf-8", 0, files.WriteModeTruncate)
+			local, err := retryRaceBusy(f.ctx, func() (files.WriteResult, error) {
+				return f.svc[(i+1)%2].Write(f.ctx, f.auth, project, fmt.Sprintf("/local-%02d.txt", i), record, "utf-8", 0, files.WriteModeTruncate)
+			})
 			if err != nil {
 				return err
 			}
@@ -81,7 +84,7 @@ func TestDefaultOverlayPostgresCreateRace(t *testing.T) {
 		t.Run(fmt.Sprintf("round-%d", round), func(t *testing.T) {
 			f := newRaceFixture(t, "postgres", nil)
 			path := fmt.Sprintf("/race-%d.md", round)
-			errs := parallelRaceCalls(t, f.ctx, 2, func(i int) error {
+			errs := parallelMutationCalls(t, f.ctx, 2, func(i int) error {
 				if i == 0 {
 					_, err := f.svc[0].WriteWith(f.ctx, f.auth, files.DefaultProject, path, "default", "utf-8", 0, files.WriteModeTruncate, files.WriteOpts{CreateOnly: true})
 					return err
@@ -107,7 +110,7 @@ func TestDefaultOverlayPostgresCreateRace(t *testing.T) {
 
 // TestDefaultOverlayPostgresOppositeMutationsDoNotDeadlock runs overlay
 // mutations of two projects and direct default mutations concurrently. All of
-// them lock in ProjectLockOrder, so none may deadlock or exhaust its timeout.
+// them contend on the one tenant admission gate.
 func TestDefaultOverlayPostgresOppositeMutationsDoNotDeadlock(t *testing.T) {
 	f := newRaceFixture(t, "postgres", nil)
 	for i := range 8 {
@@ -115,7 +118,7 @@ func TestDefaultOverlayPostgresOppositeMutationsDoNotDeadlock(t *testing.T) {
 		require.NoError(t, err)
 	}
 	const n = 24
-	for _, err := range parallelRaceCalls(t, f.ctx, n, func(i int) error {
+	for _, err := range parallelMutationCalls(t, f.ctx, n, func(i int) error {
 		project := []string{"alpha", "beta", files.DefaultProject}[i%3]
 		source := fmt.Sprintf("/d/%d.md", i%8)
 		switch i % 4 {

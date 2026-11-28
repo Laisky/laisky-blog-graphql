@@ -3,7 +3,6 @@ package files
 import (
 	"context"
 	"database/sql"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -317,82 +316,11 @@ func (s *Service) layerHasDescendants(ctx context.Context, q sqlQueryer, apiKeyH
 	return true, nil
 }
 
-// defaultLayerTouches reports whether the tenant's DefaultProject holds a live
-// user file at, above, or below any of paths. A mutation of project paths the
-// default layer does not touch neither reads nor changes that layer, so it keeps
-// its original lock scope and physical code path. If a default file appears
-// concurrently, the result equals running the mutation first.
-func (s *Service) defaultLayerTouches(ctx context.Context, q sqlQueryer, apiKeyHash string, paths ...string) (bool, error) {
-	exact := make([]string, 0, len(paths)*2)
-	conditions := make([]string, 0, len(paths)+1)
-	args := []any{apiKeyHash, DefaultProject, systemOwnerFromContext(ctx)}
-	for _, path := range paths {
-		below, belowArgs := belowPathSQL("path", path)
-		conditions = append(conditions, below)
-		args = append(args, belowArgs...)
-		if path != "" {
-			exact = append(exact, path)
-			exact = append(exact, parentPaths(path)...)
-		}
-	}
-	if len(exact) > 0 {
-		conditions = append(conditions, `path IN (`+placeholders(len(exact))+`)`)
-		for _, path := range exact {
-			args = append(args, path)
-		}
-	}
-	var id uint64
-	err := q.QueryRowContext(ctx,
-		rebindSQL(`SELECT id FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ?
-			AND (`+strings.Join(conditions, " OR ")+`) LIMIT 1`, s.isPostgres),
-		args...,
-	).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, errors.Wrap(err, "check default layer")
-	}
-	return true, nil
-}
-
-// errOverlayRequired aborts an attempt whose paths the default layer touches,
-// so the mutation can restart while also holding DefaultProject's lock.
-var errOverlayRequired = errors.New("mutation requires the default layer")
-
-// runUserMutation runs fn in one transaction holding every scope lock. When
-// project overlays DefaultProject, the first attempt checks inside that
-// transaction whether the default layer touches paths. If it does not, fn runs
-// physically and never reads DefaultProject, which keeps the original behavior
-// and lock scope. If it does, the attempt is rolled back before fn runs, and fn
-// reruns in overlay mode with DefaultProject added to the scopes; every scope is
-// always acquired in ProjectLockOrder.
-func (s *Service) runUserMutation(ctx context.Context, apiKeyHash, project string, scopes, paths []string,
-	fn func(tx *sql.Tx, overlay bool) error,
-) error {
-	if !overlayApplies(ctx, project) {
-		return s.withProjectLocks(ctx, apiKeyHash, scopes, func(tx *sql.Tx) error {
-			return fn(tx, false)
-		})
-	}
-	defaultLocked := slices.Contains(scopes, DefaultProject)
-	err := s.withProjectLocks(ctx, apiKeyHash, scopes, func(tx *sql.Tx) error {
-		touches, err := s.defaultLayerTouches(ctx, tx, apiKeyHash, paths...)
-		switch {
-		case err != nil:
-			return err
-		case !touches:
-			return fn(tx, false)
-		case defaultLocked:
-			return fn(tx, true)
-		}
-		return errOverlayRequired
-	})
-	if !errors.Is(err, errOverlayRequired) {
-		return err
-	}
-	return s.withProjectLocks(ctx, apiKeyHash, append(slices.Clone(scopes), DefaultProject), func(tx *sql.Tx) error {
-		return fn(tx, true)
+// runUserMutation resolves namespace and preconditions only after one tenant
+// lock is held. Overlay applicability depends on request scope, not a DB probe.
+func (s *Service) runUserMutation(ctx context.Context, apiKeyHash, project string, fn func(tx *sql.Tx, overlay bool) error) error {
+	return s.withTenantLock(ctx, apiKeyHash, func(tx *sql.Tx) error {
+		return fn(tx, overlayApplies(ctx, project))
 	})
 }
 

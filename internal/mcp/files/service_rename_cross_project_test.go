@@ -288,35 +288,3 @@ func TestCrossProjectRenamePreconditions(t *testing.T) {
 	_, err = WithFilePreconditions(ctx, auth, "alpha", "/a.txt", FileOperationWrite, FilePreconditions{ExpectedVersion: source, DestinationProject: "beta"})
 	require.True(t, IsCode(err, ErrCodeInvalidArgument), "a destination project is rename-only: %v", err)
 }
-
-// TestCrossProjectRenameRequiresMultiProjectLock verifies that a lock
-// provider unable to hold both projects refuses the move instead of leaving
-// one project unserialized, while same-project renames keep working.
-func TestCrossProjectRenameRequiresMultiProjectLock(t *testing.T) {
-	settings := versionsTestSettings()
-	svc := newConcurrentTestService(t, settings, &keyedMutexLockProvider{})
-	auth := crossProjectTestAuth()
-	ctx := context.Background()
-	mustCrossProjectWrite(t, svc, auth, "alpha", "/a.txt", "a")
-
-	_, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "beta", ToPath: "/a.txt"})
-	require.True(t, IsCode(err, ErrCodeSearchBackend), "%v", err)
-	requireCrossProjectContent(t, svc, auth, "alpha", "/a.txt", "a")
-
-	result, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/a.txt", TargetProject: "alpha", ToPath: "/b.txt"})
-	require.NoError(t, err)
-	require.Equal(t, 1, result.MovedCount)
-}
-
-// TestProjectLockOrder verifies that the lock order is global: it does not
-// depend on argument order, drops duplicates and empties, and sorts by key.
-func TestProjectLockOrder(t *testing.T) {
-	forward := ProjectLockOrder("hash", "alpha", "beta", "gamma", "alpha", "")
-	backward := ProjectLockOrder("hash", "gamma", "", "beta", "alpha")
-	require.Equal(t, forward, backward)
-	require.Len(t, forward, 3)
-	for i := 1; i < len(forward); i++ {
-		require.LessOrEqual(t, hashLockKey("hash", forward[i-1]), hashLockKey("hash", forward[i]))
-	}
-	require.Empty(t, ProjectLockOrder("hash"))
-}

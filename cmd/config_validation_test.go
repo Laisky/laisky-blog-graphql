@@ -152,7 +152,6 @@ func TestValidateStartupConfigWithGetterValidConfig(t *testing.T) {
 					"max_project_bytes":     4096,
 					"list_limit_default":    20,
 					"list_limit_max":        200,
-					"lock_timeout_ms":       2000,
 					"delete_retention_days": 7,
 					"search": map[string]any{
 						"enabled":           true,

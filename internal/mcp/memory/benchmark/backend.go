@@ -295,7 +295,7 @@ func localFileSettings() files.Settings {
 	return files.Settings{
 		AllowRootWipe: false, MaxPayloadBytes: 2_000_000, MaxFileBytes: 10_000_000,
 		MaxProjectBytes: 100_000_000, ListLimitDefault: 256, ListLimitMax: 1024,
-		LockTimeout: 3 * time.Second, DeleteRetention: 24 * time.Hour,
+		DeleteRetention: 24 * time.Hour,
 		Search: files.SearchSettings{
 			Enabled: true, LimitDefault: 20, LimitMax: 100, VectorCandidates: 100,
 			LexicalCandidates: 100, SemanticWeight: 0.65, LexicalWeight: 0.35,

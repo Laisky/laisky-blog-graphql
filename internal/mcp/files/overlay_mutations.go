@@ -16,7 +16,7 @@ func (s *Service) deleteFiles(ctx context.Context, auth AuthContext, project, pa
 	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationDelete)
 	enqueueIndex := systemOwnerFromContext(ctx) == ""
 	deleted := 0
-	err := s.runUserMutation(ctx, auth.APIKeyHash, project, []string{project}, []string{path}, func(tx *sql.Tx, overlay bool) error {
+	err := s.runUserMutation(ctx, auth.APIKeyHash, project, func(tx *sql.Tx, overlay bool) error {
 		if err := s.checkVersionTx(ctx, tx, auth, project, path, conditions.ExpectedVersion, false, overlay); err != nil {
 			return err
 		}

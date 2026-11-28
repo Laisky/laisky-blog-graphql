@@ -365,16 +365,11 @@ Default candidate counts are `30 + 30`, configurable in the service configuratio
 
 ## 8. Consistency, Freshness, and Concurrency
 
-- Sequential consistency is required within `(apikey_hash, project)` for file mutation operations.
-- Cross-instance consistency is required.
-- All mutating file operations (`file_write`, `file_delete`, `file_rename`) must obtain:
-  - `pg_advisory_xact_lock(hash(apikey_hash, project))`
-- A `file_rename` with a `target_project` must hold the locks of both projects in one transaction, acquired in ascending lock-key order (then project name) so opposite moves cannot each hold one project while waiting for the other.
-- A mutation of a path the `@DEFAULT` layer touches also holds the `@DEFAULT` lock, in the same global order.
-- A stat or list of an overlaid project that needs several statements reads one consistent snapshot without taking locks.
-- Lock is transaction-scoped.
-- Lock acquisition timeout is configurable.
-- Timeout/failure to acquire lock returns `RESOURCE_BUSY`.
+- Sequential consistency for mutations under one authenticated `apikey_hash` is required across all instances.
+- Write, delete, rename, and restore hold one PostgreSQL transaction-scoped advisory lock keyed by the tenant before any namespace or precondition read. Cross-project, explicit `@DEFAULT` and physical-only writes use the same lock.
+- PostgreSQL uses one `pg_try_advisory_xact_lock` attempt in a READ COMMITTED transaction; SQLite uses database write intent before mutation reads.
+- Definite pre-mutation contention returns retryable `RESOURCE_BUSY`. Retry with the original preconditions and short randomized backoff. A `VERSION_CONFLICT` requires a fresh read and recalculation. An unknown commit result must not be reported as retryable busy.
+- Read/stat/list/history/search do not acquire advisory locks; multi-statement view reads use a consistent snapshot.
 - `file_read` and `file_list` observe committed writes only.
 - `file_search` is eventually consistent for indexing visibility.
 - Freshness SLO: `P95 <= 30s` from successful file mutation commit to searchable index visibility.
@@ -522,7 +517,6 @@ Environment variables are not a supported configuration source for FileIO in v1.
 - `settings.mcp.files.max_project_bytes`
 - `settings.mcp.files.list_limit_default` (default: `256`)
 - `settings.mcp.files.list_limit_max`
-- `settings.mcp.files.lock_timeout_ms`
 - `settings.mcp.files.delete_retention_days`
 
 ### 12.2 Search and Indexing Keys
@@ -598,7 +592,7 @@ Envelope row (`kv` table):
 - File descriptors
 - POSIX permissions and ownership
 - Symlinks
-- Advisory/mandatory file locks beyond project-level serialization
+- Advisory/mandatory file locks beyond tenant-level serialization
 - Memory mapping
 - Native binary storage protocol
 - File version history

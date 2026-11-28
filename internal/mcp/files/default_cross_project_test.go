@@ -3,44 +3,32 @@ package files
 import (
 	"context"
 	"database/sql"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
-// recordingLockProvider records the scope set of every locked transaction.
+// recordingLockProvider records each tenant admission and delegates to the database.
 type recordingLockProvider struct {
 	DefaultLockProvider
-	mu     sync.Mutex
-	scopes [][]string
+	mu      sync.Mutex
+	tenants []string
 }
 
-// WithProjectLock records a single scope and delegates.
-func (p *recordingLockProvider) WithProjectLock(ctx context.Context, db *sql.DB, isPostgres bool, apiKeyHash, project string, timeout time.Duration, fn func(tx *sql.Tx) error) error {
-	return p.WithProjectsLock(ctx, db, isPostgres, apiKeyHash, []string{project}, timeout, fn)
-}
-
-// WithProjectsLock records the scopes, which must already be in ProjectLockOrder, and delegates.
-func (p *recordingLockProvider) WithProjectsLock(ctx context.Context, db *sql.DB, isPostgres bool, apiKeyHash string, projects []string, timeout time.Duration, fn func(tx *sql.Tx) error) error {
+func (p *recordingLockProvider) WithTenantLock(ctx context.Context, db *sql.DB, pg bool, tenant string, fn func(*sql.Tx) error) error {
 	p.mu.Lock()
-	p.scopes = append(p.scopes, slices.Clone(projects))
+	p.tenants = append(p.tenants, tenant)
 	p.mu.Unlock()
-	return p.DefaultLockProvider.WithProjectsLock(ctx, db, isPostgres, apiKeyHash, projects, timeout, fn)
+	return p.DefaultLockProvider.WithTenantLock(ctx, db, pg, tenant, fn)
 }
 
-// take returns and clears the recorded scopes, each sorted for comparison.
-func (p *recordingLockProvider) take() [][]string {
+func (p *recordingLockProvider) take() []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	out := p.scopes
-	p.scopes = nil
-	for _, scope := range out {
-		slices.Sort(scope)
-	}
+	out := p.tenants
+	p.tenants = nil
 	return out
 }
 
@@ -104,7 +92,7 @@ func TestDefaultCrossProjectMoves(t *testing.T) {
 		moved, err := f.move("src", "/own.md", "dst", "/a.md", false, FilePreconditions{ExpectedVersion: source.Version, DestinationMustNotExist: true})
 		require.NoError(t, err, "a default is not a physical collision of the target")
 		require.Equal(t, 1, moved.MovedCount)
-		require.Equal(t, [][]string{{"dst", "src"}}, locks.take(), "no default touches the source: the two-project lock scope is unchanged")
+		require.Equal(t, []string{f.auth.APIKeyHash}, locks.take(), "one admission covers the complete move")
 		require.Equal(t, "src own", f.read("dst", "/a.md"), "the moved file overrides the default in the target")
 		require.Equal(t, "default a", f.read("other", "/a.md"))
 		require.True(t, f.physical(DefaultProject, "/a.md"), "creating an override never deletes the default")
@@ -124,8 +112,7 @@ func TestDefaultCrossProjectMoves(t *testing.T) {
 		moved, err := f.move("src", "/shared.md", "dst", "/shared.md", false, FilePreconditions{ExpectedVersion: f.version("src", "/shared.md"), DestinationMustNotExist: true})
 		require.NoError(t, err)
 		require.Equal(t, 1, moved.MovedCount)
-		require.Equal(t, [][]string{{"dst", "src"}, {DefaultProject, "dst", "src"}}, locks.take(),
-			"the source resolves to a default, so the move reruns holding the default layer too")
+		require.Equal(t, []string{f.auth.APIKeyHash}, locks.take(), "one admission covers the complete move")
 		require.Equal(t, "default v2", f.read("dst", "/shared.md"))
 		require.False(t, f.physical(DefaultProject, "/shared.md"), "a move, not a copy")
 		_, err = f.svc.Read(f.ctx, f.auth, "other", "/shared.md", 0, -1)
