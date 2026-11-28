@@ -531,3 +531,102 @@ func TestFreshCredentialReachesClaimedRefresh(t *testing.T) {
 	_, status, _, _, _ := summaryRow(t, svc, "hash", "proj", "/a.txt")
 	require.Equal(t, string(SummaryStatusReady), status)
 }
+
+// TestFreshCredentialReachesPendingRefresh renews authorization before the
+// already queued refresh is claimed, without changing its retry schedule.
+func TestFreshCredentialReachesPendingRefresh(t *testing.T) {
+	stub := &stubFileSummarizer{err: errTestProvider}
+	svc, setClock := newSummaryTestService(t, stub)
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+	ctx := context.Background()
+	const content = "The pending refresh still has the exact same file content."
+	_, err := svc.Write(ctx, auth, "proj", "/a.txt", content, "utf-8", 0, WriteModeTruncate)
+	require.NoError(t, err)
+	require.NoError(t, svc.NewIndexWorker().RunOnce(ctx))
+	var oldID string
+	var availableAt time.Time
+	require.NoError(t, svc.db.QueryRowContext(ctx, "SELECT credential_id, available_at FROM mcp_file_index_jobs WHERE operation = 'SUMMARY_REFRESH' AND status = 'pending'").Scan(&oldID, &availableAt))
+	_, err = svc.db.ExecContext(ctx, "UPDATE kv SET expire_at = ?", time.Unix(1, 0).UTC())
+	require.NoError(t, err)
+	_, err = svc.Write(ctx, auth, "proj", "/a.txt", content, "utf-8", 0, WriteModeTruncate)
+	require.NoError(t, err)
+	var currentID string
+	var unchangedAt time.Time
+	require.NoError(t, svc.db.QueryRowContext(ctx, "SELECT credential_id, available_at FROM mcp_file_index_jobs WHERE operation = 'SUMMARY_REFRESH' AND status = 'pending'").Scan(&currentID, &unchangedAt))
+	require.True(t, unchangedAt.Equal(availableAt))
+	require.NotEqual(t, oldID, currentID)
+	stub.err = nil
+	stub.result = "Fresh authorization allows the pending summary to be upgraded."
+	setClock(availableAt.Add(time.Second))
+	require.NoError(t, svc.NewIndexWorker().RunOnce(ctx))
+	_, status, _, _, _ := summaryRow(t, svc, "hash", "proj", "/a.txt")
+	require.Equal(t, string(SummaryStatusReady), status)
+}
+
+// testSummaryFunc permits deterministic scheduling of the model call in a fixture.
+type testSummaryFunc func(context.Context, string, string) (string, error)
+
+// GenerateFileSummary implements FileSummarizer.
+func (fn testSummaryFunc) GenerateFileSummary(ctx context.Context, key, doc string) (string, error) {
+	return fn(ctx, key, doc)
+}
+
+// TestSummaryRefreshSurvivesRenameRoundTrip verifies that an in-flight refresh
+// cannot disappear when a rename advances the same file's revision twice.
+func TestSummaryRefreshSurvivesRenameRoundTrip(t *testing.T) {
+	started, resume := make(chan struct{}), make(chan struct{})
+	var release sync.Once
+	t.Cleanup(func() { release.Do(func() { close(resume) }) })
+	var mu sync.Mutex
+	calls := 0
+	stub := testSummaryFunc(func(ctx context.Context, _, _ string) (string, error) {
+		mu.Lock()
+		calls++
+		call := calls
+		mu.Unlock()
+		switch call {
+		case 1:
+			return "", errTestProvider
+		case 2:
+			close(started)
+			select {
+			case <-resume:
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+		return "A ready summary of the unchanged document after its two moves.", nil
+	})
+	svc, setClock := newSummaryTestService(t, stub)
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	base := time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC)
+	first := svc.NewIndexWorker()
+	_, err := svc.Write(ctx, auth, "proj", "/a.txt", "The unchanged document completes a round trip.", "utf-8", 0, WriteModeTruncate)
+	require.NoError(t, err)
+	require.NoError(t, first.RunOnce(ctx))
+	setClock(base.Add(10 * time.Second))
+	done := make(chan error, 1)
+	go func() { done <- first.RunOnce(ctx) }()
+	select {
+	case <-started:
+	case <-ctx.Done():
+		require.FailNow(t, "refresh did not enter the model call")
+	}
+	_, err = svc.Rename(ctx, auth, RenameRequest{Project: "proj", FromPath: "/a.txt", ToPath: "/b.txt"})
+	require.NoError(t, err)
+	setClock(base.Add(11 * time.Second))
+	_, err = svc.Rename(ctx, auth, RenameRequest{Project: "proj", FromPath: "/b.txt", ToPath: "/a.txt"})
+	require.NoError(t, err)
+	second := svc.NewIndexWorker()
+	require.NoError(t, second.RunOnce(ctx))
+	release.Do(func() { close(resume) })
+	require.NoError(t, <-done)
+	_, status, _, _, _ := summaryRow(t, svc, "hash", "proj", "/a.txt")
+	require.Equal(t, string(SummaryStatusDegraded), status, "the stale revision never publishes")
+	setClock(base.Add(20 * time.Second))
+	require.NoError(t, second.RunOnce(ctx))
+	_, status, _, _, _ = summaryRow(t, svc, "hash", "proj", "/a.txt")
+	require.Equal(t, string(SummaryStatusReady), status, "the bounded retry publishes only after reloading the revision")
+}

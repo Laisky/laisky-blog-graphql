@@ -560,7 +560,9 @@
       "TestFileToolMutationsExecuteOnce",
       "TestRenameExtensionChangesFollowFilesystemRules",
       "TestVacantDirectoryRelocation",
-      "TestFreshCredentialReachesClaimedRefresh"
+      "TestFreshCredentialReachesClaimedRefresh",
+      "TestFreshCredentialReachesPendingRefresh",
+      "TestSummaryRefreshSurvivesRenameRoundTrip"
     ]
   },
   {

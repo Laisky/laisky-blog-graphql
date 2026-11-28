@@ -128,19 +128,20 @@ func classifySummaryError(err error) string {
 
 // activeRAGFile carries the policy and identity needed before publication.
 type activeRAGFile struct {
-	contentHash  string
-	version      string
-	skipRAGIndex bool
+	contentHash          string
+	summaryGenerationKey string
+	version              string
+	skipRAGIndex         bool
 }
 
 // checkActiveRAGFileTx reads the current generation, locking the row on Postgres.
 func (s *Service) checkActiveRAGFileTx(ctx context.Context, tx *sql.Tx, job FileIndexJob) (activeRAGFile, error) {
-	sel := `SELECT content_hash, incarnation_id || ':' || CAST(revision AS TEXT), skip_rag_index FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND deleted = FALSE LIMIT 1`
+	sel := `SELECT content_hash, summary_generation_key, incarnation_id || ':' || CAST(revision AS TEXT), skip_rag_index FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND deleted = FALSE LIMIT 1`
 	if s.isPostgres {
 		sel += " FOR UPDATE"
 	}
 	var current activeRAGFile
-	err := tx.QueryRowContext(ctx, rebindSQL(sel, s.isPostgres), job.APIKeyHash, job.Project, job.FilePath, "").Scan(&current.contentHash, &current.version, &current.skipRAGIndex)
+	err := tx.QueryRowContext(ctx, rebindSQL(sel, s.isPostgres), job.APIKeyHash, job.Project, job.FilePath, "").Scan(&current.contentHash, &current.summaryGenerationKey, &current.version, &current.skipRAGIndex)
 	return current, err
 }
 
@@ -251,34 +252,36 @@ func (s *Service) PublishPluginSummary(ctx context.Context, auth AuthContext, pr
 	return published, nil
 }
 
-// publishSummaryStandalone updates only the summary metadata on the active user row,
-// guarded by the content hash so a refresh cannot overwrite a newer generation. It
-// never touches chunk rows (§4.6).
-func (s *Service) publishSummaryStandalone(ctx context.Context, job FileIndexJob, version string, pub summaryPublication) error {
+// publishSummaryStandalone keeps the exact file revision check for publication.
+// If the same incarnation, bytes and summary generation still need refreshing
+// after a revision change, the existing deduplicated job must retry, not finish.
+func (s *Service) publishSummaryStandalone(ctx context.Context, job FileIndexJob, version, generation string, pub summaryPublication) (retry bool, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return errors.Wrap(err, "begin summary refresh transaction")
+		return false, errors.Wrap(err, "begin summary refresh transaction")
 	}
-	active, hashErr := s.checkActiveRAGFileTx(ctx, tx, job)
-	if hashErr != nil {
-		_ = tx.Rollback()
-		if errors.Is(hashErr, sql.ErrNoRows) {
-			return nil
-		}
-		return errors.Wrap(hashErr, "recheck active content hash for refresh")
+	defer func() { _ = tx.Rollback() }()
+	active, err := s.checkActiveRAGFileTx(ctx, tx, job)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
 	}
-	if active.skipRAGIndex || active.version != version || (active.contentHash != "" && pub.contentHash != "" && active.contentHash != pub.contentHash) {
-		_ = tx.Rollback()
-		return nil
+	if err != nil {
+		return false, errors.Wrap(err, "recheck active content hash for refresh")
+	}
+	if active.skipRAGIndex || active.summaryGenerationKey != generation ||
+		(active.contentHash != "" && pub.contentHash != "" && active.contentHash != pub.contentHash) {
+		return false, nil
+	}
+	if active.version != version {
+		previousIncarnation, _, valid := strings.Cut(version, ":")
+		currentIncarnation, _, currentValid := strings.Cut(active.version, ":")
+		return valid && currentValid && previousIncarnation == currentIncarnation &&
+			active.contentHash != "" && active.contentHash == pub.contentHash, nil
 	}
 	if err := s.publishSummaryTx(ctx, tx, job, pub, s.clock()); err != nil {
-		_ = tx.Rollback()
-		return err
+		return false, err
 	}
-	if err := tx.Commit(); err != nil {
-		return errors.Wrap(err, "commit summary refresh transaction")
-	}
-	return nil
+	return false, errors.Wrap(tx.Commit(), "commit summary refresh transaction")
 }
 
 // enqueueSummaryRefreshTx enqueues a deduplicated SUMMARY_REFRESH job for a degraded
