@@ -29,10 +29,20 @@ func migrateFileSchema(ctx context.Context, db *sql.Tx, logger logSDK.Logger, is
 	}
 	// Step 2: encrypted credential envelopes for the index worker live in the
 	// shared kv table, so they commit with file rows and need no Redis.
-	if err := kv.CreateTable(ctx, db); err != nil {
-		return errors.Wrap(err, "create credential envelope table")
+	if from < 2 {
+		if err := kv.CreateTable(ctx, db); err != nil {
+			return errors.Wrap(err, "create credential envelope table")
+		}
 	}
-	return nil
+	// Step 3: the opaque credential reference is new even on databases that
+	// already have the envelope table. Existing outbox rows remain usable
+	// with an empty reference; their legacy TTL envelopes are never guessed.
+	if isPostgres {
+		_, err := db.ExecContext(ctx, `ALTER TABLE mcp_file_index_jobs ADD COLUMN IF NOT EXISTS credential_id VARCHAR(64) NOT NULL DEFAULT ''`)
+		return errors.Wrap(err, "add index job credential ID")
+	}
+	return applyAddColumnIfMissing(ctx, db, tableMcpFileIndexJobs, "credential_id",
+		`ALTER TABLE mcp_file_index_jobs ADD COLUMN credential_id TEXT NOT NULL DEFAULT ''`)
 }
 
 // migrateFileBaseline applies schema step 1: the file tables, their indexes and
@@ -140,7 +150,6 @@ var fileSummaryColumns = []fileSummaryColumnSpec{
 	{tableMcpFileIndexJobs, "content_hash", requiredHashColumn, requiredTextColumn},
 	{tableMcpFileIndexJobs, "last_error_code", requiredHashColumn, requiredTextColumn},
 	{tableMcpFileIndexJobs, "summary_generation_key", requiredHashColumn, requiredTextColumn},
-	{tableMcpFileIndexJobs, "credential_id", requiredHashColumn, requiredTextColumn},
 }
 
 // applyFileSummaryColumns adds the file-summary columns idempotently on Postgres and SQLite.
