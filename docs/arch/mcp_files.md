@@ -989,7 +989,7 @@ For async index workers:
 - UPSERT and dependent summary jobs share the persisted ID. A fresh authenticated operation can attach a new
   ID to a waiting eligible refresh. The envelope is retained for its short configured TTL; retries do not
   renew it, and the worker's bounded expiry sweep removes expired rows. RAG opt-out stores no envelope.
-- the envelope includes a nonsecret scope fingerprint plus encrypted data (`kek_id`, `dek_id`, `ciphertext`). Workers verify the fingerprint before decrypting with the same authenticated scope; `expire_at` is a column. The
+- the envelope stores encrypted data (`kek_id`, `dek_id`, `ciphertext`) only. Workers authenticate the scope during decryption; `expire_at` is a column. The
   encryption keys stay in configuration.
 - schema step 2 of the FileIO migration ledger creates the `kv` table and its `expire_at` index; services open it
   without DDL.

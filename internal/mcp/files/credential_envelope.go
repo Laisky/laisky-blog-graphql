@@ -2,10 +2,7 @@ package files
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
-	"encoding/hex"
 	"strings"
 	"time"
 
@@ -65,8 +62,7 @@ func (s *Service) storeCredentialEnvelopeTx(ctx context.Context, tx *sql.Tx, aut
 	if err != nil {
 		return "", errors.Wrap(err, "encrypt credential")
 	}
-	sealed := credentialScope(aad) + "." + payload
-	if err := s.credentials.WithTx(tx).SetWithTTL(ctx, ref.credentialKey(), sealed, s.settings.Security.CredentialCacheTTL); err != nil {
+	if err := s.credentials.WithTx(tx).SetWithTTL(ctx, ref.credentialKey(), payload, s.settings.Security.CredentialCacheTTL); err != nil {
 		return "", errors.Wrap(err, "store credential envelope")
 	}
 	if err := s.reactivateSummaryRefreshJobs(ctx, tx, ref); err != nil {
@@ -93,22 +89,18 @@ func (s *Service) loadCredential(ctx context.Context, ref CredentialReference) (
 		return "", errors.Wrap(err, "load credential envelope")
 	}
 	aad := ref.AAD()
-	scope, ciphertext, ok := strings.Cut(item.Value, ".")
-	if !ok || subtle.ConstantTimeCompare([]byte(scope), []byte(credentialScope(aad))) != 1 {
-		return "", errors.New("credential envelope scope mismatch")
+	ciphertext := item.Value
+	// The interim PR build prefixed a hex scope marker to the base64 payload.
+	// Read those TTL rows without the redundant marker: AES-GCM checks the
+	// complete authenticated scope (including the UUID) for both formats.
+	if _, payload, ok := strings.Cut(ciphertext, "."); ok {
+		ciphertext = payload
 	}
 	apiKey, err := s.credential.DecryptCredential(ctx, ciphertext, aad)
 	if err != nil {
 		return "", errors.Wrap(err, "decrypt credential")
 	}
 	return apiKey, nil
-}
-
-// credentialScope is the public, non-reversible scope marker checked before
-// decryption. Authenticated encryption independently binds the complete AAD.
-func credentialScope(aad []byte) string {
-	sum := sha256.Sum256(aad)
-	return hex.EncodeToString(sum[:])
 }
 
 // credentialUnavailable reports whether err means there is no usable envelope,

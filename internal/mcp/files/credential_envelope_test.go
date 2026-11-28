@@ -219,6 +219,7 @@ func TestCredentialEnvelopesNeedOnlySQL(t *testing.T) {
 			require.NoError(t, c.db[1].QueryRowContext(c.ctx, "SELECT credential_id FROM mcp_file_index_jobs WHERE system_owner = '' AND operation = 'UPSERT'").Scan(&durableID))
 			require.Equal(t, id.String(), durableID, "the outbox must carry the exact immutable ID")
 			require.NotContains(t, stored[0].value, c.apiKey, "the envelope must be encrypted")
+			require.NotContains(t, stored[0].value, ".", "stored envelopes contain only the serialized ciphertext")
 			require.NotContains(t, stored[0].key, c.apiKey, "the key never holds the caller's key")
 			require.WithinDuration(t, c.clock.Now().Add(credentialTTL), stored[0].expireAt, time.Second)
 
@@ -408,6 +409,12 @@ func TestCredentialEnvelopeSurvivesRestart(t *testing.T) {
 		t.Run(backend, func(t *testing.T) {
 			c := newCredentialFixture(t, backend, nil)
 			_, err := c.service(t, 0, nil).Write(c.ctx, c.auth, "race", "/durable.md", "stored before the restart", "utf-8", 0, files.WriteModeTruncate)
+			require.NoError(t, err)
+
+			// An interim build persisted this wrapper. The durable value must remain
+			// usable across restart; the tag, not metadata outside it, authenticates AAD.
+			row := c.envelopes(t)[0]
+			_, err = c.db[1].ExecContext(c.ctx, c.query("UPDATE kv SET value = ? WHERE key = ?"), strings.Repeat("0", 64)+"."+row.value, row.key)
 			require.NoError(t, err)
 
 			restarted := c.service(t, 1, nil)
