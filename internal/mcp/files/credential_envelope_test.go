@@ -3,13 +3,13 @@ package files_test
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
-	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
+	"github.com/google/uuid"
 	"github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/require"
 
@@ -130,7 +130,7 @@ func newCredentialFixture(t *testing.T, backend string, configure func(*files.Se
 	})
 	return &credentialFixture{
 		raceFixture: f,
-		clock:       &movableClock{now: time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC)},
+		clock:       &movableClock{now: time.Date(2026, 9, 16, 0, 0, 0, 987, time.UTC)},
 		embedder:    &recordingEmbedder{},
 	}
 }
@@ -201,7 +201,7 @@ func runWorker(t *testing.T, ctx context.Context, svc *files.Service) {
 // TestCredentialEnvelopesNeedOnlySQL verifies write, same-project rename and
 // cross-project rename each hand the caller's key to the index worker through
 // an encrypted, expiring envelope in the FileIO database, which the worker
-// uses for semantic indexing and then deletes.
+// uses for semantic indexing and retains until expiry.
 func TestCredentialEnvelopesNeedOnlySQL(t *testing.T) {
 	for _, backend := range credentialTestBackends {
 		t.Run(backend, func(t *testing.T) {
@@ -212,9 +212,12 @@ func TestCredentialEnvelopesNeedOnlySQL(t *testing.T) {
 			require.NoError(t, err)
 			stored := c.envelopes(t)
 			require.Len(t, stored, 1)
-			reference := fmt.Sprintf("%s|race|/doc.md|%d", c.auth.APIKeyHash, c.clock.Now().UnixNano())
-			require.Equal(t, "mcp_files_credential_"+base64.RawURLEncoding.EncodeToString([]byte(reference)), stored[0].key,
-				"the key encodes the credential reference")
+			id, err := uuid.Parse(strings.TrimPrefix(stored[0].key, "mcp_files_credential_"))
+			require.NoError(t, err)
+			require.Equal(t, uuid.Version(7), id.Version())
+			var durableID string
+			require.NoError(t, c.db[1].QueryRowContext(c.ctx, "SELECT credential_id FROM mcp_file_index_jobs WHERE system_owner = '' AND operation = 'UPSERT'").Scan(&durableID))
+			require.Equal(t, id.String(), durableID, "the outbox must carry the exact immutable ID")
 			require.NotContains(t, stored[0].value, c.apiKey, "the envelope must be encrypted")
 			require.NotContains(t, stored[0].key, c.apiKey, "the key never holds the caller's key")
 			require.WithinDuration(t, c.clock.Now().Add(credentialTTL), stored[0].expireAt, time.Second)
@@ -236,9 +239,9 @@ func TestCredentialEnvelopesNeedOnlySQL(t *testing.T) {
 			}
 			for i, step := range steps {
 				require.NoError(t, step.run(), step.name)
-				require.Len(t, c.envelopes(t), 1, step.name)
+				require.Len(t, c.envelopes(t), i+1, step.name)
 				runWorker(t, c.ctx, svc)
-				require.Empty(t, c.envelopes(t), "%s: the worker deletes the envelope it used", step.name)
+				require.Len(t, c.envelopes(t), i+1, "%s: envelopes remain until their TTL", step.name)
 				calls := c.embedder.Calls()
 				require.Len(t, calls, i+1, step.name)
 				require.Equal(t, c.apiKey, calls[i].apiKey, "%s: the worker embeds with the caller's key", step.name)
@@ -269,13 +272,13 @@ func TestCredentialEnvelopeRollsBackWithTheMutation(t *testing.T) {
 			_, err = svc.Write(c.ctx, c.auth, "race", "/kept.md", "committed bytes", "utf-8", 0, files.WriteModeTruncate)
 			require.NoError(t, err)
 			runWorker(t, c.ctx, svc)
-			require.Empty(t, c.envelopes(t))
+			require.Len(t, c.envelopes(t), 1)
 			upserts, deletes := c.jobs(t, c.auth, "UPSERT"), c.jobs(t, c.auth, "DELETE")
 
 			for _, target := range []string{"race", "race-peer"} {
 				_, err = aborting.Rename(c.ctx, c.auth, files.RenameRequest{Project: "race", FromPath: "/kept.md", TargetProject: target, ToPath: "/elsewhere.md"})
 				require.ErrorIs(t, err, errInjectedAbort, target)
-				require.Empty(t, c.envelopes(t), target)
+				require.Len(t, c.envelopes(t), 1, target)
 				require.Equal(t, upserts, c.jobs(t, c.auth, "UPSERT"), target)
 				require.Equal(t, deletes, c.jobs(t, c.auth, "DELETE"), target)
 				read, err := svc.Read(c.ctx, c.auth, "race", "/kept.md", 0, -1)
@@ -367,7 +370,7 @@ func TestCredentialEnvelopeIsTenantScoped(t *testing.T) {
 
 // TestCredentialEnvelopeOutlivesARetriedJob verifies a job whose embedding call
 // fails keeps its envelope, and its retry embeds with the same caller key and
-// then deletes it.
+// retains it for dependents until expiry.
 func TestCredentialEnvelopeOutlivesARetriedJob(t *testing.T) {
 	for _, backend := range credentialTestBackends {
 		t.Run(backend, func(t *testing.T) {
@@ -389,7 +392,7 @@ func TestCredentialEnvelopeOutlivesARetriedJob(t *testing.T) {
 			calls := c.embedder.Calls()
 			require.Len(t, calls, 2)
 			require.Equal(t, c.apiKey, calls[1].apiKey)
-			require.Empty(t, c.envelopes(t))
+			require.Len(t, c.envelopes(t), 1)
 			chunks, embeddings := c.indexed(t, c.auth, "race", "/retry.md")
 			require.Positive(t, chunks)
 			require.Equal(t, chunks, embeddings)
@@ -412,7 +415,7 @@ func TestCredentialEnvelopeSurvivesRestart(t *testing.T) {
 			calls := c.embedder.Calls()
 			require.Len(t, calls, 1)
 			require.Equal(t, c.apiKey, calls[0].apiKey)
-			require.Empty(t, c.envelopes(t))
+			require.Len(t, c.envelopes(t), 1)
 		})
 	}
 }
@@ -504,6 +507,41 @@ func TestCredentialEnvelopeMigrationUpgradesV1(t *testing.T) {
 			var indexes int
 			require.NoError(t, db.QueryRowContext(c.ctx, indexQuery).Scan(&indexes))
 			require.Zero(t, indexes, "step 1 must not run again")
+		})
+	}
+}
+
+// TestSameClockWritesKeepDistinctCredentialIDs verifies a frozen clock cannot
+// make separate writes share an envelope. PostgreSQL runs both mutations from
+// independent service pools behind a barrier.
+func TestSameClockWritesKeepDistinctCredentialIDs(t *testing.T) {
+	for _, backend := range credentialTestBackends {
+		t.Run(backend, func(t *testing.T) {
+			c := newCredentialFixture(t, backend, nil)
+			services := [2]*files.Service{c.service(t, 0, nil), c.service(t, 1, nil)}
+			write := func(i int) error {
+				_, err := services[i].Write(c.ctx, c.auth, "race", "/same.md", "a record\n", "utf-8", 0, files.WriteModeAppend)
+				return err
+			}
+			if backend == "postgres" {
+				for _, err := range parallelRaceCalls(t, c.ctx, 2, write) {
+					require.NoError(t, err)
+				}
+			} else {
+				for i := range services {
+					require.NoError(t, write(i))
+				}
+			}
+			rows := c.envelopes(t)
+			require.Len(t, rows, 2)
+			require.NotEqual(t, rows[0].key, rows[1].key)
+			read, err := services[1].Read(c.ctx, c.auth, "race", "/same.md", 0, -1)
+			require.NoError(t, err)
+			require.Equal(t, "a record\na record\n", read.Content)
+			runWorker(t, c.ctx, services[1])
+			calls := c.embedder.Calls()
+			require.Len(t, calls, 1)
+			require.Equal(t, c.apiKey, calls[0].apiKey)
 		})
 	}
 }

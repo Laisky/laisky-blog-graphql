@@ -555,10 +555,12 @@
       "TestRenameOverwritePreservesReplacementSearch",
       "TestRenameOptOutNeverPublishesRAG",
       "TestRenameWithPendingAndFailedRAGIndexing",
-      "TestIndexWorkerDeletesCredentialAfterSuccess",
+      "TestIndexWorkerRetainsCredentialUntilExpiry",
       "TestPurgeExpiredCredentialsIsBoundedAndThrottled",
       "TestFileToolMutationsExecuteOnce",
-      "TestRenameExtensionChangesFollowFilesystemRules"
+      "TestRenameExtensionChangesFollowFilesystemRules",
+      "TestVacantDirectoryRelocation",
+      "TestFreshCredentialReachesClaimedRefresh"
     ]
   },
   {
@@ -567,7 +569,8 @@
       "TestKeyExpiration",
       "TestWithTxCommitsAndRollsBackWithTheTransaction",
       "TestDeleteExpiredIsBounded",
-      "TestOpenRunsNoDDL"
+      "TestOpenRunsNoDDL",
+      "TestLazyExpiryPreservesRenewalSQLite"
     ]
   },
   {

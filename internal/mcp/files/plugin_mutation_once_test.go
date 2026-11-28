@@ -37,7 +37,7 @@ func (p *unselectedPlugin) recorded() []string {
 }
 
 // Name reports the PageIndex plugin name, the former shadow target.
-func (p *unselectedPlugin) Name() string { return mcpplugin.DefaultPluginPageIndex }
+func (p *unselectedPlugin) Name() string { return "unselected-test-backend" }
 
 // Capabilities returns zero-value capabilities.
 func (p *unselectedPlugin) Capabilities() mcpplugin.Capabilities { return mcpplugin.Capabilities{} }

@@ -523,7 +523,7 @@ Transient provider failures requeue with bounded backoff. An expired credential 
 the job to `waiting_auth`; the next authenticated mutation or explicit reindex for the
 same generation may attach a new encrypted envelope and reactivate it. Retry exhaustion
 marks only the refresh job failed—the already published deterministic summary remains
-`degraded` and searchable. Credential payloads are deleted immediately after use and
+`degraded` and searchable. Encrypted credential envelopes are retained until their bounded TTL for dependent jobs and
 never copied into the job row.
 
 This policy preserves availability and guarantees that every returned hit has a
@@ -647,7 +647,7 @@ would observe a mix of missing and non-empty summaries.
 
 - Add idempotent migration columns and model fields in `internal/mcp/files`.
 - Compute the complete file `content_hash` on all write and restore paths.
-- Carry the expected hash in index jobs and credential references.
+- Carry the expected hash and a persisted opaque credential ID in index jobs; bind encryption to the ID and tenant/project/path scope. Legacy jobs without an ID degrade safely.
 - Add a `FileSummarizer` and OpenAI-compatible implementation with bounded
   hierarchical input handling.
 - Add the shared summary normalizer, Unicode word counter, byte cap, and deterministic

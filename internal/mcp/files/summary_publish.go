@@ -310,6 +310,7 @@ func (s *Service) enqueueSummaryRefreshTx(ctx context.Context, tx *sql.Tx, job F
 		FilePath:      job.FilePath,
 		Operation:     "SUMMARY_REFRESH",
 		FileUpdatedAt: job.FileUpdatedAt,
+		CredentialID:  job.CredentialID,
 		// "pending" here is the index-job lifecycle status (see index_worker.go), not
 		// the SummaryStatus enum; the two domains share the word by coincidence.
 		Status:               indexStatusPending, //nolint:goconst // job status, not SummaryStatusPending

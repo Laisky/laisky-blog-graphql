@@ -13,8 +13,8 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/db/sql/kv"
 )
 
-// TestIndexWorkerDeletesCredentialAfterSuccess verifies credential envelopes are removed after processing.
-func TestIndexWorkerDeletesCredentialAfterSuccess(t *testing.T) {
+// TestIndexWorkerRetainsCredentialUntilExpiry verifies a pending dependent job can still use the envelope.
+func TestIndexWorkerRetainsCredentialUntilExpiry(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
@@ -31,7 +31,7 @@ func TestIndexWorkerDeletesCredentialAfterSuccess(t *testing.T) {
 
 	worker := svc.NewIndexWorker()
 	require.NoError(t, worker.RunOnce(context.Background()))
-	require.Zero(t, credentialEnvelopeCount(t, svc))
+	require.Equal(t, 1, credentialEnvelopeCount(t, svc))
 }
 
 // TestIndexWorkerDegradesWhenCredentialMissing verifies missing envelopes degrade to lexical indexing without retries.
@@ -171,11 +171,10 @@ func TestCredentialKeyFitsTheLongestReference(t *testing.T) {
 	longestProject := strings.Repeat("j", 128)
 	require.NoError(t, ValidatePath(longestPath))
 	require.NoError(t, ValidateProject(longestProject))
-	now := time.Now().UTC()
 	refs := []CredentialReference{
-		{APIKeyHash: strings.Repeat("f", 64), Project: longestProject, Path: longestPath, UpdatedAt: now},
-		{APIKeyHash: "user:test", Project: "@DEFAULT", Path: "/notes/a.md", UpdatedAt: now},
-		{APIKeyHash: "h", Project: "proj", Path: "/(draft) a+b#1/中文.md", UpdatedAt: now},
+		{APIKeyHash: strings.Repeat("f", 64), Project: longestProject, Path: longestPath, ID: "fixture-a"},
+		{APIKeyHash: "user:test", Project: "@DEFAULT", Path: "/notes/a.md", ID: "fixture-b"},
+		{APIKeyHash: "h", Project: "proj", Path: "/(draft) a+b#1/中文.md", ID: "fixture-c"},
 	}
 	for _, ref := range refs {
 		require.NoError(t, svc.credentials.SetWithTTL(context.Background(), ref.credentialKey(), "envelope", time.Minute), "%+v", ref)

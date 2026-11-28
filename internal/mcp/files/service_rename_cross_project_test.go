@@ -320,3 +320,46 @@ func TestProjectLockOrder(t *testing.T) {
 	}
 	require.Empty(t, ProjectLockOrder("hash"))
 }
+
+// TestVacantDirectoryRelocation proves that an existing parent is fine, but
+// an occupied destination or overwrite request never partially moves a tree.
+func TestVacantDirectoryRelocation(t *testing.T) {
+	for _, target := range []string{"alpha", "beta"} {
+		t.Run(target, func(t *testing.T) {
+			svc := newCrossProjectTestService(t, 10_000)
+			auth, ctx := crossProjectTestAuth(), context.Background()
+			mustCrossProjectWrite(t, svc, auth, "alpha", "/notes/a.txt", "old")
+			version := mustCrossProjectWrite(t, svc, auth, "alpha", "/notes/a.txt", "new")
+			mustCrossProjectWrite(t, svc, auth, target, "/2026/keep.txt", "outside")
+			mustCrossProjectWrite(t, svc, auth, target, "/occupied/unrelated.txt", "keep")
+			req := RenameRequest{Project: "alpha", FromPath: "/notes", TargetProject: target, ToPath: "/occupied"}
+			_, err := svc.Rename(ctx, auth, req)
+			require.True(t, IsCode(err, ErrCodeAlreadyExists), "%v", err)
+			requireCrossProjectContent(t, svc, auth, "alpha", "/notes/a.txt", "new")
+			requireCrossProjectContent(t, svc, auth, target, "/occupied/unrelated.txt", "keep")
+			req.ToPath, req.Overwrite = "/2026/notes", true
+			_, err = svc.Rename(ctx, auth, req)
+			require.True(t, IsCode(err, ErrCodeInvalidArgument), "%v", err)
+			req.Overwrite = false
+			result, err := svc.Rename(ctx, auth, req)
+			require.NoError(t, err)
+			require.Equal(t, 1, result.MovedCount)
+			read, err := svc.Read(ctx, auth, target, "/2026/notes/a.txt", 0, -1)
+			require.NoError(t, err)
+			require.Equal(t, "new", read.Content)
+			require.Equal(t, strings.Split(version, ":")[0], strings.Split(read.Version, ":")[0])
+			history, err := svc.ListVersions(ctx, auth, target, "/2026/notes/a.txt")
+			require.NoError(t, err)
+			require.Len(t, history, 1)
+			requireCrossProjectContent(t, svc, auth, target, "/2026/keep.txt", "outside")
+		})
+	}
+	svc := newCrossProjectTestService(t, 10_000)
+	auth, ctx := crossProjectTestAuth(), context.Background()
+	mustCrossProjectWrite(t, svc, auth, "alpha", "/notes/a.txt", "move")
+	result, err := svc.Rename(ctx, auth, RenameRequest{Project: "alpha", FromPath: "/notes", TargetProject: "beta", ToPath: "/notes"})
+	require.NoError(t, err)
+	require.Equal(t, 1, result.MovedCount)
+	requireCrossProjectMissing(t, svc, auth, "alpha", "/notes/a.txt")
+	requireCrossProjectContent(t, svc, auth, "beta", "/notes/a.txt", "move")
+}

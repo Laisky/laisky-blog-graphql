@@ -168,7 +168,7 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash, pr
 	owner := systemOwnerFromContext(ctx)
 	crossProject := project == ProjectWildcard
 	args := []any{apiKeyHash, owner}
-	statement := "SELECT path, content, size, project, content_hash, file_summary, summary_content_hash, summary_status FROM mcp_files WHERE apikey_hash = ? AND system_owner = ? AND deleted = FALSE"
+	statement := "SELECT path, content, size, project, content_hash, file_summary, summary_content_hash, summary_status FROM mcp_files WHERE apikey_hash = ? AND system_owner = ? AND deleted = FALSE AND skip_rag_index = FALSE"
 	if !crossProject {
 		statement += " AND project = ?"
 		args = append(args, project)
@@ -413,6 +413,7 @@ func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHas
 		FROM mcp_file_chunk_embeddings e
 		JOIN mcp_file_chunks c ON c.id = e.chunk_id
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
+			AND f.skip_rag_index = FALSE AND f.content_hash <> '' AND c.file_content_hash = f.content_hash
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	if project != ProjectWildcard {
 		query += chunkProjectPredicate
@@ -532,6 +533,7 @@ func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash
 		ts_rank_cd(to_tsvector('simple', c.chunk_content), plainto_tsquery('simple', ?)) AS score
 		FROM mcp_file_chunks c
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
+			AND f.skip_rag_index = FALSE AND f.content_hash <> '' AND c.file_content_hash = f.content_hash
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	if project != ProjectWildcard {
 		statement += chunkProjectPredicate
@@ -734,6 +736,7 @@ func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash, project,
 		FROM mcp_file_chunk_embeddings e
 		JOIN mcp_file_chunks c ON c.id = e.chunk_id
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
+			AND f.skip_rag_index = FALSE AND f.content_hash <> '' AND c.file_content_hash = f.content_hash
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	if project != ProjectWildcard {
 		query += chunkProjectPredicate
@@ -817,6 +820,7 @@ func (s *Service) fetchChunkRows(ctx context.Context, apiKeyHash, project, pathP
 	query := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, f.size, c.chunk_content, c.file_content_hash, f.file_summary, f.summary_content_hash, f.summary_status
 		FROM mcp_file_chunks c
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
+			AND f.skip_rag_index = FALSE AND f.content_hash <> '' AND c.file_content_hash = f.content_hash
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	if project != ProjectWildcard {
 		query += chunkProjectPredicate

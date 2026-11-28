@@ -190,15 +190,16 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 	// Only user-namespace writes that did not opt out enqueue RAG work and
 	// hand the caller's key to the index worker.
 	if owner == "" && !opts.SkipRAGIndex {
+		credentialID, err := s.storeCredentialEnvelopeTx(ctx, tx, auth, project, path)
+		if err != nil {
+			return 0, err
+		}
 		if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
 			APIKeyHash: auth.APIKeyHash, Project: project, FilePath: path,
 			Operation: indexOperationUpsert, FileUpdatedAt: &now, Status: indexStatusPending, RetryCount: 0,
-			AvailableAt: now, CreatedAt: now, UpdatedAt: now, ContentHash: contentHash,
+			AvailableAt: now, CreatedAt: now, UpdatedAt: now, ContentHash: contentHash, CredentialID: credentialID,
 		}); err != nil {
 			return 0, errors.Wrap(err, "enqueue index job")
-		}
-		if err := s.storeCredentialEnvelopeTx(ctx, tx, auth, project, path, now); err != nil {
-			return 0, err
 		}
 	}
 	return bytesWritten, nil
