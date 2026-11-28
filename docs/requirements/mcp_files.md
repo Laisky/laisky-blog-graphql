@@ -323,7 +323,7 @@ directory subtree, within `project` or into `target_project` of the same caller,
 - Async workers must use caller credentials only through encrypted short-lived handoff data.
 - `UPSERT` jobs that call external model APIs must carry a credential-envelope reference key (not plaintext API key).
 - The credential envelope is stored in the FileIO SQL database (the shared `kv` table), written in the same
-  transaction as the file change and its index jobs, with a short TTL, and deleted immediately after worker use.
+  transaction as the file change and its index jobs, with a short TTL that bounds retention after use.
   FileIO and RAG need no Redis.
 - A missing or expired envelope never blocks a file operation or fails indexing: the worker indexes lexically,
   summary refresh waits for authentication, and the next authenticated mutation of the path restores semantic
@@ -564,10 +564,9 @@ Implementation requirements:
   - `EncryptedData.UnmarshalFromString(...)`
   - `kmsClient.Decrypt(ctx, encryptedData, aad)`
 - Store only the encrypted envelope, in the `kv` table of the FileIO database. Its key is
-  `mcp_files_credential_` plus the unpadded base64url of the AAD. It encodes the tenant hash, project and path
-  that the file tables already store, and never the caller's key.
-- The AAD is `apikey_hash|project|path|file_updated_at_unix_nano`; an envelope copied under another reference
-  does not decrypt.
+  `mcp_files_credential_` plus the opaque UUIDv7 credential ID carried by the outbox job.
+- The AAD is the domain `mcp-files-credential-v2` followed by the uvarint length and bytes of each of
+  the credential ID, `apikey_hash`, project and path. AES-GCM refuses an envelope under a different scope.
 - The envelope row commits or rolls back with the file mutation and its index jobs. A rejected or failed mutation
   leaves no envelope.
 - Encryption keys stay in configuration, never in the database.
@@ -575,7 +574,7 @@ Implementation requirements:
   - load envelope by reference key
   - decrypt via KMS with the same AAD used at encryption
   - call external model/rerank API
-  - delete envelope immediately after use
+  - retain the envelope until its TTL expires so dependent jobs may reuse it
   - if envelope is missing, expired or undecryptable, index lexically; summary refresh moves to `waiting_auth`
     until an authenticated mutation stores a new envelope
 - Index workers sweep expired envelopes at most once per TTL, deleting at most 500 rows per statement and
@@ -583,7 +582,7 @@ Implementation requirements:
 
 Envelope row (`kv` table):
 
-- `key`: `mcp_files_credential_<base64url(aad)>`
+- `key`: `mcp_files_credential_<credential ID>`
 - `value`: serialized `EncryptedData` (`kek_id`, `dek_id`, `ciphertext`)
 - `created_at`, `expire_at`: UTC
 

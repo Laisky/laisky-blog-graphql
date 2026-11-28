@@ -71,11 +71,17 @@ func checkSearchRenameFreshness(t *testing.T, backend, target string, enforce bo
 	}
 	check(false)
 	selectJob := " WHERE apikey_hash = ? AND project = ? AND file_path = ? AND operation = 'UPSERT' AND system_owner = ''"
-	_, err = c.db[1].ExecContext(c.ctx, c.query("UPDATE mcp_file_index_jobs SET status = 'failed'"+selectJob+" AND status = 'pending'"), c.auth.APIKeyHash, target, dest)
+	result, err := c.db[1].ExecContext(c.ctx, c.query("UPDATE mcp_file_index_jobs SET status = 'failed'"+selectJob+" AND status = 'pending'"), c.auth.APIKeyHash, target, dest)
 	require.NoError(t, err)
+	changed, err := result.RowsAffected()
+	require.NoError(t, err)
+	require.EqualValues(t, 1, changed)
 	check(false)
-	_, err = c.db[1].ExecContext(c.ctx, c.query("UPDATE mcp_file_index_jobs SET status = 'pending'"+selectJob+" AND status = 'failed'"), c.auth.APIKeyHash, target, dest)
+	result, err = c.db[1].ExecContext(c.ctx, c.query("UPDATE mcp_file_index_jobs SET status = 'pending'"+selectJob+" AND status = 'failed'"), c.auth.APIKeyHash, target, dest)
 	require.NoError(t, err)
+	changed, err = result.RowsAffected()
+	require.NoError(t, err)
+	require.EqualValues(t, 1, changed)
 	runWorker(t, c.ctx, svc)
 	check(true)
 

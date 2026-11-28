@@ -9,7 +9,7 @@ import (
 
 // reactivateSummaryRefreshJobs moves waiting refresh jobs back to the runnable
 // state after a fresh credential envelope is stored, attaching its exact ID.
-// An already claimed job keeps its claim but records the fresh ID. A worker
+// Pending jobs keep their eligibility time; claimed jobs keep their claim. A worker
 // holding the old ID cannot park that job after fresh authorization wins.
 // Only jobs whose content and generation still match the active file are
 // reactivated; superseded jobs remain terminally stale.
@@ -36,7 +36,7 @@ func (s *Service) reactivateSummaryRefreshJobs(ctx context.Context, q sqlQueryEx
 		    last_error_code = CASE WHEN status = 'waiting_auth' THEN '' ELSE last_error_code END,
 		    updated_at = ?, credential_id = ?
 		WHERE apikey_hash = ? AND project = ? AND file_path = ? AND operation = ? AND system_owner = ?
-		      AND status IN ('waiting_auth', 'processing') AND content_hash = ? AND summary_generation_key = ?`, s.isPostgres),
+		      AND status IN ('waiting_auth', 'pending', 'processing') AND content_hash = ? AND summary_generation_key = ?`, s.isPostgres),
 		indexStatusPending, now, now, ref.ID, ref.APIKeyHash, ref.Project, ref.Path,
 		"SUMMARY_REFRESH", "", contentHash, generationKey,
 	)

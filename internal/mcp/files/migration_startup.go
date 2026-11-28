@@ -15,7 +15,7 @@ import (
 // fileSchemaVersion is a durable checkpoint, not a process-local cache. Add a
 // new numbered step when changing the schema; never repurpose a recorded step.
 // Step 1 is the file baseline; step 2 adds the credential envelope kv table.
-const fileSchemaVersion int64 = 2
+const fileSchemaVersion int64 = 3
 
 const fileMigrationVersionQuery = `SELECT version FROM mcp_file_schema_migrations ORDER BY version DESC LIMIT 1`
 

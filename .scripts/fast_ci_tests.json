@@ -578,6 +578,8 @@
       "TestRenameExtensionChangesFollowFilesystemRules",
       "TestVacantDirectoryRelocation",
       "TestFreshCredentialReachesClaimedRefresh",
+      "TestFreshCredentialReachesPendingRefresh",
+      "TestSummaryRefreshSurvivesRenameRoundTrip",
       "TestTenantLockAttemptsOnceAndReturnsBusy",
       "TestTenantLockDoesNotClassifyCommitFailureAsBusy",
       "TestDefaultCreateNeverUsesStaleNamespaceSQLite"

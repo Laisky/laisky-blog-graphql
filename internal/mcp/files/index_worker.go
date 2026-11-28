@@ -262,8 +262,12 @@ func (w *IndexWorker) runSummaryRefresh(ctx context.Context, job FileIndexJob) e
 		return w.handleSummaryRefreshRetry(ctx, job, pub.errorCode)
 	}
 
-	if err := svc.publishSummaryStandalone(ctx, job, file.Version, pub); err != nil {
+	retry, err := svc.publishSummaryStandalone(ctx, job, file.Version, file.SummaryGenerationKey, pub)
+	if err != nil {
 		return w.handleJobError(ctx, job, err)
+	}
+	if retry {
+		return w.handleSummaryRefreshRetry(ctx, job, "revision_changed")
 	}
 	svc.summaryRefreshOutcome(ctx, "rag", "done")
 	return w.markSummaryRefreshStatus(ctx, job, "done", "")

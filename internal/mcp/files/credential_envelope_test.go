@@ -3,6 +3,7 @@ package files_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -477,38 +478,56 @@ func TestCredentialEnvelopesWithoutEncryptionKeys(t *testing.T) {
 	}
 }
 
-// TestCredentialEnvelopeMigrationUpgradesV1 verifies a database migrated by
-// schema step 1 gains the envelope table on startup without replaying step 1.
-func TestCredentialEnvelopeMigrationUpgradesV1(t *testing.T) {
+// TestCredentialEnvelopeMigrationUpgradesV1AndV2 uses the actual startup
+// migration, preserving queued pre-ID jobs and not replaying step 1.
+func TestCredentialEnvelopeMigrationUpgradesV1AndV2(t *testing.T) {
 	for _, backend := range credentialTestBackends {
 		t.Run(backend, func(t *testing.T) {
-			c := newCredentialFixture(t, backend, nil)
-			db := c.db[0]
-			for _, stmt := range []string{
-				"DROP TABLE kv",
-				"DROP INDEX mcp_files_system_owner_idx",
-				"DELETE FROM mcp_file_schema_migrations",
-				"INSERT INTO mcp_file_schema_migrations (version) VALUES (1)",
-			} {
-				_, err := db.ExecContext(c.ctx, stmt)
-				require.NoError(t, err, stmt)
-			}
+			for _, version := range []int64{1, 2} {
+				t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
+					c := newCredentialFixture(t, backend, nil)
+					db := c.db[0]
+					svc := c.service(t, 0, nil)
+					_, err := svc.Write(c.ctx, c.auth, "race", "/legacy.md", "old queued file", "utf-8", 0, files.WriteModeTruncate)
+					require.NoError(t, err)
+					for _, stmt := range []string{
+						"ALTER TABLE mcp_file_index_jobs DROP COLUMN credential_id",
+						"DROP INDEX mcp_files_system_owner_idx",
+						"DELETE FROM mcp_file_schema_migrations",
+					} {
+						_, err := db.ExecContext(c.ctx, stmt)
+						require.NoError(t, err, stmt)
+					}
+					_, err = db.ExecContext(c.ctx, c.query("INSERT INTO mcp_file_schema_migrations (version) VALUES (?)"), version)
+					require.NoError(t, err)
+					if version == 1 {
+						_, err = db.ExecContext(c.ctx, "DROP TABLE kv")
+						require.NoError(t, err)
+					}
 
-			svc := c.service(t, 0, nil)
-			_, err := svc.Write(c.ctx, c.auth, "race", "/upgraded.md", "after the upgrade", "utf-8", 0, files.WriteModeTruncate)
-			require.NoError(t, err)
-			require.Len(t, c.envelopes(t), 1)
+					svc = c.service(t, 1, nil)
+					_, err = svc.Write(c.ctx, c.auth, "race", "/upgraded.md", "after the upgrade", "utf-8", 0, files.WriteModeTruncate)
+					require.NoError(t, err)
+					runWorker(t, c.ctx, svc)
+					calls := c.embedder.Calls()
+					require.Len(t, calls, 1, "legacy jobs can still be processed but do not reuse unreferenced credentials")
+					require.Equal(t, c.apiKey, calls[0].apiKey)
+					legacyChunks, legacyEmbeddings := c.indexed(t, c.auth, "race", "/legacy.md")
+					require.Positive(t, legacyChunks)
+					require.Zero(t, legacyEmbeddings)
 
-			var version int64
-			require.NoError(t, db.QueryRowContext(c.ctx, "SELECT MAX(version) FROM mcp_file_schema_migrations").Scan(&version))
-			require.EqualValues(t, 2, version)
-			indexQuery := "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'mcp_files_system_owner_idx'"
-			if c.postgres {
-				indexQuery = "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'mcp_files_system_owner_idx'"
+					var installed int64
+					require.NoError(t, db.QueryRowContext(c.ctx, "SELECT MAX(version) FROM mcp_file_schema_migrations").Scan(&installed))
+					require.EqualValues(t, 3, installed)
+					indexQuery := "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'mcp_files_system_owner_idx'"
+					if c.postgres {
+						indexQuery = "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'mcp_files_system_owner_idx'"
+					}
+					var indexes int
+					require.NoError(t, db.QueryRowContext(c.ctx, indexQuery).Scan(&indexes))
+					require.Zero(t, indexes, "step 1 must not run again")
+				})
 			}
-			var indexes int
-			require.NoError(t, db.QueryRowContext(c.ctx, indexQuery).Scan(&indexes))
-			require.Zero(t, indexes, "step 1 must not run again")
 		})
 	}
 }
